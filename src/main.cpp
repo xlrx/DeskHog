@@ -16,7 +16,7 @@
 #define NUM_CARDS 10
 
 // LVGL display buffer size
-#define LVGL_BUFFER_ROWS 40  // Number of rows in the buffer
+#define LVGL_BUFFER_ROWS 135  // Full screen height
 
 // Animation duration
 #define PIP_ANIM_DURATION 150  // ms
@@ -28,7 +28,7 @@ SemaphoreHandle_t lvgl_mutex = NULL;
 // LVGL objects
 lv_obj_t *main_container;
 lv_obj_t *scroll_indicator;  // New scroll indicator container
-static const lv_coord_t card_height = 80;
+static const lv_coord_t card_height = SCREEN_HEIGHT;  // Make cards full screen height
 static const lv_coord_t pip_size = 5;  // Normal pip size
 static const lv_coord_t pip_size_active = 10;  // Active pip size
 
@@ -62,31 +62,12 @@ static void scroll_event_cb(lv_event_t * e) {
     lv_obj_get_coords(cont, &cont_a);
     int32_t cont_y_center = cont_a.y1 + lv_area_get_height(&cont_a) / 2;
 
-    int32_t r = lv_obj_get_height(cont) * 7 / 10;
     uint32_t child_cnt = lv_obj_get_child_cnt(cont);
     
     for(uint32_t i = 0; i < child_cnt; i++) {
         lv_obj_t * child = lv_obj_get_child(cont, i);
-        lv_area_t child_a;
-        lv_obj_get_coords(child, &child_a);
-
-        int32_t child_y_center = child_a.y1 + lv_area_get_height(&child_a) / 2;
-        int32_t diff_y = child_y_center - cont_y_center;
-        diff_y = LV_ABS(diff_y);
-
-        /*Get the x of diff_y on a circle.*/
-        int32_t x;
-        if(diff_y >= r) {
-            x = r;
-        } else {
-            uint32_t x_sqr = r * r - diff_y * diff_y;
-            lv_sqrt_res_t res;
-            lv_sqrt(x_sqr, &res, 0x8000);
-            x = r - res.i;
-        }
-
-        lv_opa_t opa = lv_map(x, 0, r, LV_OPA_TRANSP, LV_OPA_COVER);
-        lv_obj_set_style_opa(child, LV_OPA_COVER - (opa/2), 0);
+        // Remove all opacity effects - everything is fully opaque
+        lv_obj_set_style_opa(child, LV_OPA_COVER, 0);
     }
 }
 
@@ -94,12 +75,12 @@ static void scroll_event_cb(lv_event_t * e) {
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
-
+    
     tft.startWrite();
     tft.setAddrWindow(area->x1, area->y1, w, h);
     tft.writePixels((uint16_t*)color_p, w * h);
     tft.endWrite();
-
+    
     lv_disp_flush_ready(disp);
 }
 
@@ -107,8 +88,8 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 static void lv_tick_task(void *arg) {
     (void)arg;
     while (1) {
-        lv_tick_inc(5);
-        vTaskDelay(pdMS_TO_TICKS(5));
+        lv_tick_inc(10);
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -119,6 +100,7 @@ void lvglTask(void *parameter) {
             lv_timer_handler();
             xSemaphoreGive(lvgl_mutex);
         }
+        
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
@@ -176,8 +158,6 @@ void buttonTask(void *parameter) {
     lv_obj_t * target_card = NULL;
 
     while (1) {
-        bool updated = false;
-
         // Update all buttons
         for (int i = 0; i < NUM_BUTTONS; i++) {
             buttons[i].update();
@@ -210,33 +190,33 @@ void setup() {
     Serial.begin(115200);
     
     // Initialize buttons
-    buttons[0].attach(BUTTON_0, INPUT_PULLUP);  // Button A - active LOW
-    buttons[0].interval(50);  // Debounce interval in ms
-    buttons[0].setPressedState(HIGH);  // Button A is active LOW
+    buttons[0].attach(BUTTON_0, INPUT_PULLUP);
+    buttons[0].interval(50);
+    buttons[0].setPressedState(HIGH);
     
-    buttons[1].attach(BUTTON_1, INPUT);  // Button B - active HIGH
+    buttons[1].attach(BUTTON_1, INPUT);
     buttons[1].interval(50);
     buttons[1].setPressedState(LOW);
     
-    buttons[2].attach(BUTTON_2, INPUT);  // Button C - active HIGH
+    buttons[2].attach(BUTTON_2, INPUT);
     buttons[2].interval(50);
     buttons[2].setPressedState(LOW);
 
-    // Initialize display
-    tft.init(SCREEN_HEIGHT, SCREEN_WIDTH);
-    tft.setRotation(1);
-    pinMode(TFT_BACKLITE, OUTPUT);
-    digitalWrite(TFT_BACKLITE, HIGH);
-    
-    // Set black background
-    tft.fillScreen(ST77XX_BLACK);
-
-    // Create mutex for LVGL
+    // Create LVGL mutex
     lvgl_mutex = xSemaphoreCreateMutex();
     if (lvgl_mutex == NULL) {
         Serial.println("Could not create mutex");
         while (1);
     }
+
+    // Initialize display
+    SPI.begin();
+    tft.init(SCREEN_HEIGHT, SCREEN_WIDTH);
+    
+    tft.setRotation(1);
+    pinMode(TFT_BACKLITE, OUTPUT);
+    digitalWrite(TFT_BACKLITE, HIGH);
+    tft.fillScreen(ST77XX_BLACK);
 
     // Initialize LVGL
     lv_init();
@@ -266,9 +246,9 @@ void setup() {
     lv_obj_set_style_border_width(main_container, 0, 0);
     lv_obj_set_style_pad_left(main_container, 0, 0);
     lv_obj_set_style_pad_right(main_container, 0, 0);
-    lv_obj_set_style_pad_top(main_container, 2, 0);
-    lv_obj_set_style_pad_bottom(main_container, 2, 0);
-    lv_obj_set_style_pad_row(main_container, 2, 0);
+    lv_obj_set_style_pad_top(main_container, 0, 0);
+    lv_obj_set_style_pad_bottom(main_container, 0, 0);
+    lv_obj_set_style_pad_row(main_container, 0, 0);  // No gap between cards
     lv_obj_set_flex_flow(main_container, LV_FLEX_FLOW_COLUMN);
     lv_obj_add_event_cb(main_container, scroll_event_cb, LV_EVENT_SCROLL, NULL);
     lv_obj_set_scroll_dir(main_container, LV_DIR_VER);
@@ -306,7 +286,7 @@ void setup() {
     // Create cards
     for(int i = 0; i < NUM_CARDS; i++) {
         lv_obj_t * card = lv_obj_create(main_container);
-        lv_obj_set_size(card, lv_pct(100) - 1, SCREEN_HEIGHT - 4);  // Reduced width by 1px
+        lv_obj_set_size(card, lv_pct(100), SCREEN_HEIGHT);  // Full width and height
         lv_obj_set_style_radius(card, 8, 0);
         lv_obj_set_style_border_width(card, 0, 0);
         lv_obj_set_style_bg_color(card, card_colors[i % 10], 0);
