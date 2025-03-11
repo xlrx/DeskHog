@@ -67,7 +67,7 @@ void lvglTask(void *parameter) {
 
 // Button handling task - runs on core 0
 void buttonTask(void *parameter) {
-    char buf[32];
+    char buf[128];  // Increased from 32 to 128 to accommodate longer text
     
     while (1) {
         bool updated = false;
@@ -93,7 +93,7 @@ void buttonTask(void *parameter) {
         }
 
         if (updated && xSemaphoreTake(lvgl_mutex, portMAX_DELAY) == pdTRUE) {
-            snprintf(buf, sizeof(buf), "Counter: %d", counter);
+            snprintf(buf, sizeof(buf), "Counter this is very long, bam, let's wrap this text, show me: %d", counter);
             lv_label_set_text(label, buf);
             xSemaphoreGive(lvgl_mutex);
         }
@@ -108,15 +108,15 @@ void setup() {
     // Initialize buttons
     buttons[0].attach(BUTTON_A, INPUT_PULLUP);  // Button A - active LOW
     buttons[0].interval(50);  // Debounce interval in ms
-    buttons[0].setPressedState(LOW);  // Button A is active LOW
+    buttons[0].setPressedState(HIGH);  // Button A is active LOW
     
     buttons[1].attach(BUTTON_B, INPUT);  // Button B - active HIGH
     buttons[1].interval(50);
-    buttons[1].setPressedState(HIGH);
+    buttons[1].setPressedState(LOW);
     
     buttons[2].attach(BUTTON_C, INPUT);  // Button C - active HIGH
     buttons[2].interval(50);
-    buttons[2].setPressedState(HIGH);
+    buttons[2].setPressedState(LOW);
 
     // Initialize display
     tft.init(SCREEN_HEIGHT, SCREEN_WIDTH); // Note: swapped for rotation
@@ -147,6 +147,15 @@ void setup() {
 
     // Create a label on the display
     label = lv_label_create(lv_scr_act());
+    
+    // Set larger font
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
+    
+    // Enable text wrapping
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    // Set width to screen width minus margins
+    lv_obj_set_width(label, SCREEN_WIDTH - 20);  // 10px margin on each side
+    
     lv_label_set_text(label, "Press any button!");
     lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
 
