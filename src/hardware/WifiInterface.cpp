@@ -1,0 +1,211 @@
+#include "WifiInterface.h"
+#include "ui/ProvisioningCard.h"
+
+WiFiInterface* WiFiInterface::_instance = nullptr;
+
+WiFiInterface::WiFiInterface(ConfigManager& configManager)
+    : _configManager(configManager),
+      _state(WiFiState::DISCONNECTED),
+      _apSSID("ESP32_Setup"),
+      _apPassword(""),
+      _apIP(192, 168, 4, 1),
+      _dnsServer(nullptr),
+      _ui(nullptr),
+      _lastStatusCheck(0),
+      _connectionStartTime(0),
+      _connectionTimeout(0) {
+    
+    _instance = this;
+}
+
+void WiFiInterface::begin() {
+    // Set up WiFi event handlers
+    WiFi.onEvent(onWiFiEvent);
+    
+    // Initialize WiFi
+    WiFi.mode(WIFI_STA);
+}
+
+bool WiFiInterface::connectToStoredNetwork(unsigned long timeout) {
+    if (!_configManager.getWiFiCredentials(_ssid, _password)) {
+        return false;
+    }
+    
+    Serial.print("Connecting to WiFi: ");
+    Serial.println(_ssid);
+    
+    _state = WiFiState::CONNECTING;
+    _connectionStartTime = millis();
+    _connectionTimeout = timeout;
+    
+    if (_ui) {
+        _ui->updateConnectionStatus("Connecting to " + _ssid + "...");
+    }
+    
+    // Start connection attempt
+    WiFi.begin(_ssid.c_str(), _password.c_str());
+    
+    return true;
+}
+
+void WiFiInterface::startAccessPoint() {
+    WiFi.mode(WIFI_AP);
+    
+    // Create unique AP SSID based on MAC address
+    uint8_t mac[6];
+    WiFi.macAddress(mac);
+    _apSSID = "ESP32_Setup_" + String(mac[3], HEX) + String(mac[4], HEX) + String(mac[5], HEX);
+    
+    // Start access point
+    WiFi.softAPConfig(_apIP, _apIP, IPAddress(255, 255, 255, 0));
+    WiFi.softAP(_apSSID.c_str(), _apPassword.c_str());
+    
+    // Start DNS server for captive portal
+    if (!_dnsServer) {
+        _dnsServer = new DNSServer();
+        _dnsServer->start(53, "*", _apIP);
+    }
+    
+    _state = WiFiState::AP_MODE;
+    
+    if (_ui) {
+        _ui->showQRCode();
+    }
+    
+    Serial.print("AP started with SSID: ");
+    Serial.println(_apSSID);
+    Serial.print("AP IP address: ");
+    Serial.println(getAPIPAddress());
+}
+
+void WiFiInterface::stopAccessPoint() {
+    // Stop DNS server
+    if (_dnsServer) {
+        _dnsServer->stop();
+        delete _dnsServer;
+        _dnsServer = nullptr;
+    }
+    
+    // Stop AP mode
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);
+    
+    _state = WiFiState::DISCONNECTED;
+}
+
+void WiFiInterface::process() {
+    // Process DNS requests if in AP mode
+    if (_state == WiFiState::AP_MODE && _dnsServer) {
+        _dnsServer->processNextRequest();
+    }
+    
+    // Check WiFi status periodically when connecting
+    if (_state == WiFiState::CONNECTING) {
+        unsigned long now = millis();
+        
+        // Check for timeout
+        if (now - _connectionStartTime >= _connectionTimeout) {
+            Serial.println("WiFi connection timeout");
+            WiFi.disconnect();
+            _state = WiFiState::DISCONNECTED;
+            
+            if (_ui) {
+                _ui->updateConnectionStatus("Connection failed: timeout");
+            }
+            
+            // Start AP mode for provisioning
+            startAccessPoint();
+        }
+    }
+    
+    // Update signal strength periodically if connected
+    if (_state == WiFiState::CONNECTED && millis() - _lastStatusCheck > 5000) {
+        _lastStatusCheck = millis();
+        
+        if (_ui) {
+            _ui->updateSignalStrength(getSignalStrength());
+        }
+    }
+}
+
+WiFiState WiFiInterface::getState() const {
+    return _state;
+}
+
+String WiFiInterface::getIPAddress() const {
+    if (_state == WiFiState::CONNECTED) {
+        return WiFi.localIP().toString();
+    }
+    return "";
+}
+
+int WiFiInterface::getSignalStrength() const {
+    if (_state == WiFiState::CONNECTED) {
+        // Convert RSSI to percentage (typical range: -100 to -30)
+        int rssi = WiFi.RSSI();
+        if (rssi <= -100) {
+            return 0;
+        } else if (rssi >= -50) {
+            return 100;
+        } else {
+            return 2 * (rssi + 100);
+        }
+    }
+    return 0;
+}
+
+String WiFiInterface::getAPIPAddress() const {
+    if (_state == WiFiState::AP_MODE) {
+        return WiFi.softAPIP().toString();
+    }
+    return "";
+}
+
+String WiFiInterface::getSSID() const {
+    if (_state == WiFiState::CONNECTED) {
+        return _ssid;
+    } else if (_state == WiFiState::AP_MODE) {
+        return _apSSID;
+    }
+    return "";
+}
+
+void WiFiInterface::setUI(ProvisioningCard* ui) {
+    _ui = ui;
+}
+
+void WiFiInterface::onWiFiEvent(WiFiEvent_t event) {
+    if (!_instance) return;
+    
+    switch (event) {
+        case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+            Serial.println("WiFi connected");
+            break;
+            
+        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+            Serial.print("WiFi connected, IP address: ");
+            Serial.println(WiFi.localIP());
+            _instance->_state = WiFiState::CONNECTED;
+            
+            if (_instance->_ui) {
+                _instance->_ui->updateConnectionStatus("Connected to " + _instance->_ssid);
+                _instance->_ui->updateIPAddress(_instance->getIPAddress());
+                _instance->_ui->updateSignalStrength(_instance->getSignalStrength());
+            }
+            break;
+            
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+            if (_instance->_state == WiFiState::CONNECTED) {
+                Serial.println("WiFi disconnected");
+                _instance->_state = WiFiState::DISCONNECTED;
+                
+                if (_instance->_ui) {
+                    _instance->_ui->updateConnectionStatus("Disconnected");
+                }
+            }
+            break;
+            
+        default:
+            break;
+    }
+}

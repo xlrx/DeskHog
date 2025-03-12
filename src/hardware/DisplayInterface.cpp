@@ -1,0 +1,116 @@
+#include "DisplayInterface.h"
+
+// A pointer to the instance for use in static callbacks
+static DisplayInterface* instance = nullptr;
+
+DisplayInterface::DisplayInterface(
+    uint16_t screen_width,
+    uint16_t screen_height,
+    uint16_t buffer_rows,
+    int8_t cs_pin,
+    int8_t dc_pin, 
+    int8_t rst_pin,
+    int8_t backlight_pin
+) : _screen_width(screen_width),
+    _screen_height(screen_height),
+    _buffer_rows(buffer_rows),
+    _cs_pin(cs_pin),
+    _dc_pin(dc_pin),
+    _rst_pin(rst_pin),
+    _backlight_pin(backlight_pin) {
+    
+    // Store instance for static callbacks
+    instance = this;
+    
+    // Create TFT object
+    _tft = new Adafruit_ST7789(&SPI, _cs_pin, _dc_pin, _rst_pin);
+    
+    // Allocate buffer memory
+    _buf1 = new lv_color_t[_screen_width * _buffer_rows];
+    _buf2 = new lv_color_t[_screen_width * _buffer_rows];
+    
+    // Create LVGL mutex
+    _lvgl_mutex = xSemaphoreCreateMutex();
+    if (_lvgl_mutex == NULL) {
+        Serial.println("Could not create mutex");
+        while (1);
+    }
+}
+
+void DisplayInterface::begin() {
+    // Initialize SPI
+    SPI.begin();
+    
+    // Initialize display
+    _tft->init(_screen_height, _screen_width);
+    _tft->setRotation(1);
+    
+    // Configure backlight
+    pinMode(_backlight_pin, OUTPUT);
+    digitalWrite(_backlight_pin, HIGH);
+    _tft->fillScreen(ST77XX_BLACK);
+    
+    // Initialize LVGL
+    lv_init();
+    
+    // Initialize display buffer
+    lv_disp_draw_buf_init(&_draw_buf, _buf1, _buf2, _screen_width * _buffer_rows);
+    
+    // Initialize display driver
+    lv_disp_drv_init(&_disp_drv);
+    _disp_drv.hor_res = _screen_width;
+    _disp_drv.ver_res = _screen_height;
+    _disp_drv.flush_cb = _disp_flush;
+    _disp_drv.draw_buf = &_draw_buf;
+    lv_disp_drv_register(&_disp_drv);
+    
+    // Set screen background to black
+    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(lv_scr_act(), LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(lv_scr_act(), 0, 0);
+}
+
+Adafruit_ST7789* DisplayInterface::getDisplay() {
+    return _tft;
+}
+
+void DisplayInterface::handleLVGLTasks() {
+    if (takeMutex()) {
+        lv_timer_handler();
+        giveMutex();
+    }
+}
+
+void DisplayInterface::tickTask(void* arg) {
+    (void)arg;
+    while (1) {
+        lv_tick_inc(10);
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+bool DisplayInterface::takeMutex(TickType_t timeout) {
+    return xSemaphoreTake(_lvgl_mutex, timeout) == pdTRUE;
+}
+
+void DisplayInterface::giveMutex() {
+    xSemaphoreGive(_lvgl_mutex);
+}
+
+SemaphoreHandle_t* DisplayInterface::getMutexPtr() {
+    return &_lvgl_mutex;
+}
+
+void DisplayInterface::_disp_flush(lv_disp_drv_t* disp, const lv_area_t* area, lv_color_t* color_p) {
+    if (instance) {
+        uint32_t w = (area->x2 - area->x1 + 1);
+        uint32_t h = (area->y2 - area->y1 + 1);
+        
+        instance->_tft->startWrite();
+        instance->_tft->setAddrWindow(area->x1, area->y1, w, h);
+        instance->_tft->writePixels((uint16_t*)color_p, w * h);
+        instance->_tft->endWrite();
+    }
+    
+    lv_disp_flush_ready(disp);
+}
