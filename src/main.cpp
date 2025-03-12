@@ -42,10 +42,8 @@ void wifiTaskFunction(void* parameter) {
 // Captive portal task that handles web server requests
 void portalTaskFunction(void* parameter) {
     while (1) {
-        // Process portal requests if in AP mode
-        if (wifi_interface->getState() == WiFiState::AP_MODE) {
-            captive_portal->process();
-        }
+        // Process portal requests regardless of mode
+        captive_portal->process();
         
         // Delay to prevent hogging CPU
         vTaskDelay(pdMS_TO_TICKS(10));
