@@ -7,6 +7,7 @@ ConfigManager::ConfigManager() {
 void ConfigManager::begin() {
     // Initialize preferences
     _preferences.begin(_namespace, false);
+    _insightsPrefs.begin(_insightsNamespace, false);
 }
 
 bool ConfigManager::saveWiFiCredentials(const String& ssid, const String& password) {
@@ -46,4 +47,108 @@ void ConfigManager::clearWiFiCredentials() {
 
 bool ConfigManager::hasWiFiCredentials() {
     return _preferences.getBool(_hasCredentialsKey, false);
+}
+
+bool ConfigManager::saveInsight(const String& id, const String& content) {
+    if (id.length() == 0 || id.length() > MAX_INSIGHT_ID_LENGTH) {
+        return false;
+    }
+
+    if (content.length() > MAX_INSIGHT_LENGTH) {
+        return false;
+    }
+
+    // Store the insight content
+    _insightsPrefs.putString(id.c_str(), content);
+
+    // Update the ID list
+    auto ids = getAllInsightIds();
+    if (std::find(ids.begin(), ids.end(), id) == ids.end()) {
+        ids.push_back(id);
+        updateIdList(ids);
+    }
+
+    return true;
+}
+
+String ConfigManager::getInsight(const String& id) {
+    return _insightsPrefs.getString(id.c_str(), "");
+}
+
+void ConfigManager::deleteInsight(const String& id) {
+    if (_insightsPrefs.isKey(id.c_str())) {
+        _insightsPrefs.remove(id.c_str());
+        
+        // Update the ID list
+        auto ids = getAllInsightIds();
+        ids.erase(std::remove(ids.begin(), ids.end(), id), ids.end());
+        updateIdList(ids);
+    }
+}
+
+std::vector<String> ConfigManager::getAllInsightIds() {
+    std::vector<String> ids;
+    
+    // We'll maintain a special key that stores all insight IDs
+    String idList = _insightsPrefs.getString("_id_list", "");
+    
+    if (idList.length() > 0) {
+        // Split the ID list on commas
+        int start = 0;
+        int end = idList.indexOf(',');
+        while (end >= 0) {
+            ids.push_back(idList.substring(start, end));
+            start = end + 1;
+            end = idList.indexOf(',', start);
+        }
+        // Add the last ID if there is one
+        if (start < idList.length()) {
+            ids.push_back(idList.substring(start));
+        }
+    }
+    
+    return ids;
+}
+
+void ConfigManager::updateIdList(const std::vector<String>& ids) {
+    String idList;
+    for (size_t i = 0; i < ids.size(); i++) {
+        idList += ids[i];
+        if (i < ids.size() - 1) {
+            idList += ",";
+        }
+    }
+    _insightsPrefs.putString("_id_list", idList);
+}
+
+void ConfigManager::setTeamId(int teamId) {
+    _preferences.putInt(_teamIdKey, teamId);
+}
+
+int ConfigManager::getTeamId() {
+    if (!_preferences.isKey(_teamIdKey)) {
+        return NO_TEAM_ID;
+    }
+    return _preferences.getInt(_teamIdKey);
+}
+
+void ConfigManager::clearTeamId() {
+    _preferences.remove(_teamIdKey);
+}
+
+bool ConfigManager::setApiKey(const String& apiKey) {
+    if (apiKey.length() == 0 || apiKey.length() > MAX_API_KEY_LENGTH) {
+        return false;
+    }
+
+    _preferences.putString(_apiKeyKey, apiKey);
+    return true;
+}
+
+String ConfigManager::getApiKey() {
+    return _preferences.getString(_apiKeyKey, "");
+}
+
+void ConfigManager::clearApiKey() {
+    _preferences.remove(_apiKeyKey);
 }
