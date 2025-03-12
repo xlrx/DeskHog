@@ -5,6 +5,7 @@
 #include <WebServer.h>
 #include "ConfigManager.h"
 #include "hardware/WifiInterface.h"
+#include "html_portal.h"  // Include generated HTML header
 
 class CaptivePortal {
 public:
@@ -27,11 +28,14 @@ private:
     // WiFi manager reference
     WiFiInterface& _wifiInterface;
 
-    // Handle root page
+    // Handle main portal page
     void handleRoot();
-
+    
+    // Handle scan networks request
+    void handleScanNetworks();
+    
     // Handle WiFi configuration form
-    void handleWifiConfig();
+    void handleSaveWifi();
 
     // Handle captive portal detection
     void handleCaptivePortal();
@@ -41,11 +45,6 @@ private:
 
     // Scan available networks
     String getScanNetworksHtml();
-
-    // HTTP response helpers
-    void sendHeader(const String& title);
-    void sendFooter();
-    String getRedirectScript(const String& url, int delay);
 };
 
 #endif // CAPTIVE_PORTAL_H

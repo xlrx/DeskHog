@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 WiFi Setup</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            background-color: #f5f5f5; 
+            color: #333; 
+        }
+        .container { 
+            max-width: 800px; 
+            margin: 20px auto; 
+            padding: 20px; 
+            background-color: white; 
+            border-radius: 5px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+        }
+        h1, h2 { color: #0066cc; }
+        .header { 
+            background-color: #0066cc; 
+            color: white; 
+            padding: 10px 20px; 
+            text-align: center; 
+        }
+        .form-group { margin-bottom: 15px; }
+        label { 
+            display: block; 
+            margin-bottom: 5px; 
+            font-weight: bold; 
+        }
+        input[type='text'], input[type='password'], select { 
+            width: 100%; 
+            padding: 8px; 
+            border: 1px solid #ddd; 
+            border-radius: 4px; 
+            box-sizing: border-box; 
+        }
+        .button-container { 
+            margin-top: 15px; 
+            text-align: center; 
+        }
+        .button { 
+            display: inline-block; 
+            padding: 10px 20px; 
+            background-color: #0066cc; 
+            color: white; 
+            text-decoration: none; 
+            border-radius: 4px; 
+            border: none; 
+            cursor: pointer; 
+        }
+        .button.secondary { background-color: #777; }
+        .button:hover { background-color: #0055aa; }
+        .button.secondary:hover { background-color: #666; }
+        footer { 
+            text-align: center; 
+            margin-top: 20px; 
+            color: #777; 
+            font-size: 0.8em; 
+        }
+        .network-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .network-item {
+            padding: 8px 15px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+        .network-item:hover {
+            background-color: #f5f5f5;
+        }
+        .network-item.selected {
+            background-color: #e0f0ff;
+        }
+        .signal-strength {
+            float: right;
+            font-size: 0.8em;
+            color: #666;
+        }
+        .lock-icon {
+            margin-left: 5px;
+        }
+        .success-icon {
+            color: #28a745;
+            font-size: 48px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .progress {
+            height: 4px;
+            background-color: #e9ecef;
+            border-radius: 2px;
+            margin: 20px 0;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background-color: #0066cc;
+            width: 0%;
+            transition: width 10s linear;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 id="page-title">ESP32 WiFi Setup</h1>
+    </div>
+    
+    <!-- Home Screen -->
+    <div id="home-screen" class="container">
+        <h2>Welcome to ESP32 WiFi Setup</h2>
+        <p>This portal allows you to configure your device's WiFi connection.</p>
+        <p>Click the button below to scan for available networks and set up your WiFi connection.</p>
+        
+        <div class="button-container">
+            <a href="javascript:showScreen('config-screen')" class="button">Configure WiFi</a>
+        </div>
+    </div>
+    
+    <!-- Configuration Screen -->
+    <div id="config-screen" class="container hidden">
+        <h2>Configure WiFi Connection</h2>
+        <p>Please select your WiFi network and enter the password if required.</p>
+        
+        <form id="wifi-form" onsubmit="return saveWifiConfig()">
+            <div class="form-group">
+                <label for="ssid">WiFi Network:</label>
+                <select name="ssid" id="ssid" required>
+                    <!-- NETWORK_LIST_PLACEHOLDER -->
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" name="password" id="password">
+            </div>
+            
+            <div class="button-container">
+                <button type="submit" class="button">Save Configuration</button>
+            </div>
+        </form>
+        
+        <div class="button-container" style="margin-top: 20px;">
+            <a href="javascript:refreshNetworks()" class="button secondary">Refresh Network List</a>
+            <a href="javascript:showScreen('home-screen')" class="button secondary">Back</a>
+        </div>
+    </div>
+    
+    <!-- Success Screen -->
+    <div id="success-screen" class="container hidden">
+        <div class="success-icon">✓</div>
+        <h2>WiFi Configuration Saved</h2>
+        <p>The device will now attempt to connect to the WiFi network.</p>
+        <p>If the connection is successful, the device will restart in normal mode.</p>
+        <p>If the connection fails, the setup portal will be available again.</p>
+        
+        <div class="progress">
+            <div id="progress-bar" class="progress-bar"></div>
+        </div>
+        
+        <p>Redirecting in <span id="countdown">10</span> seconds...</p>
+    </div>
+    
+    <!-- Error Screen -->
+    <div id="error-screen" class="container hidden">
+        <h2>Error Saving Configuration</h2>
+        <p>There was an error saving your WiFi configuration.</p>
+        <p>Please try again.</p>
+        
+        <div class="button-container">
+            <a href="javascript:showScreen('config-screen')" class="button">Back</a>
+        </div>
+    </div>
+    
+    <footer>&copy; 2024 ESP32 WiFi Setup</footer>
+    
+    <script>
+        // Show the specified screen and hide others
+        function showScreen(screenId) {
+            const screens = ['home-screen', 'config-screen', 'success-screen', 'error-screen'];
+            screens.forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(screenId).classList.remove('hidden');
+            
+            // Update page title
+            let title = "ESP32 WiFi Setup";
+            if (screenId === 'config-screen') title = "WiFi Configuration";
+            else if (screenId === 'success-screen') title = "WiFi Configuration Saved";
+            else if (screenId === 'error-screen') title = "Configuration Error";
+            document.getElementById('page-title').textContent = title;
+            
+            // Start countdown if success screen
+            if (screenId === 'success-screen') {
+                startCountdown();
+                document.getElementById('progress-bar').style.width = '100%';
+            }
+        }
+        
+        // Handle form submission
+        function saveWifiConfig() {
+            const form = document.getElementById('wifi-form');
+            const formData = new FormData(form);
+            
+            fetch('/save-wifi', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showScreen('success-screen');
+                } else {
+                    showScreen('error-screen');
+                }
+            })
+            .catch(() => {
+                showScreen('error-screen');
+            });
+            
+            return false; // Prevent default form submission
+        }
+        
+        // Refresh network list
+        function refreshNetworks() {
+            fetch('/scan-networks')
+            .then(response => response.text())
+            .then(html => {
+                document.getElementById('ssid').innerHTML = html;
+            });
+        }
+        
+        // Start countdown on success screen
+        function startCountdown() {
+            let seconds = 10;
+            const countdownEl = document.getElementById('countdown');
+            
+            const interval = setInterval(() => {
+                seconds--;
+                countdownEl.textContent = seconds;
+                
+                if (seconds <= 0) {
+                    clearInterval(interval);
+                    window.location.href = '/';
+                }
+            }, 1000);
+        }
+        
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if we need to show a specific screen based on URL hash
+            const hash = window.location.hash.substr(1);
+            if (hash && ['home-screen', 'config-screen', 'success-screen', 'error-screen'].includes(hash)) {
+                showScreen(hash);
+            }
+        });
+    </script>
+</body>
+</html>
