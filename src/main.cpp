@@ -7,6 +7,7 @@
 #include "ui/ProvisioningCard.h"
 #include "hardware/DisplayInterface.h"
 #include "ui/CardNavigationStack.h"
+#include "hardware/Input.h"
 
 // Display dimensions
 #define SCREEN_WIDTH 240
@@ -14,6 +15,17 @@
 
 // LVGL display buffer size
 #define LVGL_BUFFER_ROWS 135  // Full screen height
+
+// Button configuration
+#define NUM_BUTTONS 3
+const uint8_t BUTTON_PINS[NUM_BUTTONS] = {
+    Input::BUTTON_DOWN,    // BOOT button
+    Input::BUTTON_CENTER,  // Center button
+    Input::BUTTON_UP       // Up button
+};
+
+// Define the global buttons array
+Bounce2::Button buttons[NUM_BUTTONS];
 
 // Global objects
 DisplayInterface* display_manager;
@@ -27,11 +39,6 @@ CardNavigationStack* card_stack;
 TaskHandle_t wifiTask;
 TaskHandle_t portalTask;
 TaskHandle_t buttonTask;
-
-// Button pins
-#define NUM_BUTTONS 3
-Bounce2::Button buttons[NUM_BUTTONS];
-const uint8_t BUTTON_PINS[NUM_BUTTONS] = {0, 1, 2}; // Replace with your actual button pins
 
 // WiFi connection timeout in milliseconds
 #define WIFI_TIMEOUT 30000
@@ -93,16 +100,13 @@ void setup() {
     captive_portal->begin();
     
     // Initialize buttons
-    for (int i = 0; i < NUM_BUTTONS; i++) {
-        buttons[i].attach(BUTTON_PINS[i], INPUT_PULLUP);
-        buttons[i].interval(5);
-        buttons[i].setPressedState(LOW);
-    }
+    Input::configureButtons();
     
     // Create card navigation stack with 3 cards
     card_stack = new CardNavigationStack(lv_scr_act(), SCREEN_WIDTH, SCREEN_HEIGHT, 3);
     
     // Add cards with different colors and labels
+
     card_stack->addCard(lv_color_hex(0x2980b9), "Card 1");
     card_stack->addCard(lv_color_hex(0x27ae60), "Card 2");
     card_stack->addCard(lv_color_hex(0xe74c3c), "Card 3");
