@@ -6,6 +6,7 @@
 #include "ui/CaptivePortal.h"
 #include "ui/ProvisioningCard.h"
 #include "hardware/DisplayInterface.h"
+#include "ui/CardNavigationStack.h"
 
 // Display dimensions
 #define SCREEN_WIDTH 240
@@ -20,10 +21,17 @@ ConfigManager* config_manager;
 WiFiInterface* wifi_interface;
 CaptivePortal* captive_portal;
 ProvisioningCard* provisioning_card;
+CardNavigationStack* card_stack;
 
 // Task handles
 TaskHandle_t wifiTask;
 TaskHandle_t portalTask;
+TaskHandle_t buttonTask;
+
+// Button pins
+#define NUM_BUTTONS 3
+Bounce2::Button buttons[NUM_BUTTONS];
+const uint8_t BUTTON_PINS[NUM_BUTTONS] = {0, 1, 2}; // Replace with your actual button pins
 
 // WiFi connection timeout in milliseconds
 #define WIFI_TIMEOUT 30000
@@ -83,6 +91,35 @@ void setup() {
     // Initialize captive portal
     captive_portal = new CaptivePortal(*config_manager, *wifi_interface);
     captive_portal->begin();
+    
+    // Initialize buttons
+    for (int i = 0; i < NUM_BUTTONS; i++) {
+        buttons[i].attach(BUTTON_PINS[i], INPUT_PULLUP);
+        buttons[i].interval(5);
+        buttons[i].setPressedState(LOW);
+    }
+    
+    // Create card navigation stack with 3 cards
+    card_stack = new CardNavigationStack(lv_scr_act(), SCREEN_WIDTH, SCREEN_HEIGHT, 3);
+    
+    // Add cards with different colors and labels
+    card_stack->addCard(lv_color_hex(0x2980b9), "Card 1");
+    card_stack->addCard(lv_color_hex(0x27ae60), "Card 2");
+    card_stack->addCard(lv_color_hex(0xe74c3c), "Card 3");
+    
+    // Set mutex for thread safety
+    card_stack->setMutex(display_manager->getMutexPtr());
+    
+    // Create task for button handling
+    xTaskCreatePinnedToCore(
+        CardNavigationStack::buttonTask,
+        "buttonTask",
+        2048,
+        NULL,
+        1,
+        &buttonTask,
+        0
+    );
     
     // Create task for WiFi operations
     xTaskCreatePinnedToCore(
