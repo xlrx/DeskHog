@@ -10,6 +10,11 @@ void CaptivePortal::begin() {
     _server.on("/", [this]() { handleRoot(); });
     _server.on("/scan-networks", [this]() { handleScanNetworks(); });
     _server.on("/save-wifi", [this]() { handleSaveWifi(); });
+    _server.on("/get-device-config", [this]() { handleGetDeviceConfig(); });
+    _server.on("/save-device-config", [this]() { handleSaveDeviceConfig(); });
+    _server.on("/get-insights", [this]() { handleGetInsights(); });
+    _server.on("/save-insight", [this]() { handleSaveInsight(); });
+    _server.on("/delete-insight", [this]() { handleDeleteInsight(); });
     _server.on("/generate_204", [this]() { handleCaptivePortal(); }); // Android captive portal detection
     _server.on("/fwlink", [this]() { handleCaptivePortal(); }); // Microsoft captive portal detection
     
@@ -57,6 +62,128 @@ void CaptivePortal::handleSaveWifi() {
     // Return JSON response
     String response = "{\"success\":" + String(success ? "true" : "false") + "}";
     _server.send(200, "application/json", response);
+}
+
+void CaptivePortal::handleGetDeviceConfig() {
+    // Create JSON response with current config
+    StaticJsonDocument<256> doc;
+    doc["teamId"] = _configManager.getTeamId();
+    doc["apiKey"] = _configManager.getApiKey();
+    
+    String response;
+    serializeJson(doc, response);
+    _server.send(200, "application/json", response);
+}
+
+void CaptivePortal::handleSaveDeviceConfig() {
+    bool success = true;
+    String message;
+    
+    // Handle team ID
+    if (_server.hasArg("teamId")) {
+        int teamId = _server.arg("teamId").toInt();
+        _configManager.setTeamId(teamId);
+    }
+    
+    // Handle API key
+    if (_server.hasArg("apiKey")) {
+        String apiKey = _server.arg("apiKey");
+        if (!_configManager.setApiKey(apiKey)) {
+            success = false;
+            message = "Invalid API key";
+        }
+    }
+    
+    // Create JSON response
+    StaticJsonDocument<128> doc;
+    doc["success"] = success;
+    if (!success) {
+        doc["message"] = message;
+    }
+    
+    String response;
+    serializeJson(doc, response);
+    _server.send(200, "application/json", response);
+}
+
+void CaptivePortal::handleGetInsights() {
+    // Create JSON response with insights list
+    DynamicJsonDocument doc(4096);  // Adjust size based on your needs
+    JsonArray insights = doc.createNestedArray("insights");
+    
+    auto ids = _configManager.getAllInsightIds();
+    for (const auto& id : ids) {
+        JsonObject insight = insights.createNestedObject();
+        insight["id"] = id;
+    }
+    
+    String response;
+    serializeJson(doc, response);
+    _server.send(200, "application/json", response);
+}
+
+void CaptivePortal::handleSaveInsight() {
+    bool success = false;
+    String message;
+    
+    if (_server.hasArg("insightId") && _server.hasArg("insightContent")) {
+        String id = _server.arg("insightId");
+        String content = _server.arg("insightContent");
+        
+        success = _configManager.saveInsight(id, content);
+        if (!success) {
+            message = "Failed to save insight";
+        }
+    } else {
+        message = "Missing required fields";
+    }
+    
+    // Create JSON response
+    StaticJsonDocument<128> doc;
+    doc["success"] = success;
+    if (!success) {
+        doc["message"] = message;
+    }
+    
+    String response;
+    serializeJson(doc, response);
+    _server.send(200, "application/json", response);
+}
+
+void CaptivePortal::handleDeleteInsight() {
+    bool success = false;
+    String message;
+    
+    // Parse JSON request body
+    StaticJsonDocument<128> doc;
+    if (_server.hasArg("plain")) {
+        DeserializationError error = deserializeJson(doc, _server.arg("plain"));
+        
+        if (!error) {
+            const char* id = doc["id"];
+            if (id) {
+                _configManager.deleteInsight(id);
+                success = true;
+            } else {
+                message = "Missing insight ID";
+            }
+        } else {
+            message = "Invalid JSON";
+        }
+    } else {
+        message = "Missing request body";
+    }
+    
+    // Create JSON response
+    StaticJsonDocument<128> response;
+    response["success"] = success;
+    if (!success) {
+        response["message"] = message;
+    }
+    
+    String responseStr;
+    serializeJson(response, responseStr);
+    _server.send(200, "application/json", responseStr);
 }
 
 void CaptivePortal::handleCaptivePortal() {

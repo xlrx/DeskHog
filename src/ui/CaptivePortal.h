@@ -37,6 +37,15 @@ private:
     // Handle WiFi configuration form
     void handleSaveWifi();
 
+    // Handle device configuration
+    void handleGetDeviceConfig();
+    void handleSaveDeviceConfig();
+
+    // Handle insights management
+    void handleGetInsights();
+    void handleSaveInsight();
+    void handleDeleteInsight();
+
     // Handle captive portal detection
     void handleCaptivePortal();
 

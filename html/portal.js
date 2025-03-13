@@ -1,14 +1,13 @@
 function showScreen(screenId) {
-    const screens = ['home-screen', 'config-screen', 'success-screen', 'error-screen'];
+    const screens = ['config-screen', 'success-screen', 'error-screen'];
     screens.forEach(id => {
         document.getElementById(id).classList.add('hidden');
     });
     document.getElementById(screenId).classList.remove('hidden');
     
     // Update page title
-    let title = "ESP32 WiFi Setup";
-    if (screenId === 'config-screen') title = "WiFi Configuration";
-    else if (screenId === 'success-screen') title = "WiFi Configuration Saved";
+    let title = "DeskHog Configuration";
+    if (screenId === 'success-screen') title = "Configuration Saved";
     else if (screenId === 'error-screen') title = "Configuration Error";
     document.getElementById('page-title').textContent = title;
     
@@ -19,7 +18,7 @@ function showScreen(screenId) {
     }
 }
 
-// Handle form submission
+// Handle WiFi form submission
 function saveWifiConfig() {
     const form = document.getElementById('wifi-form');
     const formData = new FormData(form);
@@ -41,6 +40,120 @@ function saveWifiConfig() {
     });
     
     return false; // Prevent default form submission
+}
+
+// Handle device config form submission
+function saveDeviceConfig() {
+    const form = document.getElementById('device-form');
+    const formData = new FormData(form);
+    
+    fetch('/save-device-config', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showScreen('success-screen');
+        } else {
+            showScreen('error-screen');
+        }
+    })
+    .catch(() => {
+        showScreen('error-screen');
+    });
+    
+    return false;
+}
+
+// Toggle API key visibility
+function toggleApiKeyVisibility() {
+    const apiKeyInput = document.getElementById('apiKey');
+    apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
+}
+
+// Add new insight
+function addInsight() {
+    const form = document.getElementById('insight-form');
+    const formData = new FormData(form);
+    
+    fetch('/save-insight', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            form.reset();
+            loadInsights();
+        } else {
+            showScreen('error-screen');
+        }
+    })
+    .catch(() => {
+        showScreen('error-screen');
+    });
+    
+    return false;
+}
+
+// Delete insight
+function deleteInsight(id) {
+    if (!confirm('Are you sure you want to delete this insight?')) {
+        return;
+    }
+    
+    fetch('/delete-insight', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id: id })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            loadInsights();
+        } else {
+            showScreen('error-screen');
+        }
+    })
+    .catch(() => {
+        showScreen('error-screen');
+    });
+}
+
+// Load insights list
+function loadInsights() {
+    fetch('/get-insights')
+    .then(response => response.json())
+    .then(data => {
+        const container = document.getElementById('insights-list');
+        container.innerHTML = '';
+        
+        if (data.insights.length === 0) {
+            container.innerHTML = '<p>No insights configured</p>';
+            return;
+        }
+        
+        const list = document.createElement('ul');
+        list.className = 'insights-list';
+        
+        data.insights.forEach(insight => {
+            const item = document.createElement('li');
+            item.className = 'insight-item';
+            item.innerHTML = `
+                <span class="insight-id">${insight.id}</span>
+                <button onclick="deleteInsight('${insight.id}')" class="button danger">Delete</button>
+            `;
+            list.appendChild(item);
+        });
+        
+        container.appendChild(list);
+    })
+    .catch(error => {
+        console.error('Error loading insights:', error);
+    });
 }
 
 // Refresh network list
@@ -68,11 +181,34 @@ function startCountdown() {
     }, 1000);
 }
 
+// Load current configuration
+function loadCurrentConfig() {
+    fetch('/get-device-config')
+    .then(response => response.json())
+    .then(data => {
+        if (data.teamId !== undefined) {
+            document.getElementById('teamId').value = data.teamId;
+        }
+        if (data.apiKey) {
+            document.getElementById('apiKey').value = data.apiKey;
+        }
+    })
+    .catch(error => {
+        console.error('Error loading device config:', error);
+    });
+}
+
 // Initialize page
 document.addEventListener('DOMContentLoaded', function() {
     // Check if we need to show a specific screen based on URL hash
     const hash = window.location.hash.substr(1);
-    if (hash && ['home-screen', 'config-screen', 'success-screen', 'error-screen'].includes(hash)) {
+    if (hash && ['config-screen', 'success-screen', 'error-screen'].includes(hash)) {
         showScreen(hash);
     }
+    
+    // Load current configuration
+    loadCurrentConfig();
+    
+    // Load insights list
+    loadInsights();
 });
