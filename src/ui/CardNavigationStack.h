@@ -13,7 +13,10 @@ public:
     // Constructor
     CardNavigationStack(lv_obj_t* parent, uint16_t width, uint16_t height, uint8_t num_cards);
     
-    // Add a card with specified color and label text
+    // Add an existing LVGL object as a card
+    void addCard(lv_obj_t* card);
+    
+    // Legacy method for simple colored cards with labels (deprecated)
     void addCard(lv_color_t color, const char* label_text);
     
     // Navigate to next card

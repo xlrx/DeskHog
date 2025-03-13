@@ -62,24 +62,36 @@ CardNavigationStack::CardNavigationStack(lv_obj_t* parent, uint16_t width, uint1
     lv_obj_set_style_bg_color(first_pip, lv_color_white(), 0);
 }
 
-void CardNavigationStack::addCard(lv_color_t color, const char* label_text) {
-    lv_obj_t* card = lv_obj_create(_main_container);
+void CardNavigationStack::addCard(lv_obj_t* card) {
+    // Set the card's parent to our container
+    lv_obj_set_parent(card, _main_container);
+    
+    // Configure the card's size and style
     lv_obj_set_size(card, lv_pct(100), _height);  // Full width and height
     lv_obj_set_style_radius(card, 8, 0);
     lv_obj_set_style_border_width(card, 0, 0);
-    lv_obj_set_style_bg_color(card, color, 0);
     lv_obj_set_style_pad_all(card, 0, 0);
     
+    // Make sure the first card is centered on initial load
+    if (lv_obj_get_child_cnt(_main_container) == 1) {
+        lv_obj_scroll_to_view(card, LV_ANIM_OFF);
+    }
+}
+
+void CardNavigationStack::addCard(lv_color_t color, const char* label_text) {
+    // Create a new card container
+    lv_obj_t* card = lv_obj_create(_parent);
+    lv_obj_set_style_bg_color(card, color, 0);
+    
+    // Create and configure the label
     lv_obj_t* label = lv_label_create(card);
     lv_label_set_text(label, label_text);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
     lv_obj_center(label);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     
-    // Make sure the first card is centered on initial load
-    if (lv_obj_get_child_cnt(_main_container) == 1) {
-        lv_obj_scroll_to_view(card, LV_ANIM_OFF);
-    }
+    // Add the card to the navigation stack
+    addCard(card);
 }
 
 void CardNavigationStack::nextCard() {

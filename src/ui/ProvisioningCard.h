@@ -25,6 +25,9 @@ public:
     // Show WiFi status screen
     void showWiFiStatus();
 
+    // Get the main card container
+    lv_obj_t* getCard() const { return _card; }
+
 private:
     // Screen dimensions
     uint16_t _width;
@@ -35,6 +38,9 @@ private:
 
     // WiFi Manager reference
     WiFiInterface& _wifiInterface;
+
+    // Main card container
+    lv_obj_t* _card;
 
     // UI screens
     lv_obj_t* _qrScreen;     // QR code screen

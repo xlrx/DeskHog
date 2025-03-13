@@ -84,6 +84,12 @@ void setup() {
     wifi_interface = new WiFiInterface(*config_manager);
     wifi_interface->begin();
     
+    // Initialize buttons
+    Input::configureButtons();
+    
+    // Create card navigation stack with 2 cards
+    card_stack = new CardNavigationStack(lv_scr_act(), SCREEN_WIDTH, SCREEN_HEIGHT, 2);
+    
     // Create provision UI
     provisioning_card = new ProvisioningCard(
         lv_scr_act(), 
@@ -92,24 +98,18 @@ void setup() {
         SCREEN_HEIGHT
     );
     
+    // Add provisioning card to navigation stack
+    card_stack->addCard(provisioning_card->getCard());
+    
+    // Add a sample metrics card
+    card_stack->addCard(lv_color_hex(0xe74c3c), "Metrics");
+    
     // Connect WiFi manager to UI
     wifi_interface->setUI(provisioning_card);
     
     // Initialize captive portal
     captive_portal = new CaptivePortal(*config_manager, *wifi_interface);
     captive_portal->begin();
-    
-    // Initialize buttons
-    Input::configureButtons();
-    
-    // Create card navigation stack with 3 cards
-    card_stack = new CardNavigationStack(lv_scr_act(), SCREEN_WIDTH, SCREEN_HEIGHT, 3);
-    
-    // Add cards with different colors and labels
-
-    card_stack->addCard(lv_color_hex(0x2980b9), "Card 1");
-    card_stack->addCard(lv_color_hex(0x27ae60), "Card 2");
-    card_stack->addCard(lv_color_hex(0xe74c3c), "Card 3");
     
     // Set mutex for thread safety
     card_stack->setMutex(display_manager->getMutexPtr());

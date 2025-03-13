@@ -2,14 +2,34 @@
 
 ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterface, uint16_t width, uint16_t height)
     : _parent(parent), _wifiInterface(wifiInterface), _width(width), _height(height),
-    _qrScreen(nullptr), _statusScreen(nullptr) {
+    _card(nullptr), _qrScreen(nullptr), _statusScreen(nullptr) {
     
-    // Create both screens
+    // Create main card container
+    _card = lv_obj_create(_parent);
+    lv_obj_set_size(_card, width, height);
+    lv_obj_set_style_bg_color(_card, lv_color_white(), 0);
+    lv_obj_set_style_pad_all(_card, 0, 0);
+    lv_obj_set_style_radius(_card, 8, 0);
+    lv_obj_set_style_border_width(_card, 0, 0);
+    
+    // Create both screens as children of the card
+    _qrScreen = lv_obj_create(_card);
+    _statusScreen = lv_obj_create(_card);
+    
+    // Configure screens to take full card size
+    lv_obj_set_size(_qrScreen, width, height);
+    lv_obj_set_size(_statusScreen, width, height);
+    
+    // Position screens at 0,0 relative to card
+    lv_obj_set_pos(_qrScreen, 0, 0);
+    lv_obj_set_pos(_statusScreen, 0, 0);
+    
+    // Create the screen contents
     createQRScreen();
     createStatusScreen();
     
-    // Hide both screens initially
-    lv_obj_add_flag(_qrScreen, LV_OBJ_FLAG_HIDDEN);
+    // Initially show QR screen and hide status screen
+    lv_obj_clear_flag(_qrScreen, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(_statusScreen, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -58,15 +78,13 @@ void ProvisioningCard::showWiFiStatus() {
 }
 
 void ProvisioningCard::createQRScreen() {
-    _qrScreen = lv_obj_create(_parent);
-    lv_obj_set_size(_qrScreen, _width, _height);
-    lv_obj_set_pos(_qrScreen, 0, 0);
     lv_obj_set_style_bg_color(_qrScreen, lv_color_white(), 0);
     lv_obj_set_style_pad_all(_qrScreen, 0, 0);
+    lv_obj_set_style_border_width(_qrScreen, 0, 0);
     
     // Create QR code with LVGL's built-in component
-    // Use the full height of the screen since we don't need space for labels anymore
-    const int qr_size = _height;
+    // Use a slightly smaller size to ensure it fits within the screen
+    const int qr_size = _height - 20;  // Leave some padding
     
     // Create a placeholder QR code with empty data (will be updated later)
     _qrCode = lv_qrcode_create(_qrScreen, qr_size, lv_color_black(), lv_color_white());
@@ -75,11 +93,9 @@ void ProvisioningCard::createQRScreen() {
 }
 
 void ProvisioningCard::createStatusScreen() {
-    _statusScreen = lv_obj_create(_parent);
-    lv_obj_set_size(_statusScreen, _width, _height);
-    lv_obj_set_pos(_statusScreen, 0, 0);
     lv_obj_set_style_bg_color(_statusScreen, lv_color_white(), 0);
     lv_obj_set_style_pad_all(_statusScreen, 10, 0);
+    lv_obj_set_style_border_width(_statusScreen, 0, 0);
     
     // Create title
     lv_obj_t* title = lv_label_create(_statusScreen);
@@ -125,7 +141,6 @@ void ProvisioningCard::createStatusScreen() {
     _signalIcon = lv_obj_create(signalContainer);
     lv_obj_set_size(_signalIcon, 20, 20);
     lv_obj_align(_signalIcon, LV_ALIGN_RIGHT_MID, 0, 0);
-    // In a real implementation, you would set an icon here
 }
 
 String ProvisioningCard::generateQRCodeData(const String& ssid, const String& password) {
