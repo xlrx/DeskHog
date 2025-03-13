@@ -28,12 +28,12 @@ const uint8_t BUTTON_PINS[NUM_BUTTONS] = {
 Bounce2::Button buttons[NUM_BUTTONS];
 
 // Global objects
-DisplayInterface* display_manager;
-ConfigManager* config_manager;
-WiFiInterface* wifi_interface;
-CaptivePortal* captive_portal;
-ProvisioningCard* provisioning_card;
-CardNavigationStack* card_stack;
+DisplayInterface* displayInterface;
+ConfigManager* configManager;
+WiFiInterface* wifiInterface;
+CaptivePortal* captivePortal;
+ProvisioningCard* provisioningCard;
+CardNavigationStack* cardStack;
 
 // Task handles
 TaskHandle_t wifiTask;
@@ -47,7 +47,7 @@ TaskHandle_t buttonTask;
 void wifiTaskFunction(void* parameter) {
     while (1) {
         // Process WiFi events
-        wifi_interface->process();
+        wifiInterface->process();
         
         // Delay to prevent hogging CPU
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -58,7 +58,7 @@ void wifiTaskFunction(void* parameter) {
 void portalTaskFunction(void* parameter) {
     while (1) {
         // Process portal requests regardless of mode
-        captive_portal->process();
+        captivePortal->process();
         
         // Delay to prevent hogging CPU
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -70,49 +70,49 @@ void setup() {
     Serial.println("Starting up...");
     
     // Initialize config manager
-    config_manager = new ConfigManager();
-    config_manager->begin();
+    configManager = new ConfigManager();
+    configManager->begin();
     
     // Initialize display manager
-    display_manager = new DisplayInterface(
+    displayInterface = new DisplayInterface(
         SCREEN_WIDTH, SCREEN_HEIGHT, LVGL_BUFFER_ROWS, 
         TFT_CS, TFT_DC, TFT_RST, TFT_BACKLITE
     );
-    display_manager->begin();
+    displayInterface->begin();
     
     // Initialize WiFi manager
-    wifi_interface = new WiFiInterface(*config_manager);
-    wifi_interface->begin();
+    wifiInterface = new WiFiInterface(*configManager);
+    wifiInterface->begin();
     
     // Initialize buttons
     Input::configureButtons();
     
     // Create card navigation stack with 2 cards
-    card_stack = new CardNavigationStack(lv_scr_act(), SCREEN_WIDTH, SCREEN_HEIGHT, 2);
+    cardStack = new CardNavigationStack(lv_scr_act(), SCREEN_WIDTH, SCREEN_HEIGHT, 2);
     
     // Create provision UI
-    provisioning_card = new ProvisioningCard(
+    provisioningCard = new ProvisioningCard(
         lv_scr_act(), 
-        *wifi_interface, 
+        *wifiInterface, 
         SCREEN_WIDTH, 
         SCREEN_HEIGHT
     );
     
     // Add provisioning card to navigation stack
-    card_stack->addCard(provisioning_card->getCard());
+    cardStack->addCard(provisioningCard->getCard());
     
     // Add a sample metrics card
-    card_stack->addCard(lv_color_hex(0xe74c3c), "Metrics");
+    cardStack->addCard(lv_color_hex(0xe74c3c), "Metrics");
     
     // Connect WiFi manager to UI
-    wifi_interface->setUI(provisioning_card);
+    wifiInterface->setUI(provisioningCard);
     
     // Initialize captive portal
-    captive_portal = new CaptivePortal(*config_manager, *wifi_interface);
-    captive_portal->begin();
+    captivePortal = new CaptivePortal(*configManager, *wifiInterface);
+    captivePortal->begin();
     
     // Set mutex for thread safety
-    card_stack->setMutex(display_manager->getMutexPtr());
+    cardStack->setMutex(displayInterface->getMutexPtr());
     
     // Create task for button handling
     xTaskCreatePinnedToCore(
@@ -162,7 +162,7 @@ void setup() {
     xTaskCreatePinnedToCore(
         [](void *parameter) {
             while (1) {
-                display_manager->handleLVGLTasks();
+                displayInterface->handleLVGLTasks();
                 vTaskDelay(pdMS_TO_TICKS(5));
             }
         },
@@ -175,22 +175,22 @@ void setup() {
     );
     
     // Check if we have WiFi credentials
-    if (config_manager->hasWiFiCredentials()) {
+    if (configManager->hasWiFiCredentials()) {
         Serial.println("Found WiFi credentials, attempting to connect...");
         
         // Try to connect to WiFi with stored credentials
-        if (wifi_interface->connectToStoredNetwork(WIFI_TIMEOUT)) {
-            provisioning_card->updateConnectionStatus("Connecting to WiFi...");
-            provisioning_card->showWiFiStatus();
+        if (wifiInterface->connectToStoredNetwork(WIFI_TIMEOUT)) {
+            provisioningCard->updateConnectionStatus("Connecting to WiFi...");
+            provisioningCard->showWiFiStatus();
         } else {
             Serial.println("Failed to connect with stored credentials");
             // Start AP mode
-            wifi_interface->startAccessPoint();
+            wifiInterface->startAccessPoint();
         }
     } else {
         Serial.println("No WiFi credentials found, starting AP mode");
         // Start AP mode
-        wifi_interface->startAccessPoint();
+        wifiInterface->startAccessPoint();
     }
 }
 
