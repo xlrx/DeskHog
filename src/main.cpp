@@ -7,6 +7,7 @@
 #include "ui/ProvisioningCard.h"
 #include "hardware/DisplayInterface.h"
 #include "ui/CardNavigationStack.h"
+#include "ui/InsightCard.h"
 #include "hardware/Input.h"
 
 // Display dimensions
@@ -34,11 +35,13 @@ WiFiInterface* wifiInterface;
 CaptivePortal* captivePortal;
 ProvisioningCard* provisioningCard;
 CardNavigationStack* cardStack;
+std::vector<InsightCard*> insightCards;  // Store pointers to insight cards
 
 // Task handles
 TaskHandle_t wifiTask;
 TaskHandle_t portalTask;
 TaskHandle_t buttonTask;
+TaskHandle_t insightTask;
 
 // WiFi connection timeout in milliseconds
 #define WIFI_TIMEOUT 30000
@@ -65,8 +68,19 @@ void portalTaskFunction(void* parameter) {
     }
 }
 
+// Insight processing task
+void insightTaskFunction(void* parameter) {
+    while (1) {
+        for (auto* card : insightCards) {
+            card->process();
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));  // Check every 100ms
+    }
+}
+
 void setup() {
     Serial.begin(115200);
+    delay(100);  // Give serial port time to initialize
     Serial.println("Starting up...");
     
     // Initialize config manager
@@ -87,8 +101,12 @@ void setup() {
     // Initialize buttons
     Input::configureButtons();
     
-    // Create card navigation stack with 2 cards
-    cardStack = new CardNavigationStack(lv_scr_act(), SCREEN_WIDTH, SCREEN_HEIGHT, 2);
+    // Get count of insights to determine card count
+    std::vector<String> insightIds = configManager->getAllInsightIds();
+    int totalCards = insightIds.size() + 2;  // +2 for provisioning and metrics cards
+    
+    // Create card navigation stack
+    cardStack = new CardNavigationStack(lv_scr_act(), SCREEN_WIDTH, SCREEN_HEIGHT, totalCards);
     
     // Create provision UI
     provisioningCard = new ProvisioningCard(
@@ -100,6 +118,19 @@ void setup() {
     
     // Add provisioning card to navigation stack
     cardStack->addCard(provisioningCard->getCard());
+    
+    // Create and add insight cards
+    for (const String& id : insightIds) {
+        auto* insightCard = new InsightCard(
+            lv_scr_act(),
+            *configManager,
+            id,
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT
+        );
+        cardStack->addCard(insightCard->getCard());
+        insightCards.push_back(insightCard);  // Store the pointer
+    }
     
     // Add a sample metrics card
     cardStack->addCard(lv_color_hex(0xe74c3c), "Metrics");
@@ -144,6 +175,17 @@ void setup() {
         NULL,
         1,
         &portalTask,
+        0
+    );
+    
+    // Create task for insight processing
+    xTaskCreatePinnedToCore(
+        insightTaskFunction,
+        "insightTask",
+        81920,
+        NULL,
+        1,
+        &insightTask,
         0
     );
     

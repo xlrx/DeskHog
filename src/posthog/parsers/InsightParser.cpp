@@ -1,7 +1,7 @@
 #include "InsightParser.h"
 #include <stdio.h>
 
-InsightParser::InsightParser(const char* json) : valid(false) {
+InsightParser::InsightParser(const char* json) : doc(65536), valid(false) {
     DeserializationError error = deserializeJson(doc, json);
     if (error) {
         printf("JSON Deserialization failed: %s\n", error.c_str());

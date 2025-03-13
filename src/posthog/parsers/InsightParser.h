@@ -15,6 +15,11 @@ public:
     static const size_t MAX_SERIES_POINTS = 54;  // Based on current sample, adjust if needed
 
     InsightParser(const char* json);
+    ~InsightParser() = default;  // Explicitly declare destructor
+    
+    // Delete copy constructor and assignment operator
+    InsightParser(const InsightParser&) = delete;
+    InsightParser& operator=(const InsightParser&) = delete;
     
     // Get the insight name (e.g., "Active Viewers")
     bool getName(char* buffer, size_t bufferSize);
@@ -40,6 +45,6 @@ private:
     bool hasLineGraphStructure() const;
     bool hasAreaChartStructure() const;
 
-    StaticJsonDocument<65536> doc;  // 64KB for larger JSON responses
+    DynamicJsonDocument doc;  // Changed from StaticJsonDocument to DynamicJsonDocument
     bool valid;
 }; 
