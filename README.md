@@ -17,6 +17,8 @@ Tasks:
  - [ ] Polish
    - [ ] Refine card design
    - [ ] Convert Inter or similar for use, including LARGE and bold variants
+   - [ ] Refine configuration portal layout/CSS
+   - [ ] Add access control to config portal
    - [ ] Don't run out of storage space or RAM 😥
 
 Later (DeskHog Pro):
