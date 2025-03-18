@@ -6,7 +6,7 @@ Tasks:
 - [ ] Event bus or maybe notifications so components can respond to such state changes
 - [ ] Insights
   - [x] Numeric card
-  - [ ] Line graph
+  - [x] Line graph
   - [ ] Area graph
   - [ ] Funnel
   - [ ] Bar graph
@@ -16,6 +16,7 @@ Tasks:
   - [ ] Write nice messages that Max will tell you
  - [ ] Polish
    - [ ] Refine card design
+   - [ ] The line graph series should probably fill the whole chart
    - [ ] Convert Inter or similar for use, including LARGE and bold variants
    - [ ] Refine configuration portal layout/CSS
    - [ ] Add access control to config portal
