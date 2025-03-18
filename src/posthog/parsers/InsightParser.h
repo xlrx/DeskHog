@@ -11,9 +11,6 @@ public:
         INSIGHT_NOT_SUPPORTED
     };
 
-    // Maximum number of points we'll handle in a time series
-    static const size_t MAX_SERIES_POINTS = 54;  // Based on current sample, adjust if needed
-
     InsightParser(const char* json);
     ~InsightParser() = default;  // Explicitly declare destructor
     
@@ -29,7 +26,7 @@ public:
     
     // Line Graph Data Accessors
     size_t getSeriesPointCount() const;  // Get number of data points
-    bool getSeriesYValues(double* yValues, size_t maxPoints) const;  // Fill array with y-values
+    bool getSeriesYValues(double* yValues) const;  // Fill array with y-values
     bool getSeriesXLabel(size_t index, char* buffer, size_t bufferSize) const;  // Get x-axis label for point
     void getSeriesRange(double* minValue, double* maxValue) const;  // Get y-value range for scaling
     

@@ -106,15 +106,15 @@ size_t InsightParser::getSeriesPointCount() const {
     return timeseriesData.size();
 }
 
-bool InsightParser::getSeriesYValues(double* yValues, size_t maxPoints) const {
-    if (!valid || !hasLineGraphStructure() || !yValues || maxPoints == 0) return false;
+bool InsightParser::getSeriesYValues(double* yValues) const {
+    if (!valid || !hasLineGraphStructure() || !yValues) return false;
     
     JsonArrayConst results = doc["results"];
     JsonArrayConst timeseriesData = results[0]["result"];
     size_t pointCount = timeseriesData.size();
-    size_t points = (pointCount < maxPoints) ? pointCount : maxPoints;
     
-    for (size_t i = 0; i < points; i++) {
+    // Extract y-values directly - format is consistent with [date_string, numeric_value]
+    for (size_t i = 0; i < pointCount; i++) {
         yValues[i] = timeseriesData[i][1].as<double>();
     }
     
