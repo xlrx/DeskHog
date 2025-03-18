@@ -22,13 +22,25 @@ public:
 private:
     lv_obj_t* _card;
     lv_obj_t* _title_label;
+    
+    // Elements for numeric card
     lv_obj_t* _value_label;
+    
+    // Elements for line graph
+    lv_obj_t* _chart;
+    lv_chart_series_t* _series;
+    
     String _insight_id;
     ConfigManager& _config;
     PostHogClient* _client;  // Owned by this card
+    InsightParser::InsightType _current_type;
     
-    void updateDisplay(const String& title, double value);
+    void updateNumericDisplay(const String& title, double value);
+    void updateLineGraphDisplay(const String& title, double* values, size_t pointCount);
     void handleNewData(const String& response);
+    void createNumericElements();
+    void createLineGraphElements();
+    void clearCardContent();
 };
 
 #endif // INSIGHT_CARD_H 
