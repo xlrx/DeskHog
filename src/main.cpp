@@ -71,26 +71,9 @@ void portalTaskFunction(void* parameter) {
 // Insight processing task
 void insightTaskFunction(void* parameter) {
     while (1) {
-        // Take mutex before accessing cards
-        if (displayInterface->takeMutex(pdMS_TO_TICKS(100))) {  // 100ms timeout
-            // Process each card if it still exists
-            for (auto it = insightCards.begin(); it != insightCards.end();) {
-                InsightCard* card = *it;
-                
-                // Check if card is still valid
-                if (card && card->getCard() && lv_obj_is_valid(card->getCard())) {
-                    card->process();
-                    ++it;
-                } else {
-                    // Card is invalid, remove it from the vector
-                    it = insightCards.erase(it);
-                }
-            }
-            
-            // Release mutex
-            displayInterface->giveMutex();
+        for (auto* card : insightCards) {
+            card->process();
         }
-        
         vTaskDelay(pdMS_TO_TICKS(100));  // Check every 100ms
     }
 }
@@ -137,24 +120,16 @@ void setup() {
     cardStack->addCard(provisioningCard->getCard());
     
     // Create and add insight cards
-    int delay_ms = 0;
-    const int DELAY_BETWEEN_INSIGHTS = 2000;  // 2 seconds between each insight
-    
     for (const String& id : insightIds) {
         auto* insightCard = new InsightCard(
             lv_scr_act(),
             *configManager,
             id,
             SCREEN_WIDTH,
-            SCREEN_HEIGHT,
-            displayInterface
+            SCREEN_HEIGHT
         );
         cardStack->addCard(insightCard->getCard());
         insightCards.push_back(insightCard);  // Store the pointer
-        
-        // Start processing with a staggered delay
-        insightCard->startProcessing(delay_ms);
-        delay_ms += DELAY_BETWEEN_INSIGHTS;
     }
     
     // Add a sample metrics card

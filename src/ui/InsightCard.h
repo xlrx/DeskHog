@@ -6,17 +6,15 @@
 #include "../ConfigManager.h"
 #include "../posthog/PostHogClient.h"
 #include "../posthog/parsers/InsightParser.h"
-#include "../hardware/DisplayInterface.h"
 
 class InsightCard {
 public:
     InsightCard(lv_obj_t* parent, ConfigManager& config, const String& insightId, 
-                uint16_t width, uint16_t height, DisplayInterface* display);
+                uint16_t width, uint16_t height);
     ~InsightCard();
     
     lv_obj_t* getCard();
     void process();  // Call this periodically
-    void startProcessing(uint32_t initial_delay_ms);  // Start processing with delay
     
     // Static callback for PostHogClient
     static void onDataReceived(void* context, const String& response);
@@ -46,8 +44,6 @@ private:
     ConfigManager& _config;
     PostHogClient* _client;  // Owned by this card
     InsightParser::InsightType _current_type;
-    bool _is_processing;  // Flag to track if processing has started
-    DisplayInterface* displayInterface;  // Reference to display interface for mutex
     
     void updateNumericDisplay(const String& title, double value);
     void updateLineGraphDisplay(const String& title, double* values, size_t pointCount);

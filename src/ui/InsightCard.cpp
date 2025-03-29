@@ -7,15 +7,13 @@
 #define FUNNEL_LABEL_HEIGHT 20
 
 InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, const String& insightId,
-                        uint16_t width, uint16_t height, DisplayInterface* display)
+                        uint16_t width, uint16_t height)
     : _config(config)
     , _insight_id(insightId)
     , _value_label(nullptr)
     , _chart(nullptr)
     , _series(nullptr)
-    , _current_type(InsightParser::InsightType::INSIGHT_NOT_SUPPORTED)
-    , _is_processing(false)
-    , displayInterface(display) {
+    , _current_type(InsightParser::InsightType::INSIGHT_NOT_SUPPORTED) {
     
     // Initialize funnel arrays to nullptr
     for (int i = 0; i < MAX_FUNNEL_STEPS; i++) {
@@ -40,6 +38,10 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, const String& 
     Serial.println("PostHog client created");
     Serial.flush();
     
+    _client->begin();
+    Serial.println("PostHog client initialized");
+    Serial.flush();
+    
     // Create card
     _card = lv_obj_create(parent);
     lv_obj_set_size(_card, width, height);
@@ -55,6 +57,12 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, const String& 
     
     Serial.println("Card UI elements created");
     Serial.flush();
+    
+    // Initial data fetch
+    process();
+    
+    Serial.println("Initial process call complete");
+    Serial.flush();
 }
 
 InsightCard::~InsightCard() {
@@ -65,26 +73,8 @@ lv_obj_t* InsightCard::getCard() {
     return _card;
 }
 
-void InsightCard::startProcessing(uint32_t initial_delay_ms) {
-    if (!_is_processing) {
-        _is_processing = true;
-        _client->begin();
-        
-        // Create a one-shot timer to start processing after the delay
-        lv_timer_t* timer = lv_timer_create([](lv_timer_t* timer) {
-            InsightCard* card = static_cast<InsightCard*>(timer->user_data);
-            if (card && card->_card && lv_obj_is_valid(card->_card)) {
-                card->process();
-            }
-            lv_timer_del(timer);
-        }, initial_delay_ms, this);
-    }
-}
-
 void InsightCard::process() {
-    if (_is_processing && _client) {
-        _client->process();
-    }
+    _client->process();
 }
 
 void InsightCard::onDataReceived(void* context, const String& response) {
@@ -93,21 +83,10 @@ void InsightCard::onDataReceived(void* context, const String& response) {
 }
 
 void InsightCard::handleNewData(const String& response) {
-    // Check if card still exists and is valid before processing
-    if (!_card || !lv_obj_is_valid(_card)) {
-        return;
-    }
-    
-    // Take mutex before any UI updates
-    if (!displayInterface || !displayInterface->takeMutex(pdMS_TO_TICKS(100))) {
-        return;
-    }
-    
     InsightParser parser(response.c_str());
     
     if (!parser.isValid()) {
         updateNumericDisplay("Parse Error", 0);
-        displayInterface->giveMutex();
         return;
     }
     
@@ -122,12 +101,6 @@ void InsightCard::handleNewData(const String& response) {
     if (insightType != _current_type) {
         _current_type = insightType;
         clearCardContent();
-        
-        // Check if card is still valid after clearing content
-        if (!_card || !lv_obj_is_valid(_card)) {
-            displayInterface->giveMutex();
-            return;
-        }
         
         if (insightType == InsightParser::InsightType::NUMERIC_CARD) {
             createNumericElements();
@@ -158,9 +131,6 @@ void InsightCard::handleNewData(const String& response) {
     else {
         updateNumericDisplay("Unsupported Type", 0);
     }
-    
-    // Release mutex after all UI updates are complete
-    displayInterface->giveMutex();
 }
 
 void InsightCard::clearCardContent() {
@@ -173,46 +143,35 @@ void InsightCard::clearCardContent() {
         _funnel_labels[i] = nullptr;
     }
     
-    // Store a temporary reference to objects we need to delete
-    lv_obj_t* old_value_label = _value_label;
-    lv_obj_t* old_chart = _chart;
-    lv_obj_t* old_funnel_container = _funnel_container;
-    lv_obj_t* old_title_label = _title_label;
-    
-    // Clear our member variables
-    _value_label = nullptr;
-    _chart = nullptr;
-    _series = nullptr;
-    _funnel_container = nullptr;
-    _title_label = nullptr;
-    
-    // Delete objects in reverse order of creation
-    if (old_funnel_container) {
-        lv_obj_del_async(old_funnel_container);
+    // Now safely delete the containers
+    if (_value_label) {
+        lv_obj_del_async(_value_label);
+        _value_label = nullptr;
     }
     
-    if (old_chart) {
-        lv_obj_del_async(old_chart);
+    if (_chart) {
+        lv_obj_del_async(_chart);
+        _chart = nullptr;
+        _series = nullptr;  // Will be deleted with chart
     }
     
-    if (old_value_label) {
-        lv_obj_del_async(old_value_label);
+    if (_funnel_container) {
+        lv_obj_del_async(_funnel_container);
+        _funnel_container = nullptr;
     }
     
-    if (old_title_label) {
-        lv_obj_del_async(old_title_label);
+    if (_title_label) {
+        lv_obj_del_async(_title_label);
     }
     
-    // Create new title label after a longer delay to ensure cleanup is complete
+    // Recreate title label after a short delay
     lv_timer_t* timer = lv_timer_create([](lv_timer_t* timer) {
-        InsightCard* card = static_cast<InsightCard*>(timer->user_data);
-        if (card && card->_card) {  // Check if card still exists
-            card->_title_label = lv_label_create(card->_card);
-            lv_obj_align(card->_title_label, LV_ALIGN_BOTTOM_MID, 0, -2);
-            lv_label_set_text(card->_title_label, "Loading...");
-        }
+        InsightCard* card = (InsightCard*)timer->user_data;
+        card->_title_label = lv_label_create(card->_card);
+        lv_obj_align(card->_title_label, LV_ALIGN_BOTTOM_MID, 0, -2);
+        lv_label_set_text(card->_title_label, "Loading...");
         lv_timer_del(timer);
-    }, 100, this);  // Increased delay to 100ms
+    }, 50, this);
 }
 
 void InsightCard::createNumericElements() {
@@ -241,15 +200,7 @@ void InsightCard::createLineGraphElements() {
 }
 
 void InsightCard::updateNumericDisplay(const String& title, double value) {
-    // Check if card still exists and is valid
-    if (!_card || !lv_obj_is_valid(_card)) {
-        return;
-    }
-    
-    // Update title if it exists and is valid
-    if (_title_label && lv_obj_is_valid(_title_label)) {
-        lv_label_set_text(_title_label, title.c_str());
-    }
+    lv_label_set_text(_title_label, title.c_str());
     
     // Format value with 2 decimal places if needed
     char valueBuffer[32];
@@ -259,21 +210,12 @@ void InsightCard::updateNumericDisplay(const String& title, double value) {
         snprintf(valueBuffer, sizeof(valueBuffer), "%.2f", value);
     }
     
-    // Update value label if it exists and is valid
-    if (_value_label && lv_obj_is_valid(_value_label)) {
+    if (_value_label) {
         lv_label_set_text(_value_label, valueBuffer);
     }
 }
 
 void InsightCard::updateLineGraphDisplay(const String& title, double* values, size_t pointCount) {
-    // Check if card and objects are valid
-    if (!_card || !lv_obj_is_valid(_card) || 
-        !_chart || !lv_obj_is_valid(_chart) ||
-        !_title_label || !lv_obj_is_valid(_title_label) ||
-        !_series) {
-        return;
-    }
-    
     Serial.printf("\n=== Chart Update ===\n");
     Serial.printf("Point count: %d\n", pointCount);
     Serial.printf("Chart width: %d\n", GRAPH_WIDTH);
@@ -305,7 +247,6 @@ void InsightCard::updateLineGraphDisplay(const String& title, double* values, si
         Serial.printf("  [%d]: %.2f -> %.2f\n", i, values[i], values[i] * scaleFactor);
     }
 
-    // Update chart values
     for(size_t i = 0; i < pointCount; i++) {
         double scaledValue = values[i] * scaleFactor;
         lv_chart_set_next_value(_chart, _series, (int32_t)scaledValue);
@@ -336,13 +277,6 @@ void InsightCard::createFunnelElements() {
 }
 
 void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser) {
-    // Check if card and objects are valid
-    if (!_card || !lv_obj_is_valid(_card) || 
-        !_title_label || !lv_obj_is_valid(_title_label) ||
-        !_funnel_container || !lv_obj_is_valid(_funnel_container)) {
-        return;
-    }
-    
     // Update title at bottom
     lv_label_set_text(_title_label, title.c_str());
     
@@ -372,11 +306,6 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
     
     // Create or update bars for each step
     for (size_t step = 0; step < stepCount; step++) {
-        // Check if funnel container is still valid before creating/updating elements
-        if (!lv_obj_is_valid(_funnel_container)) {
-            return;
-        }
-        
         // Create step container if needed
         if (!_funnel_bars[step]) {
             _funnel_bars[step] = lv_obj_create(_funnel_container);
@@ -387,11 +316,6 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
             lv_obj_clear_flag(_funnel_bars[step], LV_OBJ_FLAG_SCROLLABLE);
         }
         
-        // Check if bar is valid before proceeding
-        if (!_funnel_bars[step] || !lv_obj_is_valid(_funnel_bars[step])) {
-            continue;
-        }
-        
         // Position the bar with no margin
         lv_obj_align(_funnel_bars[step], LV_ALIGN_TOP_LEFT, 0, yOffset);
         
@@ -399,11 +323,6 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
         if (!_funnel_labels[step]) {
             _funnel_labels[step] = lv_label_create(_funnel_container);
             lv_obj_set_style_text_align(_funnel_labels[step], LV_TEXT_ALIGN_LEFT, 0);
-        }
-        
-        // Check if label is valid before proceeding
-        if (!_funnel_labels[step] || !lv_obj_is_valid(_funnel_labels[step])) {
-            continue;
         }
         
         // Get breakdown data for this step
@@ -436,11 +355,6 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
         // Create or update breakdown segments
         float currentWidth = 0;
         for (size_t breakdown = 0; breakdown < breakdownCount; breakdown++) {
-            // Check if bar is still valid before creating/updating segments
-            if (!lv_obj_is_valid(_funnel_bars[step])) {
-                break;
-            }
-            
             float segmentPercentage = (float)breakdownCounts[breakdown] / stepTotal;
             float segmentWidth = totalWidth * segmentPercentage;
             
@@ -451,11 +365,6 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
                 lv_obj_set_style_border_width(_funnel_segments[step][breakdown], 0, 0);
                 lv_obj_set_style_radius(_funnel_segments[step][breakdown], 0, 0);
                 lv_obj_set_style_pad_all(_funnel_segments[step][breakdown], 0, 0);
-            }
-            
-            // Check if segment is valid before proceeding
-            if (!_funnel_segments[step][breakdown] || !lv_obj_is_valid(_funnel_segments[step][breakdown])) {
-                continue;
             }
             
             // Size and position the segment with no gaps
