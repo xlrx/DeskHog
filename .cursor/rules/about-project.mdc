@@ -1,0 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+This is an ESP32-S3-based project to display PostHog insights on a 240x135 TFT screen.
+
+Details about the device are available at [platformio.ini](mdc:platformio.ini)
