@@ -4,57 +4,82 @@
 #include <Arduino.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
-#include "ConfigManager.h"
-#include "parsers/InsightParser.h"
+#include <map>
+#include <queue>
+#include <vector>
+#include "../ConfigManager.h"
+#include "SystemController.h"
 
 class PostHogClient {
 public:
     // Callback type for when data is fetched
     typedef void (*DataCallback)(void* context, const String& response);
-
-    // Constructor
-    PostHogClient(ConfigManager& configManager, const String& insightId);
     
-    // Initialize the client and start periodic checking
-    void begin();
+    // Singleton access
+    static PostHogClient* getInstance();
     
-    // Set callback for when data is fetched
-    void onDataFetched(DataCallback callback, void* context);
+    // Delete copy constructor and assignment operator
+    PostHogClient(const PostHogClient&) = delete;
+    void operator=(const PostHogClient&) = delete;
     
-    // Process function to be called periodically
+    // Subscription management
+    void subscribeToInsight(const String& insight_id, DataCallback callback, void* context);
+    void unsubscribeFromInsight(const String& insight_id);
+    
+    // Queue an immediate fetch (separate from refresh cycle)
+    void queueRequest(const String& insight_id, DataCallback callback, void* context);
+    
+    // Utility methods
+    bool isReady() const;
+    bool hasSubscription(const String& insight_id) const;
+    std::vector<String> getSubscribedInsights() const;
+    
+    // Process function to be called in loop
     void process();
     
-    // Check if client is ready (has API key and team ID)
-    bool isReady() const;
+    // Set configuration
+    void setConfig(ConfigManager& config) { _config = &config; }
     
 private:
-    // Config manager reference
-    ConfigManager& _configManager;
+    // Singleton instance
+    static PostHogClient* instance;
     
-    // Insight ID to fetch
-    String _insight_id;
+    // Private constructor for singleton
+    PostHogClient();
     
-    // Base URL for PostHog API
-    static const char* BASE_URL;
+    // Configuration
+    ConfigManager* _config;
     
-    // HTTP client instance
+    // Subscription tracking
+    struct InsightSubscription {
+        DataCallback callback;
+        void* callback_context;
+        unsigned long last_refresh_time;
+    };
+    
+    // Queue request tracking
+    struct QueuedRequest {
+        String insight_id;
+        DataCallback callback;
+        void* callback_context;
+    };
+    
+    // Member variables
+    std::map<String, InsightSubscription> insight_subscriptions;
+    std::queue<QueuedRequest> request_queue;
+    bool has_active_request;
     HTTPClient _http;
     
-    // Callback and context
-    DataCallback _callback;
-    void* _callback_context;
+    // Constants
+    static const char* BASE_URL;
+    static const unsigned long FETCH_INTERVAL = 5000;  // 5 seconds between refreshes
     
-    // Last fetch attempt timestamp
-    unsigned long _lastFetchAttempt;
-    
-    // Fetch interval in milliseconds
-    static const unsigned long FETCH_INTERVAL = 5000;  // 5 seconds between attempts
-    
-    // Build full URL for insight
-    String buildInsightUrl(const String& shortId) const;
-    
-    // Internal fetch method
-    bool fetchInsight(const String& shortId, String& response);
+    // Private methods
+    void onSystemStateChange(SystemState state);
+    void processQueue();
+    void checkRefreshes();
+    bool fetchInsight(const String& insight_id, String& response);
+    String buildInsightUrl(const String& insight_id) const;
 };
 
 #endif // POSTHOG_CLIENT_H 

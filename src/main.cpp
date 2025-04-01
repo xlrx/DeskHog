@@ -9,6 +9,7 @@
 #include "ui/CardNavigationStack.h"
 #include "ui/InsightCard.h"
 #include "hardware/Input.h"
+#include "posthog/PostHogClient.h"
 
 // Display dimensions
 #define SCREEN_WIDTH 240
@@ -71,9 +72,7 @@ void portalTaskFunction(void* parameter) {
 // Insight processing task
 void insightTaskFunction(void* parameter) {
     while (1) {
-        for (auto* card : insightCards) {
-            card->process();
-        }
+        PostHogClient::getInstance()->process();
         vTaskDelay(pdMS_TO_TICKS(100));  // Check every 100ms
     }
 }
@@ -82,6 +81,8 @@ void setup() {
     Serial.begin(115200);
     delay(100);  // Give serial port time to initialize
     Serial.println("Starting up...");
+
+    SystemController::begin();
     
     // Initialize config manager
     configManager = new ConfigManager();
@@ -234,6 +235,8 @@ void setup() {
         // Start AP mode
         wifiInterface->startAccessPoint();
     }
+
+    SystemController::setSystemState(SystemState::SYS_READY);
 }
 
 void loop() {

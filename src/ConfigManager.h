@@ -46,6 +46,9 @@ public:
 private:
     // Helper method to update the insight ID list
     void updateIdList(const std::vector<String>& ids);
+    
+    // Helper method to check and update API configuration state
+    void updateApiConfigurationState();
 
     // Preferences instances for persistent storage
     Preferences _preferences;
@@ -68,8 +71,8 @@ private:
     static const size_t MAX_SSID_LENGTH = 32;
     static const size_t MAX_PASSWORD_LENGTH = 64;
     static const size_t MAX_INSIGHT_LENGTH = 1024;
-    static const size_t MAX_INSIGHT_ID_LENGTH = 32;
-    static const size_t MAX_API_KEY_LENGTH = 128;
+    static const size_t MAX_API_KEY_LENGTH = 64;  // Added reasonable limit for API key
+    static const size_t MAX_INSIGHT_ID_LENGTH = 64;  // Added reasonable limit for insight IDs
 };
 
 #endif // CONFIG_MANAGER_H

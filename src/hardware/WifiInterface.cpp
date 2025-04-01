@@ -2,6 +2,7 @@
 #include "ui/ProvisioningCard.h"
 
 WiFiInterface* WiFiInterface::_instance = nullptr;
+WiFiStateCallback WiFiInterface::_stateCallback = nullptr;
 
 WiFiInterface::WiFiInterface(ConfigManager& configManager)
     : _configManager(configManager),
@@ -16,6 +17,14 @@ WiFiInterface::WiFiInterface(ConfigManager& configManager)
       _connectionTimeout(0) {
     
     _instance = this;
+}
+
+void WiFiInterface::onStateChange(WiFiStateCallback callback) {
+    _stateCallback = callback;
+    // Call immediately with current state if we have an instance
+    if (_instance) {
+        callback(_instance->_state);
+    }
 }
 
 void WiFiInterface::begin() {
@@ -180,6 +189,10 @@ void WiFiInterface::onWiFiEvent(WiFiEvent_t event) {
     switch (event) {
         case ARDUINO_EVENT_WIFI_STA_CONNECTED:
             Serial.println("WiFi connected");
+            _instance->_state = WiFiState::CONNECTED;
+            if (_stateCallback) {
+                _stateCallback(_instance->_state);
+            }
             break;
             
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
@@ -192,6 +205,10 @@ void WiFiInterface::onWiFiEvent(WiFiEvent_t event) {
                 _instance->_ui->updateIPAddress(_instance->getIPAddress());
                 _instance->_ui->updateSignalStrength(_instance->getSignalStrength());
             }
+            
+            if (_stateCallback) {
+                _stateCallback(_instance->_state);
+            }
             break;
             
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
@@ -201,6 +218,10 @@ void WiFiInterface::onWiFiEvent(WiFiEvent_t event) {
                 
                 if (_instance->_ui) {
                     _instance->_ui->updateConnectionStatus("Disconnected");
+                }
+                
+                if (_stateCallback) {
+                    _stateCallback(_instance->_state);
                 }
             }
             break;

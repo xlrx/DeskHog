@@ -14,7 +14,6 @@ public:
     ~InsightCard();
     
     lv_obj_t* getCard();
-    void process();  // Call this periodically
     
     // Static callback for PostHogClient
     static void onDataReceived(void* context, const String& response);
@@ -42,7 +41,6 @@ private:
     
     String _insight_id;
     ConfigManager& _config;
-    PostHogClient* _client;  // Owned by this card
     InsightParser::InsightType _current_type;
     
     void updateNumericDisplay(const String& title, double value);

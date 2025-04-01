@@ -1,4 +1,5 @@
 #include "ConfigManager.h"
+#include "SystemController.h"
 
 ConfigManager::ConfigManager() {
     // Constructor
@@ -8,6 +9,25 @@ void ConfigManager::begin() {
     // Initialize preferences
     _preferences.begin(_namespace, false);
     _insightsPrefs.begin(_insightsNamespace, false);
+    
+    // Check initial API configuration state
+    updateApiConfigurationState();
+}
+
+// Private helper to check and update API configuration state
+void ConfigManager::updateApiConfigurationState() {
+    if (!_preferences.isKey(_teamIdKey) || getTeamId() == NO_TEAM_ID) {
+        SystemController::setApiState(ApiState::API_AWAITING_CONFIG);
+        return;
+    }
+    
+    if (!_preferences.isKey(_apiKeyKey) || getApiKey().isEmpty()) {
+        SystemController::setApiState(ApiState::API_AWAITING_CONFIG);
+        return;
+    }
+    
+    // Both team ID and API key are set
+    SystemController::setApiState(ApiState::API_CONFIGURED);
 }
 
 bool ConfigManager::saveWiFiCredentials(const String& ssid, const String& password) {
@@ -123,6 +143,7 @@ void ConfigManager::updateIdList(const std::vector<String>& ids) {
 
 void ConfigManager::setTeamId(int teamId) {
     _preferences.putInt(_teamIdKey, teamId);
+    updateApiConfigurationState();
 }
 
 int ConfigManager::getTeamId() {
@@ -134,14 +155,17 @@ int ConfigManager::getTeamId() {
 
 void ConfigManager::clearTeamId() {
     _preferences.remove(_teamIdKey);
+    SystemController::setApiState(ApiState::API_AWAITING_CONFIG);
 }
 
 bool ConfigManager::setApiKey(const String& apiKey) {
     if (apiKey.length() == 0 || apiKey.length() > MAX_API_KEY_LENGTH) {
+        SystemController::setApiState(ApiState::API_CONFIG_INVALID);
         return false;
     }
 
     _preferences.putString(_apiKeyKey, apiKey);
+    updateApiConfigurationState();
     return true;
 }
 
@@ -151,4 +175,5 @@ String ConfigManager::getApiKey() {
 
 void ConfigManager::clearApiKey() {
     _preferences.remove(_apiKeyKey);
+    SystemController::setApiState(ApiState::API_AWAITING_CONFIG);
 }

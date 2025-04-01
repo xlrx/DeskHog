@@ -6,6 +6,7 @@
 #include <DNSServer.h>
 #include <WebServer.h>
 #include "ConfigManager.h"
+#include <functional>
 
 // Forward declarations
 class ProvisioningCard;
@@ -17,6 +18,9 @@ enum class WiFiState {
     CONNECTED,
     AP_MODE
 };
+
+// State change callback type
+typedef std::function<void(WiFiState)> WiFiStateCallback;
 
 class WiFiInterface {
 public:
@@ -55,6 +59,9 @@ public:
 
     // Set UI reference for callbacks
     void setUI(ProvisioningCard* ui);
+    
+    // Register for state changes
+    static void onStateChange(WiFiStateCallback callback);
 
 private:
     // Config manager reference
@@ -90,6 +97,9 @@ private:
     // WiFi event handlers
     static void onWiFiEvent(WiFiEvent_t event);
     static WiFiInterface* _instance;
+    
+    // State change callback
+    static WiFiStateCallback _stateCallback;
 };
 
 #endif // WIFI_MANAGER_H

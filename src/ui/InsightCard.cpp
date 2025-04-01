@@ -27,20 +27,9 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, const String& 
     // Initialize breakdown colors
     initBreakdownColors();
     
-    Serial.printf("\n\n=== Creating InsightCard for insight ID: %s ===\n", insightId.c_str());
-    Serial.printf("Team ID: %d\n", _config.getTeamId());
-    Serial.printf("API Key length: %d\n", _config.getApiKey().length());
-    Serial.flush();
-    
-    // Create PostHog client
-    _client = new PostHogClient(config, insightId);
-    _client->onDataFetched(onDataReceived, this);
-    Serial.println("PostHog client created");
-    Serial.flush();
-    
-    _client->begin();
-    Serial.println("PostHog client initialized");
-    Serial.flush();
+    // Configure and subscribe to PostHog updates
+    PostHogClient::getInstance()->setConfig(config);
+    PostHogClient::getInstance()->subscribeToInsight(insightId, onDataReceived, this);
     
     // Create card
     _card = lv_obj_create(parent);
@@ -55,26 +44,16 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, const String& 
     // Create placeholder numeric display initially
     createNumericElements();
     
-    Serial.println("Card UI elements created");
-    Serial.flush();
-    
-    // Initial data fetch
-    process();
-    
-    Serial.println("Initial process call complete");
-    Serial.flush();
+    // Queue an immediate fetch
+    PostHogClient::getInstance()->queueRequest(insightId, onDataReceived, this);
 }
 
 InsightCard::~InsightCard() {
-    delete _client;
+    PostHogClient::getInstance()->unsubscribeFromInsight(_insight_id);
 }
 
 lv_obj_t* InsightCard::getCard() {
     return _card;
-}
-
-void InsightCard::process() {
-    _client->process();
 }
 
 void InsightCard::onDataReceived(void* context, const String& response) {
