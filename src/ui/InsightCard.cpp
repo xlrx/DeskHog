@@ -1,18 +1,31 @@
 #include "InsightCard.h"
 
 #define GRAPH_WIDTH 240  // Full screen width
+#define GRAPH_HEIGHT 90  // Height for the graph
 #define FUNNEL_BAR_HEIGHT 15
 #define FUNNEL_BAR_GAP 20    // Increased to accommodate label
 #define FUNNEL_LEFT_MARGIN 0  // No left margin
 #define FUNNEL_LABEL_HEIGHT 20
 
+void InsightCard::dispatchToUI(std::function<void()> update) {
+    lv_timer_t* timer = lv_timer_create([](lv_timer_t* timer) {
+        auto* callback = static_cast<std::function<void()>*>(timer->user_data);
+        (*callback)();
+        delete callback;
+        lv_timer_del(timer);
+    }, 0, new std::function<void()>(update));
+}
+
 InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, const String& insightId,
                         uint16_t width, uint16_t height)
     : _config(config)
     , _insight_id(insightId)
+    , _card(nullptr)
+    , _title_label(nullptr)
     , _value_label(nullptr)
     , _chart(nullptr)
     , _series(nullptr)
+    , _funnel_container(nullptr)
     , _current_type(InsightParser::InsightType::INSIGHT_NOT_SUPPORTED) {
     
     // Initialize funnel arrays to nullptr
@@ -27,22 +40,21 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, const String& 
     // Initialize breakdown colors
     initBreakdownColors();
     
-    // Configure and subscribe to PostHog updates
-    PostHogClient::getInstance()->setConfig(config);
-    PostHogClient::getInstance()->subscribeToInsight(insightId, onDataReceived, this);
-    
-    // Create card
+    // Create initial UI elements synchronously since we're in setup()
     _card = lv_obj_create(parent);
     lv_obj_set_size(_card, width, height);
     lv_obj_clear_flag(_card, LV_OBJ_FLAG_SCROLLABLE);
     
-    // Create title label
     _title_label = lv_label_create(_card);
     lv_obj_align(_title_label, LV_ALIGN_TOP_MID, 0, 10);
     lv_label_set_text(_title_label, "Loading...");
     
-    // Create placeholder numeric display initially
+    // Create initial numeric display
     createNumericElements();
+    
+    // Configure and subscribe to PostHog updates
+    PostHogClient::getInstance()->setConfig(config);
+    PostHogClient::getInstance()->subscribeToInsight(insightId, onDataReceived, this);
     
     // Queue an immediate fetch
     PostHogClient::getInstance()->queueRequest(insightId, onDataReceived, this);
@@ -50,6 +62,27 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, const String& 
 
 InsightCard::~InsightCard() {
     PostHogClient::getInstance()->unsubscribeFromInsight(_insight_id);
+    
+    // Clean up UI elements on main thread
+    dispatchToUI([this]() {
+        if (_card) {
+            lv_obj_del(_card);  // This will delete all child objects
+            _card = nullptr;
+            _title_label = nullptr;
+            _value_label = nullptr;
+            _chart = nullptr;
+            _series = nullptr;
+            _funnel_container = nullptr;
+            
+            for (int i = 0; i < MAX_FUNNEL_STEPS; i++) {
+                _funnel_bars[i] = nullptr;
+                _funnel_labels[i] = nullptr;
+                for (int j = 0; j < MAX_BREAKDOWNS; j++) {
+                    _funnel_segments[i][j] = nullptr;
+                }
+            }
+        }
+    });
 }
 
 lv_obj_t* InsightCard::getCard() {
@@ -79,15 +112,18 @@ void InsightCard::handleNewData(const String& response) {
     // If type has changed, rebuild UI elements
     if (insightType != _current_type) {
         _current_type = insightType;
-        clearCardContent();
         
-        if (insightType == InsightParser::InsightType::NUMERIC_CARD) {
-            createNumericElements();
-        } else if (insightType == InsightParser::InsightType::LINE_GRAPH) {
-            createLineGraphElements();
-        } else if (insightType == InsightParser::InsightType::FUNNEL) {
-            createFunnelElements();
-        }
+        dispatchToUI([this, insightType]() {
+            clearCardContent();
+            
+            if (insightType == InsightParser::InsightType::NUMERIC_CARD) {
+                createNumericElements();
+            } else if (insightType == InsightParser::InsightType::LINE_GRAPH) {
+                createLineGraphElements();
+            } else if (insightType == InsightParser::InsightType::FUNNEL) {
+                createFunnelElements();
+            }
+        });
     }
     
     // Update based on type
@@ -98,9 +134,9 @@ void InsightCard::handleNewData(const String& response) {
     else if (insightType == InsightParser::InsightType::LINE_GRAPH) {
         size_t pointCount = parser.getSeriesPointCount();
         if (pointCount > 0) {
-            double values[GRAPH_WIDTH];
-            if (parser.getSeriesYValues(values)) {
-                updateLineGraphDisplay(titleBuffer, values, pointCount);
+            std::unique_ptr<double[]> values(new double[pointCount]);
+            if (parser.getSeriesYValues(values.get())) {
+                updateLineGraphDisplay(titleBuffer, values.get(), pointCount);
             }
         }
     }
@@ -113,48 +149,33 @@ void InsightCard::handleNewData(const String& response) {
 }
 
 void InsightCard::clearCardContent() {
-    // First clear all our references to child objects
+    // This is called from dispatchToUI, so we're already on the main thread
+    if (_card) {
+        lv_obj_clean(_card);
+        
+        // Recreate title label
+        _title_label = lv_label_create(_card);
+        lv_obj_align(_title_label, LV_ALIGN_TOP_MID, 0, 10);
+        lv_label_set_text(_title_label, "Loading...");
+    }
+    
+    // Reset all pointers
+    _value_label = nullptr;
+    _chart = nullptr;
+    _series = nullptr;
+    _funnel_container = nullptr;
+    
     for (int i = 0; i < MAX_FUNNEL_STEPS; i++) {
+        _funnel_bars[i] = nullptr;
+        _funnel_labels[i] = nullptr;
         for (int j = 0; j < MAX_BREAKDOWNS; j++) {
             _funnel_segments[i][j] = nullptr;
         }
-        _funnel_bars[i] = nullptr;
-        _funnel_labels[i] = nullptr;
     }
-    
-    // Now safely delete the containers
-    if (_value_label) {
-        lv_obj_del_async(_value_label);
-        _value_label = nullptr;
-    }
-    
-    if (_chart) {
-        lv_obj_del_async(_chart);
-        _chart = nullptr;
-        _series = nullptr;  // Will be deleted with chart
-    }
-    
-    if (_funnel_container) {
-        lv_obj_del_async(_funnel_container);
-        _funnel_container = nullptr;
-    }
-    
-    if (_title_label) {
-        lv_obj_del_async(_title_label);
-    }
-    
-    // Recreate title label after a short delay
-    lv_timer_t* timer = lv_timer_create([](lv_timer_t* timer) {
-        InsightCard* card = (InsightCard*)timer->user_data;
-        card->_title_label = lv_label_create(card->_card);
-        lv_obj_align(card->_title_label, LV_ALIGN_BOTTOM_MID, 0, -2);
-        lv_label_set_text(card->_title_label, "Loading...");
-        lv_timer_del(timer);
-    }, 50, this);
 }
 
 void InsightCard::createNumericElements() {
-    // Create value label
+    // This can be called either synchronously or through dispatch
     _value_label = lv_label_create(_card);
     lv_obj_align(_value_label, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_text_font(_value_label, &lv_font_montserrat_18, 0);
@@ -162,50 +183,65 @@ void InsightCard::createNumericElements() {
 }
 
 void InsightCard::createLineGraphElements() {
-    // Create chart
+    // This can be called either synchronously or through dispatch
+    if (!_card) return;
+    
     _chart = lv_chart_create(_card);
-    lv_obj_set_size(_chart, GRAPH_WIDTH, 90);
+    if (!_chart) return;
+    
+    lv_obj_set_size(_chart, GRAPH_WIDTH, GRAPH_HEIGHT);
     lv_obj_align(_chart, LV_ALIGN_CENTER, 0, 5);
     lv_chart_set_type(_chart, LV_CHART_TYPE_LINE);
-        
-    // Add series with a vibrant color
+    
     _series = lv_chart_add_series(_chart, lv_color_hex(0x2980b9), LV_CHART_AXIS_PRIMARY_Y);
+    if (!_series) {
+        lv_obj_del(_chart);
+        _chart = nullptr;
+        return;
+    }
     
     // Remove point markers and set line width
     lv_obj_set_style_size(_chart, 0, LV_PART_INDICATOR);
     lv_obj_set_style_line_width(_chart, 2, LV_PART_ITEMS);
-    
-    Serial.println("Line chart elements created");
+}
+
+void InsightCard::createFunnelElements() {
+    // This can be called either synchronously or through dispatch
+    _funnel_container = lv_obj_create(_card);
+    lv_obj_set_size(_funnel_container, GRAPH_WIDTH, GRAPH_HEIGHT);
+    lv_obj_align(_funnel_container, LV_ALIGN_TOP_LEFT, 0, 20);
+    lv_obj_clear_flag(_funnel_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(_funnel_container, 0, 0);
+    lv_obj_set_style_border_width(_funnel_container, 0, 0);
+    lv_obj_set_style_bg_opa(_funnel_container, LV_OPA_0, 0);
 }
 
 void InsightCard::updateNumericDisplay(const String& title, double value) {
-    lv_label_set_text(_title_label, title.c_str());
-    
-    // Format value with 2 decimal places if needed
-    char valueBuffer[32];
-    if (value == (int)value) {
-        snprintf(valueBuffer, sizeof(valueBuffer), "%.0f", value);
-    } else {
-        snprintf(valueBuffer, sizeof(valueBuffer), "%.2f", value);
-    }
-    
-    if (_value_label) {
-        lv_label_set_text(_value_label, valueBuffer);
-    }
+    dispatchToUI([this, title = String(title), value]() {
+        if (_title_label) {
+            lv_label_set_text(_title_label, title.c_str());
+        }
+        
+        if (_value_label) {
+            char valueBuffer[32];
+            if (value == (int)value) {
+                snprintf(valueBuffer, sizeof(valueBuffer), "%.0f", value);
+            } else {
+                snprintf(valueBuffer, sizeof(valueBuffer), "%.2f", value);
+            }
+            lv_label_set_text(_value_label, valueBuffer);
+        }
+    });
 }
 
 void InsightCard::updateLineGraphDisplay(const String& title, double* values, size_t pointCount) {
+    if (!_chart || !_series) return;
+
     Serial.printf("\n=== Chart Update ===\n");
     Serial.printf("Point count: %d\n", pointCount);
     Serial.printf("Chart width: %d\n", GRAPH_WIDTH);
     
-    // Set the title
-    lv_label_set_text(_title_label, title.c_str());
-
-    // Update point count
-    lv_chart_set_point_count(_chart, pointCount);
-
-    // Find max value for scaling
+    // Find max value for scaling - do this outside dispatch since it's just data processing
     double maxVal = values[0];
     for(size_t i = 0; i < pointCount; i++) {
         if(values[i] > maxVal) maxVal = values[i];
@@ -226,38 +262,33 @@ void InsightCard::updateLineGraphDisplay(const String& title, double* values, si
         Serial.printf("  [%d]: %.2f -> %.2f\n", i, values[i], values[i] * scaleFactor);
     }
 
+    // Pre-calculate all scaled values
+    std::vector<int32_t> scaledValues;
+    scaledValues.reserve(pointCount);
     for(size_t i = 0; i < pointCount; i++) {
-        double scaledValue = values[i] * scaleFactor;
-        lv_chart_set_next_value(_chart, _series, (int32_t)scaledValue);
+        scaledValues.push_back((int32_t)(values[i] * scaleFactor));
     }
 
-    lv_chart_refresh(_chart);
-    Serial.println("Chart updated\n");
-}
-
-void InsightCard::initBreakdownColors() {
-    // Initialize with distinct colors
-    _breakdown_colors[0] = lv_color_hex(0x2980b9);  // Blue
-    _breakdown_colors[1] = lv_color_hex(0x27ae60);  // Green
-    _breakdown_colors[2] = lv_color_hex(0x8e44ad);  // Purple
-    _breakdown_colors[3] = lv_color_hex(0xd35400);  // Orange
-    _breakdown_colors[4] = lv_color_hex(0xc0392b);  // Red
-}
-
-void InsightCard::createFunnelElements() {
-    // Create container for funnel visualization
-    _funnel_container = lv_obj_create(_card);
-    lv_obj_set_size(_funnel_container, GRAPH_WIDTH, 90);
-    lv_obj_align(_funnel_container, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_clear_flag(_funnel_container, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_pad_all(_funnel_container, 0, 0);
-    lv_obj_set_style_border_width(_funnel_container, 0, 0);
-    lv_obj_set_style_bg_opa(_funnel_container, LV_OPA_0, 0);
+    // Do all LVGL operations in a single dispatch to maintain exact ordering
+    dispatchToUI([this, title = String(title), pointCount, scaledValues = std::move(scaledValues)]() {
+        if (!_chart || !_series || !_title_label) return;
+        
+        // Update exactly in original order
+        lv_label_set_text(_title_label, title.c_str());
+        lv_chart_set_point_count(_chart, pointCount);
+        
+        // Add all points in sequence
+        for(int32_t value : scaledValues) {
+            lv_chart_set_next_value(_chart, _series, value);
+        }
+        
+        lv_chart_refresh(_chart);
+        Serial.println("Chart updated\n");
+    });
 }
 
 void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser) {
-    // Update title at bottom
-    lv_label_set_text(_title_label, title.c_str());
+    if (!_funnel_container) return;
     
     size_t stepCount = parser.getFunnelStepCount();
     size_t breakdownCount = parser.getFunnelBreakdownCount();
@@ -280,85 +311,134 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
         totalFirstStep += breakdownCounts[i];
     }
     
-    // Start from top of screen
+    // Pre-calculate all step data
+    struct StepData {
+        uint32_t total;
+        String label;
+        std::vector<float> segmentWidths;
+        std::vector<float> segmentOffsets;
+    };
+    
+    std::vector<StepData> stepDataArray;
+    stepDataArray.reserve(stepCount);
+    
     int yOffset = 0;
     
-    // Create or update bars for each step
+    // Calculate all data outside the dispatch
     for (size_t step = 0; step < stepCount; step++) {
-        // Create step container if needed
-        if (!_funnel_bars[step]) {
-            _funnel_bars[step] = lv_obj_create(_funnel_container);
-            lv_obj_set_size(_funnel_bars[step], GRAPH_WIDTH, FUNNEL_BAR_HEIGHT);
-            lv_obj_set_style_bg_opa(_funnel_bars[step], LV_OPA_0, 0);
-            lv_obj_set_style_border_width(_funnel_bars[step], 0, 0);
-            lv_obj_set_style_pad_all(_funnel_bars[step], 0, 0);
-            lv_obj_clear_flag(_funnel_bars[step], LV_OBJ_FLAG_SCROLLABLE);
-        }
-        
-        // Position the bar with no margin
-        lv_obj_align(_funnel_bars[step], LV_ALIGN_TOP_LEFT, 0, yOffset);
-        
-        // Create or update label
-        if (!_funnel_labels[step]) {
-            _funnel_labels[step] = lv_label_create(_funnel_container);
-            lv_obj_set_style_text_align(_funnel_labels[step], LV_TEXT_ALIGN_LEFT, 0);
-        }
+        StepData stepData;
         
         // Get breakdown data for this step
         parser.getFunnelBreakdownComparison(step, breakdownCounts, breakdownRates);
         
         // Calculate total for this step
-        uint32_t stepTotal = 0;
+        stepData.total = 0;
         for (size_t i = 0; i < breakdownCount; i++) {
-            stepTotal += breakdownCounts[i];
+            stepData.total += breakdownCounts[i];
         }
         
-        // Format and set label text
-        char labelBuffer[32];
+        // Create label text
         if (step == 0) {
-            snprintf(labelBuffer, sizeof(labelBuffer), "%d", stepTotal);
+            stepData.label = String(stepData.total);
         } else {
-            snprintf(labelBuffer, sizeof(labelBuffer), "%d (%d%%)", 
-                    stepTotal,
-                    totalFirstStep > 0 ? (stepTotal * 100) / totalFirstStep : 0);
+            stepData.label = String(stepData.total) + " (" + 
+                           String(totalFirstStep > 0 ? (stepData.total * 100) / totalFirstStep : 0) + "%)";
         }
-        lv_label_set_text(_funnel_labels[step], labelBuffer);
         
-        // Position label below the bar with minimal left margin
-        lv_obj_align(_funnel_labels[step], LV_ALIGN_TOP_LEFT, 1, yOffset + FUNNEL_BAR_HEIGHT + 2);
-        
-        // Calculate this step's total width based on first step total
-        float stepPercentage = (float)stepTotal / totalFirstStep;
+        // Calculate segment widths and offsets
+        float stepPercentage = (float)stepData.total / totalFirstStep;
         float totalWidth = GRAPH_WIDTH * stepPercentage;
-        
-        // Create or update breakdown segments
         float currentWidth = 0;
+        
         for (size_t breakdown = 0; breakdown < breakdownCount; breakdown++) {
-            float segmentPercentage = (float)breakdownCounts[breakdown] / stepTotal;
+            float segmentPercentage = (float)breakdownCounts[breakdown] / stepData.total;
             float segmentWidth = totalWidth * segmentPercentage;
             
-            if (!_funnel_segments[step][breakdown]) {
-                _funnel_segments[step][breakdown] = lv_obj_create(_funnel_bars[step]);
-                lv_obj_set_style_bg_color(_funnel_segments[step][breakdown], 
-                                        _breakdown_colors[breakdown], 0);
-                lv_obj_set_style_border_width(_funnel_segments[step][breakdown], 0, 0);
-                lv_obj_set_style_radius(_funnel_segments[step][breakdown], 0, 0);
-                lv_obj_set_style_pad_all(_funnel_segments[step][breakdown], 0, 0);
-            }
-            
-            // Size and position the segment with no gaps
-            lv_obj_set_size(_funnel_segments[step][breakdown], 
-                           (int16_t)segmentWidth, 
-                           FUNNEL_BAR_HEIGHT);
-            lv_obj_align(_funnel_segments[step][breakdown], 
-                        LV_ALIGN_LEFT_MID, 
-                        (int16_t)currentWidth,
-                        0);
+            stepData.segmentWidths.push_back(segmentWidth);
+            stepData.segmentOffsets.push_back(currentWidth);
             
             currentWidth += segmentWidth;
         }
         
-        // Update yOffset for next step
-        yOffset += FUNNEL_BAR_HEIGHT + FUNNEL_BAR_GAP;
+        stepDataArray.push_back(std::move(stepData));
     }
+    
+    // Single dispatch for all UI updates
+    dispatchToUI([this, title = String(title), stepCount, breakdownCount, 
+                  stepDataArray = std::move(stepDataArray)]() {
+        if (!_funnel_container || !_title_label) return;
+        
+        // Update title
+        lv_label_set_text(_title_label, title.c_str());
+        
+        // Update each step
+        int yOffset = 0;
+        for (size_t step = 0; step < stepCount; step++) {
+            const auto& stepData = stepDataArray[step];
+            
+            // Create or ensure bar container exists
+            if (!_funnel_bars[step]) {
+                _funnel_bars[step] = lv_obj_create(_funnel_container);
+                if (_funnel_bars[step]) {
+                    lv_obj_set_size(_funnel_bars[step], GRAPH_WIDTH, FUNNEL_BAR_HEIGHT);
+                    lv_obj_set_style_bg_opa(_funnel_bars[step], LV_OPA_0, 0);
+                    lv_obj_set_style_border_width(_funnel_bars[step], 0, 0);
+                    lv_obj_set_style_pad_all(_funnel_bars[step], 0, 0);
+                    lv_obj_clear_flag(_funnel_bars[step], LV_OBJ_FLAG_SCROLLABLE);
+                }
+            }
+            
+            if (_funnel_bars[step]) {
+                lv_obj_align(_funnel_bars[step], LV_ALIGN_TOP_LEFT, 0, yOffset);
+                
+                // Create or update label
+                if (!_funnel_labels[step]) {
+                    _funnel_labels[step] = lv_label_create(_funnel_container);
+                    if (_funnel_labels[step]) {
+                        lv_obj_set_style_text_align(_funnel_labels[step], LV_TEXT_ALIGN_LEFT, 0);
+                    }
+                }
+                
+                if (_funnel_labels[step]) {
+                    lv_label_set_text(_funnel_labels[step], stepData.label.c_str());
+                    lv_obj_align(_funnel_labels[step], LV_ALIGN_TOP_LEFT, 1, 
+                                yOffset + FUNNEL_BAR_HEIGHT + 2);
+                }
+                
+                // Create or update segments
+                for (size_t breakdown = 0; breakdown < breakdownCount; breakdown++) {
+                    if (!_funnel_segments[step][breakdown]) {
+                        _funnel_segments[step][breakdown] = lv_obj_create(_funnel_bars[step]);
+                        if (_funnel_segments[step][breakdown]) {
+                            lv_obj_set_style_bg_color(_funnel_segments[step][breakdown],
+                                                    _breakdown_colors[breakdown], 0);
+                            lv_obj_set_style_border_width(_funnel_segments[step][breakdown], 0, 0);
+                            lv_obj_set_style_radius(_funnel_segments[step][breakdown], 0, 0);
+                            lv_obj_set_style_pad_all(_funnel_segments[step][breakdown], 0, 0);
+                        }
+                    }
+                    
+                    if (_funnel_segments[step][breakdown]) {
+                        lv_obj_set_size(_funnel_segments[step][breakdown],
+                                      (int16_t)stepData.segmentWidths[breakdown],
+                                      FUNNEL_BAR_HEIGHT);
+                        lv_obj_align(_funnel_segments[step][breakdown],
+                                   LV_ALIGN_LEFT_MID,
+                                   (int16_t)stepData.segmentOffsets[breakdown],
+                                   0);
+                    }
+                }
+            }
+            
+            yOffset += FUNNEL_BAR_HEIGHT + FUNNEL_BAR_GAP;
+        }
+    });
+}
+
+void InsightCard::initBreakdownColors() {
+    _breakdown_colors[0] = lv_color_hex(0x2980b9);  // Blue
+    _breakdown_colors[1] = lv_color_hex(0x27ae60);  // Green
+    _breakdown_colors[2] = lv_color_hex(0x8e44ad);  // Purple
+    _breakdown_colors[3] = lv_color_hex(0xd35400);  // Orange
+    _breakdown_colors[4] = lv_color_hex(0xc0392b);  // Red
 } 
