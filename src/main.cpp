@@ -133,9 +133,6 @@ void setup() {
         insightCards.push_back(insightCard);  // Store the pointer
     }
     
-    // Add a sample metrics card
-    cardStack->addCard(lv_color_hex(0xe74c3c), "Metrics");
-    
     // Connect WiFi manager to UI
     wifiInterface->setUI(provisioningCard);
     
