@@ -2,14 +2,12 @@
 
 Tasks:
 
-- [ ] I think we need some sort of state machine to deal with all the various ways this thing can be not ready
-- [ ] Event bus or maybe notifications so components can respond to such state changes
+- [x] I think we need some sort of state machine to deal with all the various ways this thing can be not ready
+- [x] Event bus or maybe notifications so components can respond to such state changes
 - [ ] Insights
   - [x] Numeric card
   - [x] Line graph
-  - [ ] Area graph
-  - [ ] Funnel
-  - [ ] Bar graph
+  - [x] Funnel
 - [ ] Max card
   - [ ] Convert Loud Noises to a font LVGL can use
   - [ ] Load animations
