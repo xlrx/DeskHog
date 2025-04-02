@@ -4,6 +4,7 @@ Tasks:
 
 - [x] I think we need some sort of state machine to deal with all the various ways this thing can be not ready
 - [x] Event bus or maybe notifications so components can respond to such state changes
+- [x] Use the above to make loads more predictable, improve stability, prevent race conditions, etc
 - [ ] Insights
   - [x] Numeric card
   - [x] Line graph
