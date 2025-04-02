@@ -2,20 +2,11 @@
 #include "../ConfigManager.h"
 
 const char* PostHogClient::BASE_URL = "https://us.posthog.com/api/projects/";
-PostHogClient* PostHogClient::instance = nullptr;
 
-PostHogClient* PostHogClient::getInstance() {
-    if (instance == nullptr) {
-        instance = new PostHogClient();
-    }
-    return instance;
-}
-
-PostHogClient::PostHogClient() 
-    : has_active_request(false)
-    , _config(nullptr) {
+PostHogClient::PostHogClient(ConfigManager& config) 
+    : _config(config)
+    , has_active_request(false) {
     _http.setReuse(true);
-    
 }
 
 void PostHogClient::subscribeToInsight(const String& insight_id, DataCallback callback, void* context) {
@@ -42,9 +33,8 @@ void PostHogClient::queueRequest(const String& insight_id, DataCallback callback
 
 bool PostHogClient::isReady() const {
     return SystemController::isSystemFullyReady() && 
-           _config != nullptr &&
-           _config->getTeamId() != ConfigManager::NO_TEAM_ID && 
-           _config->getApiKey().length() > 0;
+           _config.getTeamId() != ConfigManager::NO_TEAM_ID && 
+           _config.getApiKey().length() > 0;
 }
 
 bool PostHogClient::hasSubscription(const String& insight_id) const {
@@ -116,11 +106,11 @@ void PostHogClient::checkRefreshes() {
 
 String PostHogClient::buildInsightUrl(const String& insight_id) const {
     String url = String(BASE_URL);
-    url += String(_config->getTeamId());
+    url += String(_config.getTeamId());
     url += "/insights/?short_id=";
     url += insight_id;
     url += "&personal_api_key=";
-    url += _config->getApiKey();
+    url += _config.getApiKey();
     return url;
 }
 

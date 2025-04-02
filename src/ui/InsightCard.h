@@ -11,8 +11,8 @@
 
 class InsightCard {
 public:
-    InsightCard(lv_obj_t* parent, ConfigManager& config, const String& insightId,
-                uint16_t width, uint16_t height);
+    InsightCard(lv_obj_t* parent, ConfigManager& config, PostHogClient& posthog_client,
+                const String& insightId, uint16_t width, uint16_t height);
     ~InsightCard();
     
     lv_obj_t* getCard();
@@ -36,6 +36,7 @@ private:
     static constexpr size_t MAX_BREAKDOWNS = 5;
     
     ConfigManager& _config;
+    PostHogClient& _posthog_client;
     String _insight_id;
     
     // LVGL Objects

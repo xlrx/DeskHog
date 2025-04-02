@@ -16,9 +16,10 @@ void InsightCard::dispatchToUI(std::function<void()> update) {
     }, 0, new std::function<void()>(update));
 }
 
-InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, const String& insightId,
-                        uint16_t width, uint16_t height)
+InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, PostHogClient& posthog_client,
+                        const String& insightId, uint16_t width, uint16_t height)
     : _config(config)
+    , _posthog_client(posthog_client)
     , _insight_id(insightId)
     , _card(nullptr)
     , _title_label(nullptr)
@@ -52,16 +53,15 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, const String& 
     // Create initial numeric display
     createNumericElements();
     
-    // Configure and subscribe to PostHog updates
-    PostHogClient::getInstance()->setConfig(config);
-    PostHogClient::getInstance()->subscribeToInsight(insightId, onDataReceived, this);
+    // Subscribe to PostHog updates
+    _posthog_client.subscribeToInsight(insightId, onDataReceived, this);
     
     // Queue an immediate fetch
-    PostHogClient::getInstance()->queueRequest(insightId, onDataReceived, this);
+    _posthog_client.queueRequest(insightId, onDataReceived, this);
 }
 
 InsightCard::~InsightCard() {
-    PostHogClient::getInstance()->unsubscribeFromInsight(_insight_id);
+    _posthog_client.unsubscribeFromInsight(_insight_id);
     
     // Clean up UI elements on main thread
     dispatchToUI([this]() {

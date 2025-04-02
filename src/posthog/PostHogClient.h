@@ -15,8 +15,8 @@ public:
     // Callback type for when data is fetched
     typedef void (*DataCallback)(void* context, const String& response);
     
-    // Singleton access
-    static PostHogClient* getInstance();
+    // Constructor
+    explicit PostHogClient(ConfigManager& config);
     
     // Delete copy constructor and assignment operator
     PostHogClient(const PostHogClient&) = delete;
@@ -37,18 +37,9 @@ public:
     // Process function to be called in loop
     void process();
     
-    // Set configuration
-    void setConfig(ConfigManager& config) { _config = &config; }
-    
 private:
-    // Singleton instance
-    static PostHogClient* instance;
-    
-    // Private constructor for singleton
-    PostHogClient();
-    
     // Configuration
-    ConfigManager* _config;
+    ConfigManager& _config;
     
     // Subscription tracking
     struct InsightSubscription {

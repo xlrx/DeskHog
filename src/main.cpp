@@ -36,7 +36,8 @@ WiFiInterface* wifiInterface;
 CaptivePortal* captivePortal;
 ProvisioningCard* provisioningCard;
 CardNavigationStack* cardStack;
-std::vector<InsightCard*> insightCards;  // Store pointers to insight cards
+PostHogClient* posthogClient;  // New global PostHogClient
+std::vector<InsightCard*> insightCards;
 
 // Task handles
 TaskHandle_t wifiTask;
@@ -72,7 +73,7 @@ void portalTaskFunction(void* parameter) {
 // Insight processing task
 void insightTaskFunction(void* parameter) {
     while (1) {
-        PostHogClient::getInstance()->process();
+        posthogClient->process();  // Use the global instance
         vTaskDelay(pdMS_TO_TICKS(100));  // Check every 100ms
     }
 }
@@ -87,6 +88,9 @@ void setup() {
     // Initialize config manager
     configManager = new ConfigManager();
     configManager->begin();
+    
+    // Initialize PostHog client
+    posthogClient = new PostHogClient(*configManager);
     
     // Initialize display manager
     displayInterface = new DisplayInterface(
@@ -125,12 +129,13 @@ void setup() {
         auto* insightCard = new InsightCard(
             lv_scr_act(),
             *configManager,
+            *posthogClient,  // Pass PostHog client reference
             id,
             SCREEN_WIDTH,
             SCREEN_HEIGHT
         );
         cardStack->addCard(insightCard->getCard());
-        insightCards.push_back(insightCard);  // Store the pointer
+        insightCards.push_back(insightCard);
     }
     
     // Connect WiFi manager to UI
