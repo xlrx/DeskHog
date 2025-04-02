@@ -25,9 +25,14 @@ DisplayInterface::DisplayInterface(
     // Create TFT object
     _tft = new Adafruit_ST7789(&SPI, _cs_pin, _dc_pin, _rst_pin);
     
-    // Allocate buffer memory
-    _buf1 = new lv_color_t[_screen_width * _buffer_rows];
-    _buf2 = new lv_color_t[_screen_width * _buffer_rows];
+    // Allocate display buffers
+    _buf1 = (lv_color_t*)malloc(_screen_width * _buffer_rows * sizeof(lv_color_t));
+    _buf2 = (lv_color_t*)malloc(_screen_width * _buffer_rows * sizeof(lv_color_t));
+    
+    if (!_buf1 || !_buf2) {
+        Serial.println("Failed to allocate display buffers");
+        while(1);
+    }
     
     // Create LVGL mutex
     _lvgl_mutex = xSemaphoreCreateMutex();
@@ -113,4 +118,23 @@ void DisplayInterface::_disp_flush(lv_disp_drv_t* disp, const lv_area_t* area, l
     }
     
     lv_disp_flush_ready(disp);
+}
+
+DisplayInterface::~DisplayInterface() {
+    if (_buf1) {
+        free(_buf1);
+        _buf1 = nullptr;
+    }
+    if (_buf2) {
+        free(_buf2);
+        _buf2 = nullptr;
+    }
+    if (_tft) {
+        delete _tft;
+        _tft = nullptr;
+    }
+    if (_lvgl_mutex) {
+        vSemaphoreDelete(_lvgl_mutex);
+        _lvgl_mutex = nullptr;
+    }
 }

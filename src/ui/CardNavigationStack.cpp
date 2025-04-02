@@ -9,8 +9,8 @@ extern Bounce2::Button buttons[];
 // Use the same NUM_BUTTONS definition as main.cpp
 #define NUM_BUTTONS 3
 
-CardNavigationStack::CardNavigationStack(lv_obj_t* parent, uint16_t width, uint16_t height, uint8_t num_cards)
-    : _parent(parent), _width(width), _height(height), _num_cards(num_cards), _current_card(0), _mutex_ptr(nullptr) {
+CardNavigationStack::CardNavigationStack(lv_obj_t* parent, uint16_t width, uint16_t height)
+    : _parent(parent), _width(width), _height(height), _current_card(0), _mutex_ptr(nullptr) {
     
     // Store instance for static task
     _instance = this;
@@ -46,20 +46,39 @@ CardNavigationStack::CardNavigationStack(lv_obj_t* parent, uint16_t width, uint1
     lv_obj_set_flex_flow(_scroll_indicator, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(_scroll_indicator, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_clear_flag(_scroll_indicator, LV_OBJ_FLAG_SCROLLABLE);     // Disable scrolling
+}
 
-    // Create indicator pips
-    for(int i = 0; i < _num_cards; i++) {
+void CardNavigationStack::_update_pip_count() {
+    uint32_t card_count = lv_obj_get_child_cnt(_main_container);
+    uint32_t pip_count = lv_obj_get_child_cnt(_scroll_indicator);
+    
+    // Add pips if needed
+    while (pip_count < card_count) {
         lv_obj_t* pip = lv_obj_create(_scroll_indicator);
         lv_obj_set_size(pip, PIP_SIZE, PIP_SIZE);
         lv_obj_set_style_radius(pip, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_color(pip, lv_color_hex(0x808080), 0);
         lv_obj_set_style_border_width(pip, 0, 0);
+        pip_count++;
     }
-
-    // Set first pip as active
-    lv_obj_t* first_pip = lv_obj_get_child(_scroll_indicator, 0);
-    lv_obj_set_size(first_pip, PIP_SIZE_ACTIVE, PIP_SIZE_ACTIVE);
-    lv_obj_set_style_bg_color(first_pip, lv_color_white(), 0);
+    
+    // Remove excess pips if needed
+    while (pip_count > card_count) {
+        lv_obj_t* last_pip = lv_obj_get_child(_scroll_indicator, pip_count - 1);
+        if (last_pip) {
+            lv_obj_del(last_pip);
+        }
+        pip_count--;
+    }
+    
+    // Make sure first pip is active if this is the first card
+    if (card_count == 1) {
+        lv_obj_t* first_pip = lv_obj_get_child(_scroll_indicator, 0);
+        if (first_pip) {
+            lv_obj_set_size(first_pip, PIP_SIZE_ACTIVE, PIP_SIZE_ACTIVE);
+            lv_obj_set_style_bg_color(first_pip, lv_color_white(), 0);
+        }
+    }
 }
 
 void CardNavigationStack::addCard(lv_obj_t* card) {
@@ -71,6 +90,9 @@ void CardNavigationStack::addCard(lv_obj_t* card) {
     lv_obj_set_style_radius(card, 8, 0);
     lv_obj_set_style_border_width(card, 0, 0);
     lv_obj_set_style_pad_all(card, 0, 0);
+    
+    // Update pip count
+    _update_pip_count();
     
     // Make sure the first card is centered on initial load
     if (lv_obj_get_child_cnt(_main_container) == 1) {
@@ -95,20 +117,32 @@ void CardNavigationStack::addCard(lv_color_t color, const char* label_text) {
 }
 
 void CardNavigationStack::nextCard() {
-    _current_card = (_current_card < _num_cards - 1) ? _current_card + 1 : 0;
-    goToCard(_current_card);
+    uint32_t card_count = lv_obj_get_child_cnt(_main_container);
+    if (card_count == 0) return;
+    
+    uint8_t next = (_current_card + 1) % card_count;
+    goToCard(next);
 }
 
 void CardNavigationStack::prevCard() {
-    _current_card = (_current_card > 0) ? _current_card - 1 : _num_cards - 1;
-    goToCard(_current_card);
+    uint32_t card_count = lv_obj_get_child_cnt(_main_container);
+    if (card_count == 0) return;
+    
+    uint8_t prev = (_current_card > 0) ? _current_card - 1 : card_count - 1;
+    goToCard(prev);
 }
 
 void CardNavigationStack::goToCard(uint8_t index) {
-    if (index >= _num_cards) return;
+    uint32_t card_count = lv_obj_get_child_cnt(_main_container);
+    if (index >= card_count) return;
     
     _current_card = index;
     lv_obj_t* target_card = lv_obj_get_child(_main_container, _current_card);
+    if (!target_card) {
+        Serial.printf("Error: Could not find card at index %d\n", _current_card);
+        return;
+    }
+    
     lv_obj_scroll_to_view(target_card, LV_ANIM_ON);
     _update_scroll_indicator(_current_card);
 }
@@ -141,19 +175,14 @@ void CardNavigationStack::buttonTask(void* parameter) {
             buttons[i].update();
             
             if (buttons[i].pressed()) {
-                bool mutex_taken = false;
-                
                 // Take mutex if available
-                if (_instance->_mutex_ptr != nullptr) {
-                    mutex_taken = (xSemaphoreTake(*(_instance->_mutex_ptr), portMAX_DELAY) == pdTRUE);
-                }
-                
-                // Handle button press
-                _instance->handleButtonPress(i);
-                
-                // Release mutex if taken
-                if (mutex_taken) {
-                    xSemaphoreGive(*(_instance->_mutex_ptr));
+                if (_instance->_mutex_ptr) {
+                    if (xSemaphoreTake(*(_instance->_mutex_ptr), pdMS_TO_TICKS(100)) == pdTRUE) {
+                        _instance->handleButtonPress(i);
+                        xSemaphoreGive(*(_instance->_mutex_ptr));
+                    }
+                } else {
+                    _instance->handleButtonPress(i);
                 }
             }
         }
@@ -178,11 +207,27 @@ void CardNavigationStack::_scroll_event_cb(lv_event_t* e) {
 }
 
 void CardNavigationStack::_update_scroll_indicator(int active_index) {
+    uint32_t card_count = lv_obj_get_child_cnt(_main_container);
+    if (active_index >= card_count) return;
+    
     static int previous_index = 0;  // Keep track of previous active pip
     
     if (previous_index != active_index) {
-        // Animate previous pip to shrink
+        // Get previous pip with bounds check
         lv_obj_t* prev_pip = lv_obj_get_child(_scroll_indicator, previous_index);
+        if (!prev_pip) {
+            Serial.printf("Error: Could not find previous pip at index %d\n", previous_index);
+            return;
+        }
+        
+        // Get new pip with bounds check
+        lv_obj_t* new_pip = lv_obj_get_child(_scroll_indicator, active_index);
+        if (!new_pip) {
+            Serial.printf("Error: Could not find new pip at index %d\n", active_index);
+            return;
+        }
+        
+        // Animate previous pip to shrink
         lv_anim_t a;
         lv_anim_init(&a);
         lv_anim_set_var(&a, prev_pip);
@@ -201,7 +246,6 @@ void CardNavigationStack::_update_scroll_indicator(int active_index) {
         lv_anim_start(&a2);
 
         // Animate new pip to grow
-        lv_obj_t* new_pip = lv_obj_get_child(_scroll_indicator, active_index);
         lv_anim_t b;
         lv_anim_init(&b);
         lv_anim_set_var(&b, new_pip);

@@ -2,6 +2,19 @@
 #include <stdio.h>
 
 InsightParser::InsightParser(const char* json) : doc(262144), valid(false) {  // 256KB
+    // Initialize PSRAM if available
+    if (psramFound()) {
+        size_t psramSize = ESP.getPsramSize();
+        size_t psramFree = ESP.getFreePsram();
+        Serial.printf("PSRAM available: %zu bytes, free: %zu bytes\n", psramSize, psramFree);
+        
+        if (psramFree < 262144) {
+            Serial.println("Warning: Less than 256KB PSRAM free, parsing may fail");
+        }
+    } else {
+        Serial.println("Warning: PSRAM not found, using SRAM for JSON parsing");
+    }
+    
     DeserializationError error = deserializeJson(doc, json);
     if (error) {
         printf("JSON Deserialization failed: %s\n", error.c_str());

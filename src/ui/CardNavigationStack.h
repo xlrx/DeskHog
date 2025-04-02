@@ -10,8 +10,8 @@ class DisplayInterface;
 
 class CardNavigationStack {
 public:
-    // Constructor
-    CardNavigationStack(lv_obj_t* parent, uint16_t width, uint16_t height, uint8_t num_cards);
+    // Constructor - removed num_cards parameter
+    CardNavigationStack(lv_obj_t* parent, uint16_t width, uint16_t height);
     
     // Add an existing LVGL object as a card
     void addCard(lv_obj_t* card);
@@ -53,7 +53,6 @@ private:
     
     // State
     uint8_t _current_card;
-    uint8_t _num_cards;
     uint16_t _width;
     uint16_t _height;
     
@@ -66,6 +65,7 @@ private:
     // Private methods
     static void _scroll_event_cb(lv_event_t* e);
     void _update_scroll_indicator(int active_index);
+    void _update_pip_count();
 };
 
 #endif // CARD_NAVIGATION_STACK_H

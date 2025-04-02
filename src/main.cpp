@@ -83,6 +83,15 @@ void setup() {
     delay(100);  // Give serial port time to initialize
     Serial.println("Starting up...");
 
+    if (psramInit()) {
+        Serial.println("PSRAM initialized successfully");
+        Serial.printf("Total PSRAM: %d bytes\n", ESP.getPsramSize());
+        Serial.printf("Free PSRAM: %d bytes\n", ESP.getFreePsram());
+    } else {
+        Serial.println("PSRAM initialization failed!");
+        while(1); // Stop here if PSRAM init fails
+    }
+
     SystemController::begin();
     
     // Initialize config manager
@@ -108,10 +117,9 @@ void setup() {
     
     // Get count of insights to determine card count
     std::vector<String> insightIds = configManager->getAllInsightIds();
-    int totalCards = insightIds.size() + 2;  // +2 for provisioning and metrics cards
     
     // Create card navigation stack
-    cardStack = new CardNavigationStack(lv_scr_act(), SCREEN_WIDTH, SCREEN_HEIGHT, totalCards);
+    cardStack = new CardNavigationStack(lv_scr_act(), SCREEN_WIDTH, SCREEN_HEIGHT);
     
     // Create provision UI
     provisioningCard = new ProvisioningCard(

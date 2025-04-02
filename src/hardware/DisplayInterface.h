@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include <lvgl.h>
 #include <Adafruit_ST7789.h>
+#include <SPI.h>
+#include "esp_heap_caps.h"
 
 class DisplayInterface {
 public:
@@ -17,6 +19,9 @@ public:
         int8_t rst_pin,
         int8_t backlight_pin
     );
+    
+    // Destructor
+    ~DisplayInterface();
     
     // Initialize display and LVGL
     void begin();
