@@ -48,7 +48,7 @@ bool WiFiInterface::connectToStoredNetwork(unsigned long timeout) {
     _connectionTimeout = timeout;
     
     if (_ui) {
-        _ui->updateConnectionStatus("Connecting to " + _ssid + "...");
+        _ui->updateConnectionStatus("Connecting");
     }
     
     // Start connection attempt
@@ -201,7 +201,7 @@ void WiFiInterface::onWiFiEvent(WiFiEvent_t event) {
             _instance->_state = WiFiState::CONNECTED;
             
             if (_instance->_ui) {
-                _instance->_ui->updateConnectionStatus("Connected to " + _instance->_ssid);
+                _instance->_ui->updateConnectionStatus(_instance->_ssid);
                 _instance->_ui->updateIPAddress(_instance->getIPAddress());
                 _instance->_ui->updateSignalStrength(_instance->getSignalStrength());
             }

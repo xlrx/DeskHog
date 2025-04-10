@@ -4,9 +4,9 @@ ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterfac
     : _parent(parent), _wifiInterface(wifiInterface), _width(width), _height(height),
     _card(nullptr), _qrScreen(nullptr), _statusScreen(nullptr) {
     
-    // Create main card container
+    // Create main card container - use full width of parent
     _card = lv_obj_create(_parent);
-    lv_obj_set_size(_card, width, height);
+    lv_obj_set_size(_card, LV_PCT(100), height);
     lv_obj_set_style_bg_color(_card, lv_color_white(), 0);
     lv_obj_set_style_pad_all(_card, 0, 0);
     lv_obj_set_style_radius(_card, 8, 0);
@@ -17,8 +17,8 @@ ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterfac
     _statusScreen = lv_obj_create(_card);
     
     // Configure screens to take full card size
-    lv_obj_set_size(_qrScreen, width, height);
-    lv_obj_set_size(_statusScreen, width, height);
+    lv_obj_set_size(_qrScreen, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_size(_statusScreen, LV_PCT(100), LV_PCT(100));
     
     // Position screens at 0,0 relative to card
     lv_obj_set_pos(_qrScreen, 0, 0);
@@ -39,17 +39,11 @@ void ProvisioningCard::updateConnectionStatus(const String& status) {
 }
 
 void ProvisioningCard::updateIPAddress(const String& ip) {
-    String ipText = "IP: " + ip;
-    lv_label_set_text(_ipLabel, ipText.c_str());
+    lv_label_set_text(_ipLabel, ip.c_str());
 }
 
 void ProvisioningCard::updateSignalStrength(int strength) {
     lv_label_set_text(_signalLabel, (String(strength) + "%").c_str());
-    
-    // Update the signal icon based on strength
-    const char* iconPath = getSignalIconPath(strength);
-    // In a real implementation, you would set an image or icon here
-    // This is just a placeholder for demonstration
 }
 
 void ProvisioningCard::showQRCode() {
@@ -71,10 +65,6 @@ void ProvisioningCard::showWiFiStatus() {
     // Show status screen and hide QR screen
     lv_obj_clear_flag(_statusScreen, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(_qrScreen, LV_OBJ_FLAG_HIDDEN);
-    
-    // Update SSID label
-    String ssidText = "Network: " + _wifiInterface.getSSID();
-    lv_label_set_text(_ssidLabel, ssidText.c_str());
 }
 
 void ProvisioningCard::createQRScreen() {
@@ -94,53 +84,53 @@ void ProvisioningCard::createQRScreen() {
 
 void ProvisioningCard::createStatusScreen() {
     lv_obj_set_style_bg_color(_statusScreen, lv_color_white(), 0);
-    lv_obj_set_style_pad_all(_statusScreen, 10, 0);
+    lv_obj_set_style_pad_all(_statusScreen, 0, 0);
     lv_obj_set_style_border_width(_statusScreen, 0, 0);
     
-    // Create title
-    lv_obj_t* title = lv_label_create(_statusScreen);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
-    lv_label_set_text(title, "WiFi Status");
+    // Define semantic colors
+    lv_color_t rowLabel = lv_color_make(128, 128, 128);  // Medium grey
     
-    // Create SSID label
-    _ssidLabel = lv_label_create(_statusScreen);
-    lv_obj_align(_ssidLabel, LV_ALIGN_TOP_LEFT, 0, 30);
-    lv_obj_set_style_text_font(_ssidLabel, &lv_font_montserrat_18, 0);
-    lv_label_set_text(_ssidLabel, "Network: ");
+    // Create container for status items - use full width of parent
+    lv_obj_t* table = lv_obj_create(_statusScreen);
+    lv_obj_set_size(table, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_left(table, 5, 0);  // 5px from left edge
+    lv_obj_set_style_pad_right(table, 5, 0);  // 5px from right edge
+    lv_obj_set_style_pad_top(table, 0, 0);
+    lv_obj_set_style_pad_bottom(table, 0, 0);
+    lv_obj_set_style_border_width(table, 0, 0);
+    lv_obj_set_style_bg_opa(table, 0, 0);
     
-    // Create status label
-    _statusLabel = lv_label_create(_statusScreen);
-    lv_obj_align(_statusLabel, LV_ALIGN_TOP_LEFT, 0, 50);
-    lv_obj_set_style_text_font(_statusLabel, &lv_font_montserrat_18, 0);
-    lv_label_set_text(_statusLabel, "Status: Disconnected");
+    // Create rows with title and right-aligned value labels
+    createTableRow(table, 0, "WiFi", &_statusLabel, rowLabel);
+    createTableRow(table, 1, "IP", &_ipLabel, rowLabel);
+    createTableRow(table, 2, "Signal", &_signalLabel, rowLabel);
     
-    // Create IP address label
-    _ipLabel = lv_label_create(_statusScreen);
-    lv_obj_align(_ipLabel, LV_ALIGN_TOP_LEFT, 0, 70);
-    lv_obj_set_style_text_font(_ipLabel, &lv_font_montserrat_18, 0);
-    lv_label_set_text(_ipLabel, "IP: ");
-    
-    // Create signal strength section
-    lv_obj_t* signalContainer = lv_obj_create(_statusScreen);
-    lv_obj_remove_style_all(signalContainer);
-    lv_obj_set_size(signalContainer, 100, 30);
-    lv_obj_align(signalContainer, LV_ALIGN_TOP_LEFT, 0, 90);
-    
-    // Signal strength label
-    lv_obj_t* signalText = lv_label_create(signalContainer);
-    lv_obj_align(signalText, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_label_set_text(signalText, "Signal: ");
-    
-    // Signal strength percentage
-    _signalLabel = lv_label_create(signalContainer);
-    lv_obj_align(_signalLabel, LV_ALIGN_LEFT_MID, 60, 0);
+    // Set initial values
+    lv_label_set_text(_statusLabel, "Disconnected");
+    lv_label_set_text(_ipLabel, "");
     lv_label_set_text(_signalLabel, "0%");
+}
+
+void ProvisioningCard::createTableRow(lv_obj_t* table, uint16_t row, const char* title, lv_obj_t** valueLabel, lv_color_t labelColor) {
+    // Create container for the row content
+    lv_obj_t* container = lv_obj_create(table);
+    lv_obj_set_size(container, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(container, 0, 0);
+    lv_obj_set_style_bg_opa(container, 0, 0);
+    lv_obj_set_style_border_width(container, 0, 0);
+    lv_obj_set_pos(container, 0, row * (lv_font_montserrat_18.line_height + 5));
     
-    // Signal strength icon
-    _signalIcon = lv_obj_create(signalContainer);
-    lv_obj_set_size(_signalIcon, 20, 20);
-    lv_obj_align(_signalIcon, LV_ALIGN_RIGHT_MID, 0, 0);
+    // Create title label (left-aligned)
+    lv_obj_t* titleLabel = lv_label_create(container);
+    lv_obj_set_style_text_font(titleLabel, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(titleLabel, labelColor, 0);
+    lv_label_set_text(titleLabel, title);
+    lv_obj_align(titleLabel, LV_ALIGN_LEFT_MID, 0, 0);
+    
+    // Create value label (right-aligned)
+    *valueLabel = lv_label_create(container);
+    lv_obj_set_style_text_font(*valueLabel, &lv_font_montserrat_18, 0);
+    lv_obj_align(*valueLabel, LV_ALIGN_RIGHT_MID, 0, 0);
 }
 
 String ProvisioningCard::generateQRCodeData(const String& ssid, const String& password) {

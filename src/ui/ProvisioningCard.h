@@ -62,6 +62,9 @@ private:
     // Create WiFi status screen
     void createStatusScreen();
 
+    // Create a row with title and right-aligned value label
+    void createTableRow(lv_obj_t* table, uint16_t row, const char* title, lv_obj_t** valueLabel, lv_color_t labelColor);
+
     // Generate QR code data
     String generateQRCodeData(const String& ssid, const String& password);
 
