@@ -68,7 +68,11 @@ void CaptivePortal::handleGetDeviceConfig() {
     // Create JSON response with current config
     StaticJsonDocument<256> doc;
     doc["teamId"] = _configManager.getTeamId();
-    doc["apiKey"] = _configManager.getApiKey();
+    String truncatedKey = _configManager.getApiKey();
+    if (truncatedKey.length() > 12) {
+        truncatedKey = truncatedKey.substring(0, 12) + "...";
+    }
+    doc["apiKey"] = truncatedKey;
     
     String response;
     serializeJson(doc, response);
@@ -88,7 +92,10 @@ void CaptivePortal::handleSaveDeviceConfig() {
     // Handle API key
     if (_server.hasArg("apiKey")) {
         String apiKey = _server.arg("apiKey");
-        if (!_configManager.setApiKey(apiKey)) {
+        if (apiKey.endsWith("...")) {
+            success = true;
+            message = "Discarding truncated API key";
+        } else if (!_configManager.setApiKey(apiKey)) {
             success = false;
             message = "Invalid API key";
         }

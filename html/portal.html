@@ -14,8 +14,8 @@
     
     <!-- Configuration Screen -->
     <div id="config-screen">
+        <h2>WiFi</h2>
         <div class="config-section">
-            <h2>WiFi</h2>
             <p>Pick your WiFi network and enter the password if needed.</p>
             
             <form id="wifi-form" onsubmit="return saveWifiConfig()">
@@ -41,8 +41,9 @@
             </div>
         </div>
 
+        <h2>API configuration</h2>
+
         <div class="config-section">
-            <h2>Device Configuration</h2>
             <form id="device-form" onsubmit="return saveDeviceConfig()">
                 <div class="form-group">
                     <label for="teamId">Team ID</label>
@@ -51,18 +52,18 @@
                 
                 <div class="form-group">
                     <label for="apiKey">API Key</label>
-                    <input type="password" name="apiKey" id="apiKey">
+                    <input type="text" name="apiKey" id="apiKey">
                 </div>
                 
                 <div class="button-container">
-                    <button type="submit">Save Device Config</button>
+                    <button type="submit">Save API configuration</button>
                 </div>
             </form>
         </div>
 
-        <div class="config-section">
-            <h2>Insights</h2>
+        <h2>Insights</h2>
 
+        <div class="config-section">
             <form id="insight-form" onsubmit="return addInsight()">
                 <div class="form-group">
                     <label for="insightId">Add new insight ID</label>
@@ -74,10 +75,19 @@
                 </div>
             </form>
 
+        
+        </div>
+
+        <div class="config-section">
+            <label for="insightId">Stored insights</label>
             <div id="insights-list">
                 <!-- Will be populated by JavaScript -->
+                 <ul>
+                    <li>
+                        <button>Delete [an insight]</button>
+                    </li>
+                 </ul>
             </div>
-        
         </div>
     </div>
     
