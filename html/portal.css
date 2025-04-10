@@ -25,6 +25,12 @@ body {
     border: 1px solid var(--border-color);
 }
 
+.tip {
+    margin-top: 0px;
+    font-weight: 400;
+    font-size: 1rem;
+}
+
 .config-section {
     background-color: var(--panel-color);
     padding: 1rem;
@@ -81,6 +87,8 @@ button, select {
     padding: 0 16px;
     transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.1s ease;
     box-shadow: 0px 4px 0px 0px var(--button-shadow);
+    color: inherit;
+    -webkit-tap-highlight-color: transparent;
 }
 
 input, select {

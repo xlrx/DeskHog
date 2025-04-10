@@ -16,11 +16,10 @@
     <div id="config-screen">
         <h2>WiFi</h2>
         <div class="config-section">
-            <p>Pick your WiFi network and enter the password if needed.</p>
             
             <form id="wifi-form" onsubmit="return saveWifiConfig()">
                 <div class="form-group">
-                    <label for="ssid">WiFi Network</label>
+                    <label for="ssid">Choose network</label>
                     <select name="ssid" id="ssid" required>
                         <option value="">Select a network</option>
                     </select>
@@ -30,6 +29,8 @@
                     <label for="password">Password</label>
                     <input type="password" name="password" id="password">
                 </div>
+
+                <p class="tip">If your network doesn't need a password, just leave this blank.</p>
                 
                 <div class="button-container">
                     <button type="submit">Save WiFi</button>
@@ -51,7 +52,7 @@
                 </div>
                 
                 <div class="form-group">
-                    <label for="apiKey">API Key</label>
+                    <label for="apiKey">API key</label>
                     <input type="text" name="apiKey" id="apiKey">
                 </div>
                 
