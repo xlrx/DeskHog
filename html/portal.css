@@ -85,21 +85,15 @@ button, select {
     border-radius: var(--radius); 
     cursor: pointer; 
     padding: 0 16px;
-    transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.1s ease;
-    box-shadow: 0px 4px 0px 0px var(--button-shadow);
+
+    box-shadow: 0 4px 0 0 var(--button-shadow),
+                0 5px 0 0 var(--button-border);
     color: inherit;
     -webkit-tap-highlight-color: transparent;
 }
 
 input, select {
     height: 40px;
-}
-
-button:hover {
-    border-color: var(--button-border-hover);
-    transform: translateY(-1px);
-    box-shadow: 0px 5px 0px 0px var(--button-shadow);
-
 }
 
 button:active {
