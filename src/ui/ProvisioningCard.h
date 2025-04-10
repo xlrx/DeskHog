@@ -68,8 +68,6 @@ private:
     // Generate QR code data
     String generateQRCodeData(const String& ssid, const String& password);
 
-    // Signal strength icon path based on strength (0-100%)
-    const char* getSignalIconPath(int strength);
 };
 
 #endif // PROVISION_UI_H

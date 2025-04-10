@@ -7,7 +7,7 @@ ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterfac
     // Create main card container - use full width of parent
     _card = lv_obj_create(_parent);
     lv_obj_set_size(_card, LV_PCT(100), height);
-    lv_obj_set_style_bg_color(_card, lv_color_white(), 0);
+    lv_obj_set_style_bg_color(_card, lv_color_black(), 0);
     lv_obj_set_style_pad_all(_card, 0, 0);
     lv_obj_set_style_radius(_card, 8, 0);
     lv_obj_set_style_border_width(_card, 0, 0);
@@ -19,6 +19,10 @@ ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterfac
     // Configure screens to take full card size
     lv_obj_set_size(_qrScreen, LV_PCT(100), LV_PCT(100));
     lv_obj_set_size(_statusScreen, LV_PCT(100), LV_PCT(100));
+    
+    // Set screen backgrounds to black
+    lv_obj_set_style_bg_color(_qrScreen, lv_color_black(), 0);
+    lv_obj_set_style_bg_color(_statusScreen, lv_color_black(), 0);
     
     // Position screens at 0,0 relative to card
     lv_obj_set_pos(_qrScreen, 0, 0);
@@ -83,7 +87,7 @@ void ProvisioningCard::createQRScreen() {
 }
 
 void ProvisioningCard::createStatusScreen() {
-    lv_obj_set_style_bg_color(_statusScreen, lv_color_white(), 0);
+    lv_obj_set_style_bg_color(_statusScreen, lv_color_black(), 0);
     lv_obj_set_style_pad_all(_statusScreen, 0, 0);
     lv_obj_set_style_border_width(_statusScreen, 0, 0);
     
@@ -130,6 +134,7 @@ void ProvisioningCard::createTableRow(lv_obj_t* table, uint16_t row, const char*
     // Create value label (right-aligned)
     *valueLabel = lv_label_create(container);
     lv_obj_set_style_text_font(*valueLabel, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(*valueLabel, lv_color_white(), 0);  // White text for values
     lv_obj_align(*valueLabel, LV_ALIGN_RIGHT_MID, 0, 0);
 }
 
@@ -143,16 +148,3 @@ String ProvisioningCard::generateQRCodeData(const String& ssid, const String& pa
     return "WIFI:S:" + ssid + ";T:WPA;P:" + password + ";;";
 }
 
-const char* ProvisioningCard::getSignalIconPath(int strength) {
-    // In a real implementation, you would return different icon paths based on strength
-    // This is just a placeholder
-    if (strength > 70) {
-        return "signal_strong";
-    } else if (strength > 40) {
-        return "signal_medium";
-    } else if (strength > 10) {
-        return "signal_weak";
-    } else {
-        return "signal_none";
-    }
-}
