@@ -5,7 +5,8 @@
     --button-border: #CCCCCC;
     --radius: 8px;
     --input-color: #FFF;
-    font-family: system-ui, -apple-system, sans-serif; 
+    --default-font: system-ui, -apple-system, sans-serif; 
+    font-family: var(--default-font);
 
 }
 
@@ -82,9 +83,24 @@ button:active {
     background-color: #DCDDD9;
 }
 
+ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    margin-top: 2rem;
+}
+
+li {
+    margin-bottom: 1rem;
+}
+
+li:last-child {
+    margin-bottom: 0;
+}
+
 footer { 
     text-align: center; 
-    margin-top: 20px; 
+    margin-top: 4rem; 
     color: #777; 
     font-size: 0.8em; 
 }
@@ -143,6 +159,7 @@ select {
     background-size: 1rem auto;
     padding-right: 2rem;
     background-color: var(--input-color);
+    font-family: var(--default-font);
 }
 
 select::-ms-expand {

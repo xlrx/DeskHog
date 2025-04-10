@@ -38,7 +38,7 @@ public:
     void clearApiKey();
 
     // Insight management
-    bool saveInsight(const String& id, const String& content);
+    bool saveInsight(const String& id);
     String getInsight(const String& id);
     void deleteInsight(const String& id);
     std::vector<String> getAllInsightIds();

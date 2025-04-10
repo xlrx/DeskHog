@@ -69,17 +69,14 @@ bool ConfigManager::hasWiFiCredentials() {
     return _preferences.getBool(_hasCredentialsKey, false);
 }
 
-bool ConfigManager::saveInsight(const String& id, const String& content) {
+bool ConfigManager::saveInsight(const String& id) {
     if (id.length() == 0 || id.length() > MAX_INSIGHT_ID_LENGTH) {
         return false;
     }
 
-    if (content.length() > MAX_INSIGHT_LENGTH) {
-        return false;
-    }
 
     // Store the insight content
-    _insightsPrefs.putString(id.c_str(), content);
+    _insightsPrefs.putString(id.c_str(), "");
 
     // Update the ID list
     auto ids = getAllInsightIds();

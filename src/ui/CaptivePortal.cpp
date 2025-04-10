@@ -126,11 +126,10 @@ void CaptivePortal::handleSaveInsight() {
     bool success = false;
     String message;
     
-    if (_server.hasArg("insightId") && _server.hasArg("insightContent")) {
+    if (_server.hasArg("insightId")) {
         String id = _server.arg("insightId");
-        String content = _server.arg("insightContent");
         
-        success = _configManager.saveInsight(id, content);
+        success = _configManager.saveInsight(id);
         if (!success) {
             message = "Failed to save insight";
         }

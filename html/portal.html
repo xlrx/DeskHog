@@ -62,20 +62,22 @@
 
         <div class="config-section">
             <h2>Insights</h2>
-            <div id="insights-list">
-                <!-- Will be populated by JavaScript -->
-            </div>
-            
+
             <form id="insight-form" onsubmit="return addInsight()">
                 <div class="form-group">
-                    <label for="insightId">New Insight ID</label>
-                    <input type="text" name="insightId" id="insightId" required>
+                    <label for="insightId">Add new insight ID</label>
+                    <input type="text" name="insightId" id="insightId"  required>
                 </div>
                 
                 <div class="button-container">
                     <button type="submit">Add Insight</button>
                 </div>
             </form>
+
+            <div id="insights-list">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        
         </div>
     </div>
     
