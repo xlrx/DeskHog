@@ -108,6 +108,10 @@ void InsightCard::handleNewData(const String& response) {
     if (!parser.getName(titleBuffer, sizeof(titleBuffer))) {
         strcpy(titleBuffer, "Unnamed Insight");
     }
+
+    if (_config.getInsight(_insight_id).compareTo(String(titleBuffer)) != 0) {
+        _config.saveInsight(_insight_id, String(titleBuffer));
+    }
     
     // If type has changed, rebuild UI elements
     if (insightType != _current_type) {

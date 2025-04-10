@@ -143,7 +143,7 @@ function loadInsights() {
             const item = document.createElement('li');
             item.className = 'insight-item';
             item.innerHTML = `
-                <button onclick="deleteInsight('${insight.id}')" class="button danger">Delete ${insight.id}</button>
+                <button onclick="deleteInsight('${insight.id}')" class="button danger">Delete ${insight.title}</button>
             `;
             list.appendChild(item);
         });

@@ -115,6 +115,8 @@ void CaptivePortal::handleGetInsights() {
     for (const auto& id : ids) {
         JsonObject insight = insights.createNestedObject();
         insight["id"] = id;
+        String title = _configManager.getInsight(id);
+        insight["title"] = title.length() > 1 ? title : id;
     }
     
     String response;
@@ -129,7 +131,7 @@ void CaptivePortal::handleSaveInsight() {
     if (_server.hasArg("insightId")) {
         String id = _server.arg("insightId");
         
-        success = _configManager.saveInsight(id);
+        success = _configManager.saveInsight(id, "");
         if (!success) {
             message = "Failed to save insight";
         }
