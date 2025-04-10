@@ -3,10 +3,12 @@
     --border-color: #DCDED4;
     --container-color: #F3F4F0;
     --button-border: #CCCCCC;
+    --button-border-hover: #AAA;
     --radius: 8px;
     --input-color: #FFF;
     --panel-color: #FFF;
     --label-color: #a0a0a0;
+    --button-shadow: #E1DDDD;
     --default-font: system-ui, -apple-system, sans-serif; 
     font-family: var(--default-font);
 
@@ -77,8 +79,8 @@ button, select {
     border-radius: var(--radius); 
     cursor: pointer; 
     padding: 0 16px;
-    transition: background-color 0.2s ease, border-color 0.2s ease;
-    box-shadow: 0px 4px 0px 0px #E1DDDD;
+    transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.1s ease;
+    box-shadow: 0px 4px 0px 0px var(--button-shadow);
 }
 
 input, select {
@@ -86,8 +88,10 @@ input, select {
 }
 
 button:hover {
-    background-color: #E8E9E6;
-    border-color: #BBBBBB;
+    border-color: var(--button-border-hover);
+    transform: translateY(-1px);
+    box-shadow: 0px 5px 0px 0px var(--button-shadow);
+
 }
 
 button:active {
