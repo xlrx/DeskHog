@@ -3,41 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 WiFi Setup</title>
+    <title>Configure DeskHog</title>
     <link rel="stylesheet" href="portal.css">
     <script src="portal.js"></script>
 </head>
 <body>
     <div class="header">
-        <h1 id="page-title">DeskHog Configuration</h1>
+        <h1 id="page-title">Configure your DeskHog</h1>
     </div>
     
     <!-- Configuration Screen -->
     <div id="config-screen">
         <div class="config-section">
-            <h2>WiFi Configuration</h2>
-            <p>Please select your WiFi network and enter the password if required.</p>
+            <h2>WiFi</h2>
+            <p>Pick your WiFi network and enter the password if needed.</p>
             
             <form id="wifi-form" onsubmit="return saveWifiConfig()">
                 <div class="form-group">
-                    <label for="ssid">WiFi Network:</label>
+                    <label for="ssid">WiFi Network</label>
                     <select name="ssid" id="ssid" required>
                         <!-- NETWORK_LIST_PLACEHOLDER -->
                     </select>
                 </div>
                 
                 <div class="form-group">
-                    <label for="password">Password:</label>
+                    <label for="password">Password</label>
                     <input type="password" name="password" id="password">
                 </div>
                 
                 <div class="button-container">
-                    <button type="submit" class="button">Save WiFi</button>
+                    <button type="submit">Save WiFi</button>
                 </div>
             </form>
             
-            <div class="button-container" style="margin-top: 20px;">
-                <a href="javascript:refreshNetworks()" class="button secondary">Refresh Network List</a>
+            <div class="button-container">
+                <button type="button" onclick="refreshNetworks()">Refresh Network List</button>
             </div>
         </div>
 
@@ -45,41 +45,35 @@
             <h2>Device Configuration</h2>
             <form id="device-form" onsubmit="return saveDeviceConfig()">
                 <div class="form-group">
-                    <label for="teamId">Team ID:</label>
-                    <input type="number" name="teamId" id="teamId" min="-1" required>
+                    <label for="teamId">Team ID</label>
+                    <input type="text" name="teamId" id="teamId" min="-1" required>
                 </div>
                 
                 <div class="form-group">
-                    <label for="apiKey">API Key:</label>
+                    <label for="apiKey">API Key</label>
                     <input type="password" name="apiKey" id="apiKey">
-                    <button type="button" class="button secondary" onclick="toggleApiKeyVisibility()">Show/Hide</button>
                 </div>
                 
                 <div class="button-container">
-                    <button type="submit" class="button">Save Device Config</button>
+                    <button type="submit">Save Device Config</button>
                 </div>
             </form>
         </div>
 
         <div class="config-section">
-            <h2>Insights Management</h2>
+            <h2>Insights</h2>
             <div id="insights-list">
                 <!-- Will be populated by JavaScript -->
             </div>
             
             <form id="insight-form" onsubmit="return addInsight()">
                 <div class="form-group">
-                    <label for="insightId">New Insight ID:</label>
+                    <label for="insightId">New Insight ID</label>
                     <input type="text" name="insightId" id="insightId" required>
                 </div>
                 
-                <div class="form-group">
-                    <label for="insightContent">Content:</label>
-                    <textarea name="insightContent" id="insightContent" required></textarea>
-                </div>
-                
                 <div class="button-container">
-                    <button type="submit" class="button">Add Insight</button>
+                    <button type="submit">Add Insight</button>
                 </div>
             </form>
         </div>
@@ -87,7 +81,6 @@
     
     <!-- Success Screen -->
     <div id="success-screen" class="container hidden">
-        <div class="success-icon">✓</div>
         <h2>Configuration Saved</h2>
         <p>Your changes have been saved successfully.</p>
         <p>If you changed WiFi settings, the device will now attempt to connect to the new network.</p>
@@ -106,7 +99,7 @@
         <p>Please try again.</p>
         
         <div class="button-container">
-            <a href="javascript:showScreen('config-screen')" class="button">Back</a>
+            <button type="button" onclick="showScreen('config-screen')">Back</button>
         </div>
     </div>
     

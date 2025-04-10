@@ -1,55 +1,87 @@
+:root {
+    background-color: #E5E7DF;
+    --border-color: #DCDED4;
+    --container-color: #F3F4F0;
+    --button-border: #CCCCCC;
+    --radius: 8px;
+    --input-color: #FFF;
+    font-family: system-ui, -apple-system, sans-serif; 
+
+}
+
 body { 
-    font-family: Arial, sans-serif; 
     margin: 0; 
-    padding: 0; 
-    background-color: #f5f5f5; 
+    padding: 1rem; 
+    background-color: var(--container-color); 
     color: #333; 
+    max-width: 70ch;
+    margin-left: auto;
+    margin-right: auto;
+    border: 1px solid var(--border-color);
 }
-.container { 
-    max-width: 800px; 
-    margin: 20px auto; 
-    padding: 20px; 
-    background-color: white; 
-    border-radius: 5px; 
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+
+
+
+
+h1, h2 { color: #000000;
 }
-h1, h2 { color: #0066cc; }
-.header { 
-    background-color: #0066cc; 
-    color: white; 
-    padding: 10px 20px; 
-    text-align: center; 
+
+h1 {
+    font-weight: 700;
+    font-size: 1.5rem;
+
 }
+
+h2 {
+    font-weight: 600;
+    font-size: 1.1rem;
+    margin-top: 4rem;
+}
+
 .form-group { margin-bottom: 15px; }
 label { 
     display: block; 
-    margin-bottom: 5px; 
-    font-weight: bold; 
+    margin-bottom: 0.5rem; 
 }
-input[type='text'], input[type='password'], select { 
+input[type='text'], input[type='password'] { 
     width: 100%; 
     padding: 8px; 
     border: 1px solid #ddd; 
-    border-radius: 4px; 
+    border-radius: 8px; 
     box-sizing: border-box; 
 }
 .button-container { 
     margin-top: 15px; 
     text-align: center; 
 }
-.button { 
+button, select { 
     display: inline-block; 
-    padding: 10px 20px; 
-    background-color: #0066cc; 
-    color: white; 
+    width: 100%;
+    font-size: 16px;
+    font-weight: 600;
+    height: 40px;
     text-decoration: none; 
-    border-radius: 4px; 
-    border: none; 
+    background-color: var(--container-color);
+    border: 1px solid var(--button-border);
+    border-radius: var(--radius); 
     cursor: pointer; 
+    padding: 0 16px;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
 }
-.button.secondary { background-color: #777; }
-.button:hover { background-color: #0055aa; }
-.button.secondary:hover { background-color: #666; }
+
+input, select {
+    height: 40px;
+}
+
+button:hover {
+    background-color: #E8E9E6;
+    border-color: #BBBBBB;
+}
+
+button:active {
+    background-color: #DCDDD9;
+}
+
 footer { 
     text-align: center; 
     margin-top: 20px; 
@@ -74,11 +106,7 @@ footer {
 .network-item.selected {
     background-color: #e0f0ff;
 }
-.signal-strength {
-    float: right;
-    font-size: 0.8em;
-    color: #666;
-}
+
 .lock-icon {
     margin-left: 5px;
 }
@@ -102,5 +130,21 @@ footer {
     transition: width 10s linear;
 }
 .hidden {
+    display: none;
+}
+
+select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23333333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.7rem top 50%;
+    background-size: 1rem auto;
+    padding-right: 2rem;
+    background-color: var(--input-color);
+}
+
+select::-ms-expand {
     display: none;
 }
