@@ -158,9 +158,46 @@ function loadInsights() {
 // Refresh network list
 function refreshNetworks() {
     fetch('/scan-networks')
-    .then(response => response.text())
-    .then(html => {
-        document.getElementById('ssid').innerHTML = html;
+    .then(response => response.json())
+    .then(data => {
+        const select = document.getElementById('ssid');
+        select.innerHTML = '<option value="">Select a network</option>';
+        
+        if (!data.networks || data.networks.length === 0) {
+            select.innerHTML += '<option disabled>No networks found</option>';
+            return;
+        }
+        
+        data.networks.forEach(network => {
+            const option = document.createElement('option');
+            option.value = network.ssid;
+            
+            let label = network.ssid;
+            
+            // Add signal strength indicator
+            if (network.rssi >= -50) {
+                label += ' (Excellent)';
+            } else if (network.rssi >= -60) {
+                label += ' (Good)';
+            } else if (network.rssi >= -70) {
+                label += ' (Fair)';
+            } else {
+                label += ' (Poor)';
+            }
+            
+            // Add lock icon for encrypted networks
+            if (network.encrypted) {
+                label += ' 🔒';
+            }
+            
+            option.textContent = label;
+            select.appendChild(option);
+        });
+    })
+    .catch(error => {
+        console.error('Error refreshing networks:', error);
+        const select = document.getElementById('ssid');
+        select.innerHTML = '<option value="">Error loading networks</option>';
     });
 }
 
@@ -210,4 +247,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Load insights list
     loadInsights();
+
+    // Populate the networks list
+    refreshNetworks();
 });

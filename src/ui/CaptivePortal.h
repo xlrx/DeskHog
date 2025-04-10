@@ -28,6 +28,12 @@ private:
     // WiFi manager reference
     WiFiInterface& _wifiInterface;
 
+    // Store the last scan result
+    String _cachedNetworks;
+
+    // Track when we last did a scan
+    unsigned long _lastScanTime;
+
     // Handle main portal page
     void handleRoot();
     
@@ -53,7 +59,10 @@ private:
     void handle404();
 
     // Scan available networks
-    String getScanNetworksHtml();
+    String getNetworksJson();
+
+    // New method to handle scanning
+    void performWiFiScan();
 };
 
 #endif // CAPTIVE_PORTAL_H

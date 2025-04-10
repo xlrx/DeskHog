@@ -2,7 +2,7 @@
 #include <ArduinoJson.h>
 
 CaptivePortal::CaptivePortal(ConfigManager& configManager, WiFiInterface& wifiInterface)
-    : _server(80), _configManager(configManager), _wifiInterface(wifiInterface) {
+    : _server(80), _configManager(configManager), _wifiInterface(wifiInterface), _lastScanTime(0) {
 }
 
 void CaptivePortal::begin() {
@@ -24,6 +24,9 @@ void CaptivePortal::begin() {
     // Start server
     _server.begin();
     
+    // Do initial WiFi scan
+    performWiFiScan();
+    
     Serial.println("Captive portal started");
 }
 
@@ -32,15 +35,25 @@ void CaptivePortal::process() {
 }
 
 void CaptivePortal::handleRoot() {
-    // Return the main HTML with the networks list populated
+    // Return the static HTML - network list will be populated by JavaScript
     String html = FPSTR(PORTAL_HTML);
-    html.replace("<!-- NETWORK_LIST_PLACEHOLDER -->", getScanNetworksHtml());
     _server.send(200, "text/html", html);
 }
 
 void CaptivePortal::handleScanNetworks() {
-    // Just return the network list HTML for AJAX refresh
-    _server.send(200, "text/html", getScanNetworksHtml());
+    // Return cached networks immediately
+    _server.send(200, "application/json", _cachedNetworks);
+    
+    // Trigger a new scan for next time if it's been more than 10 seconds
+    unsigned long now = millis();
+    if (now - _lastScanTime >= 10000) {  // 10 second cooldown
+        performWiFiScan();
+    }
+}
+
+void CaptivePortal::performWiFiScan() {
+    _lastScanTime = millis();
+    _cachedNetworks = getNetworksJson();
 }
 
 void CaptivePortal::handleSaveWifi() {
@@ -206,15 +219,14 @@ void CaptivePortal::handle404() {
     _server.send(302, "text/plain", "");
 }
 
-String CaptivePortal::getScanNetworksHtml() {
-    String html = "<option value=''>-- Select Network --</option>";
+String CaptivePortal::getNetworksJson() {
+    DynamicJsonDocument doc(4096);  // Adjust size based on max networks
+    JsonArray networks = doc.createNestedArray("networks");
     
     // Scan for networks
     int numNetworks = WiFi.scanNetworks();
     
-    if (numNetworks == 0) {
-        html += "<option disabled>No networks found</option>";
-    } else {
+    if (numNetworks > 0) {
         // Sort networks by signal strength
         int indices[numNetworks];
         for (int i = 0; i < numNetworks; i++) {
@@ -230,34 +242,19 @@ String CaptivePortal::getScanNetworksHtml() {
             }
         }
         
-        // Add networks to dropdown
+        // Add networks to JSON array
         for (int i = 0; i < numNetworks; i++) {
             int index = indices[i];
             String ssid = WiFi.SSID(index);
             int rssi = WiFi.RSSI(index);
             bool encrypted = WiFi.encryptionType(index) != WIFI_AUTH_OPEN;
             
-            // Only show networks with an SSID
+            // Only include networks with an SSID
             if (ssid.length() > 0) {
-                html += "<option value='" + ssid + "'>" + ssid;
-                
-                // Add signal strength indicator
-                if (rssi >= -50) {
-                    html += " (Excellent)";
-                } else if (rssi >= -60) {
-                    html += " (Good)";
-                } else if (rssi >= -70) {
-                    html += " (Fair)";
-                } else {
-                    html += " (Poor)";
-                }
-                
-                // Add lock icon for encrypted networks
-                if (encrypted) {
-                    html += " 🔒";
-                }
-                
-                html += "</option>";
+                JsonObject network = networks.createNestedObject();
+                network["ssid"] = ssid;
+                network["rssi"] = rssi;
+                network["encrypted"] = encrypted;
             }
         }
     }
@@ -265,5 +262,7 @@ String CaptivePortal::getScanNetworksHtml() {
     // Free memory used by scan
     WiFi.scanDelete();
     
-    return html;
+    String response;
+    serializeJson(doc, response);
+    return response;
 }
