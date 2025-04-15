@@ -392,15 +392,25 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
         // Get total for this step
         stepData.total = stepCounts[step];
         
+        // Get step name
+        char stepNameBuffer[32] = {0};
+        parser.getFunnelStepData(0, step, stepNameBuffer, sizeof(stepNameBuffer), nullptr, nullptr, nullptr);
+        
         // Create label text
         char numberBuffer[16];
         if (step == 0) {
             NumberFormat::addThousandsSeparators(numberBuffer, sizeof(numberBuffer), stepData.total);
             stepData.label = String(numberBuffer);
+            if (stepNameBuffer[0] != '\0') {
+                stepData.label += " - " + String(stepNameBuffer);
+            }
         } else {
             NumberFormat::addThousandsSeparators(numberBuffer, sizeof(numberBuffer), stepData.total);
             uint32_t percentage = totalFirstStep > 0 ? (stepData.total * 100) / totalFirstStep : 0;
             stepData.label = String(numberBuffer) + " - " + String(percentage) + "%";
+            if (stepNameBuffer[0] != '\0') {
+                stepData.label += " - " + String(stepNameBuffer);
+            }
         }
         
         // Calculate segment widths and offsets
