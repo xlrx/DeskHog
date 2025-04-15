@@ -46,6 +46,7 @@ private:
     lv_obj_t* _chart;
     lv_chart_series_t* _series;
     lv_obj_t* _funnel_container;
+    lv_obj_t* _content_container;  // Container for the main content (numeric, chart, or funnel)
     lv_obj_t* _funnel_bars[MAX_FUNNEL_STEPS];
     lv_obj_t* _funnel_labels[MAX_FUNNEL_STEPS];
     lv_obj_t* _funnel_segments[MAX_FUNNEL_STEPS][MAX_BREAKDOWNS];

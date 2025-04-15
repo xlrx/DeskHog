@@ -108,7 +108,7 @@ void CardNavigationStack::addCard(lv_color_t color, const char* label_text) {
     // Create and configure the label
     lv_obj_t* label = lv_label_create(card);
     lv_label_set_text(label, label_text);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
     lv_obj_center(label);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     

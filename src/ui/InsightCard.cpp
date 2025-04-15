@@ -1,8 +1,9 @@
 #include "InsightCard.h"
+#include "ColorScheme.h"
 
 #define GRAPH_WIDTH 240  // Full screen width
 #define GRAPH_HEIGHT 90  // Height for the graph
-#define FUNNEL_BAR_HEIGHT 15
+#define FUNNEL_BAR_HEIGHT 7  // Reduced from 15 to 7
 #define FUNNEL_BAR_GAP 20    // Increased to accommodate label
 #define FUNNEL_LEFT_MARGIN 0  // No left margin
 #define FUNNEL_LABEL_HEIGHT 20
@@ -44,11 +45,34 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, PostHogClient&
     // Create initial UI elements synchronously since we're in setup()
     _card = lv_obj_create(parent);
     lv_obj_set_size(_card, width, height);
-    lv_obj_clear_flag(_card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(_card, ColorScheme::backgroundColor(), 0);
+    lv_obj_set_style_pad_all(_card, 5, 0);
     
-    _title_label = lv_label_create(_card);
-    lv_obj_align(_title_label, LV_ALIGN_TOP_MID, 0, 10);
+    // Create flex container for vertical layout
+    lv_obj_t* flex_col = lv_obj_create(_card);
+    lv_obj_set_size(flex_col, width - 10, height - 10); // Account for card padding
+    lv_obj_set_style_pad_row(flex_col, 5, 0);  // 5px gap between items
+    lv_obj_set_style_pad_top(flex_col, 0, 0);  // No padding at top
+    lv_obj_set_flex_flow(flex_col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(flex_col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_clear_flag(flex_col, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_opa(flex_col, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(flex_col, 0, 0);
+    
+    // Create title label with wrapping
+    _title_label = lv_label_create(flex_col);
+    lv_obj_set_width(_title_label, width - 20); // Account for padding
+    lv_obj_set_style_text_color(_title_label, ColorScheme::labelColor(), 0);
+    lv_obj_set_style_text_font(_title_label, &lv_font_montserrat_14, 0);
+    lv_label_set_long_mode(_title_label, LV_LABEL_LONG_WRAP);
     lv_label_set_text(_title_label, "Loading...");
+    
+    // Create content container that will hold either numeric display, chart, or funnel
+    _content_container = lv_obj_create(flex_col);
+    lv_obj_set_size(_content_container, width - 20, height - 40); // Adjust height to account for title
+    lv_obj_set_style_bg_opa(_content_container, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(_content_container, 0, 0);
+    lv_obj_set_style_pad_all(_content_container, 0, 0);
     
     // Create initial numeric display
     createNumericElements();
@@ -154,16 +178,11 @@ void InsightCard::handleNewData(const String& response) {
 
 void InsightCard::clearCardContent() {
     // This is called from dispatchToUI, so we're already on the main thread
-    if (_card) {
-        lv_obj_clean(_card);
-        
-        // Recreate title label
-        _title_label = lv_label_create(_card);
-        lv_obj_align(_title_label, LV_ALIGN_TOP_MID, 0, 10);
-        lv_label_set_text(_title_label, "Loading...");
+    if (_content_container && lv_obj_is_valid(_content_container)) {
+        lv_obj_clean(_content_container);
     }
     
-    // Reset all pointers
+    // Reset all content pointers since they were children of the cleaned container
     _value_label = nullptr;
     _chart = nullptr;
     _series = nullptr;
@@ -179,22 +198,38 @@ void InsightCard::clearCardContent() {
 }
 
 void InsightCard::createNumericElements() {
-    // This can be called either synchronously or through dispatch
-    _value_label = lv_label_create(_card);
-    lv_obj_align(_value_label, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_text_font(_value_label, &lv_font_montserrat_18, 0);
+    if (!_content_container || !lv_obj_is_valid(_content_container)) return;
+    
+    // Clean up any existing value label
+    if (_value_label) {
+        lv_obj_del(_value_label);
+        _value_label = nullptr;
+    }
+    
+    _value_label = lv_label_create(_content_container);
+    if (!_value_label) return;
+    
+    lv_obj_center(_value_label);
+    lv_obj_set_style_text_font(_value_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(_value_label, ColorScheme::valueColor(), 0);
     lv_label_set_text(_value_label, "...");
 }
 
 void InsightCard::createLineGraphElements() {
-    // This can be called either synchronously or through dispatch
-    if (!_card) return;
+    if (!_content_container || !lv_obj_is_valid(_content_container)) return;
     
-    _chart = lv_chart_create(_card);
+    // Clean up any existing chart
+    if (_chart) {
+        lv_obj_del(_chart);
+        _chart = nullptr;
+        _series = nullptr;
+    }
+    
+    _chart = lv_chart_create(_content_container);
     if (!_chart) return;
     
     lv_obj_set_size(_chart, GRAPH_WIDTH, GRAPH_HEIGHT);
-    lv_obj_align(_chart, LV_ALIGN_CENTER, 0, 5);
+    lv_obj_center(_chart);
     lv_chart_set_type(_chart, LV_CHART_TYPE_LINE);
     
     _series = lv_chart_add_series(_chart, lv_color_hex(0x2980b9), LV_CHART_AXIS_PRIMARY_Y);
@@ -204,16 +239,34 @@ void InsightCard::createLineGraphElements() {
         return;
     }
     
-    // Remove point markers and set line width
     lv_obj_set_style_size(_chart, 0, LV_PART_INDICATOR);
     lv_obj_set_style_line_width(_chart, 2, LV_PART_ITEMS);
 }
 
 void InsightCard::createFunnelElements() {
-    // This can be called either synchronously or through dispatch
-    _funnel_container = lv_obj_create(_card);
+    if (!_content_container || !lv_obj_is_valid(_content_container)) return;
+    
+    // Clean up any existing funnel container
+    if (_funnel_container) {
+        lv_obj_del(_funnel_container);
+        _funnel_container = nullptr;
+        
+        // Reset all funnel-related pointers since they were children of the deleted container
+        for (int i = 0; i < MAX_FUNNEL_STEPS; i++) {
+            _funnel_bars[i] = nullptr;
+            _funnel_labels[i] = nullptr;
+            for (int j = 0; j < MAX_BREAKDOWNS; j++) {
+                _funnel_segments[i][j] = nullptr;
+            }
+        }
+    }
+    
+    // Create new funnel container
+    _funnel_container = lv_obj_create(_content_container);
+    if (!_funnel_container) return;
+    
     lv_obj_set_size(_funnel_container, GRAPH_WIDTH, GRAPH_HEIGHT);
-    lv_obj_align(_funnel_container, LV_ALIGN_TOP_LEFT, 0, 20);
+    lv_obj_align(_funnel_container, LV_ALIGN_TOP_LEFT, 0, 0);  // Remove the 20px top margin
     lv_obj_clear_flag(_funnel_container, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_pad_all(_funnel_container, 0, 0);
     lv_obj_set_style_border_width(_funnel_container, 0, 0);
@@ -400,6 +453,8 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
                     _funnel_labels[step] = lv_label_create(_funnel_container);
                     if (_funnel_labels[step]) {
                         lv_obj_set_style_text_align(_funnel_labels[step], LV_TEXT_ALIGN_LEFT, 0);
+                        lv_obj_set_style_text_font(_funnel_labels[step], &lv_font_montserrat_14, 0);
+                        lv_obj_set_style_text_color(_funnel_labels[step], ColorScheme::labelColor(), 0);
                     }
                 }
                 
