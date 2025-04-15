@@ -104,10 +104,12 @@ void PostHogClient::checkRefreshes() {
     }
 }
 
-String PostHogClient::buildInsightUrl(const String& insight_id) const {
+String PostHogClient::buildInsightUrl(const String& insight_id, const char* refresh_mode) const {
     String url = String(BASE_URL);
     url += String(_config.getTeamId());
-    url += "/insights/?short_id=";
+    url += "/insights/?refresh=";
+    url += refresh_mode;
+    url += "&short_id=";
     url += insight_id;
     url += "&personal_api_key=";
     url += _config.getApiKey();
@@ -120,18 +122,45 @@ bool PostHogClient::fetchInsight(const String& insight_id, String& response) {
     }
 
     has_active_request = true;
-    String url = buildInsightUrl(insight_id);
+    
+    // First, try to get cached data
+    String url = buildInsightUrl(insight_id, "force_cache");
     
     _http.begin(url);
     int httpCode = _http.GET();
     
     bool success = false;
+    bool needsRefresh = false;
+    
     if (httpCode == HTTP_CODE_OK) {
         response = _http.getString();
-        success = true;
+        
+        // Quick check if we need to refresh (look for null result)
+        if (response.indexOf("\"result\":null") >= 0 || 
+            response.indexOf("\"result\":[]") >= 0) {
+            needsRefresh = true;
+        } else {
+            success = true;
+        }
     }
     
     _http.end();
+    
+    // If we need to refresh, make a second request with blocking
+    if (needsRefresh) {
+        url = buildInsightUrl(insight_id, "blocking");
+        
+        _http.begin(url);
+        httpCode = _http.GET();
+        
+        if (httpCode == HTTP_CODE_OK) {
+            response = _http.getString();
+            success = true;
+        }
+        
+        _http.end();
+    }
+    
     has_active_request = false;
     return success;
 } 

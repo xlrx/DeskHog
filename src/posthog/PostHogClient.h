@@ -70,7 +70,7 @@ private:
     void processQueue();
     void checkRefreshes();
     bool fetchInsight(const String& insight_id, String& response);
-    String buildInsightUrl(const String& insight_id) const;
+    String buildInsightUrl(const String& insight_id, const char* refresh_mode = "force_cache") const;
 };
 
 #endif // POSTHOG_CLIENT_H 

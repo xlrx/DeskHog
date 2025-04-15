@@ -41,6 +41,8 @@ public:
     
     // Funnel-specific methods
     bool hasFunnelStructure() const;
+    bool hasFunnelResultData() const;
+    bool hasFunnelNestedStructure() const;
     size_t getFunnelBreakdownCount() const;
     size_t getFunnelStepCount() const;
     

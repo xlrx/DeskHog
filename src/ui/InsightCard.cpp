@@ -360,16 +360,6 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
     stepCount = min(stepCount, (size_t)MAX_FUNNEL_STEPS);
     breakdownCount = min(breakdownCount, (size_t)MAX_BREAKDOWNS);
     
-    // Get first step data to calculate totals
-    uint32_t breakdownCounts[MAX_BREAKDOWNS];
-    double breakdownRates[MAX_BREAKDOWNS];
-    parser.getFunnelBreakdownComparison(0, breakdownCounts, breakdownRates);
-    
-    uint32_t totalFirstStep = 0;
-    for (size_t i = 0; i < breakdownCount; i++) {
-        totalFirstStep += breakdownCounts[i];
-    }
-    
     // Pre-calculate all step data
     struct StepData {
         uint32_t total;
@@ -383,18 +373,24 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
     
     lv_coord_t available_width = lv_obj_get_width(_funnel_container);
     
-    // Calculate all data outside the dispatch
+    // Get total counts for first step to calculate percentages
+    uint32_t stepCounts[MAX_FUNNEL_STEPS] = {0};
+    double conversionRates[MAX_FUNNEL_STEPS-1] = {0.0};
+    parser.getFunnelTotalCounts(0, stepCounts, conversionRates);
+    
+    uint32_t totalFirstStep = stepCounts[0];
+    
+    // Calculate all step data outside the dispatch
     for (size_t step = 0; step < stepCount; step++) {
         StepData stepData;
         
         // Get breakdown data for this step
+        uint32_t breakdownCounts[MAX_BREAKDOWNS] = {0};
+        double breakdownRates[MAX_BREAKDOWNS] = {0.0};
         parser.getFunnelBreakdownComparison(step, breakdownCounts, breakdownRates);
         
-        // Calculate total for this step
-        stepData.total = 0;
-        for (size_t i = 0; i < breakdownCount; i++) {
-            stepData.total += breakdownCounts[i];
-        }
+        // Get total for this step
+        stepData.total = stepCounts[step];
         
         // Create label text
         char numberBuffer[16];
@@ -413,7 +409,13 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
         float currentWidth = 0;
         
         for (size_t breakdown = 0; breakdown < breakdownCount; breakdown++) {
-            float segmentPercentage = (float)breakdownCounts[breakdown] / stepData.total;
+            float segmentPercentage = 0.0f;
+            if (stepData.total > 0) {
+                segmentPercentage = (float)breakdownCounts[breakdown] / stepData.total;
+            } else {
+                segmentPercentage = 0.0f;
+            }
+            
             float segmentWidth = totalWidth * segmentPercentage;
             
             stepData.segmentWidths.push_back(segmentWidth);
@@ -470,7 +472,7 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
                 }
                 
                 // Create or update segments
-                for (size_t breakdown = 0; breakdown < breakdownCount; breakdown++) {
+                for (size_t breakdown = 0; breakdown < stepData.segmentWidths.size(); breakdown++) {
                     if (!_funnel_segments[step][breakdown]) {
                         _funnel_segments[step][breakdown] = lv_obj_create(_funnel_bars[step]);
                         if (_funnel_segments[step][breakdown]) {
