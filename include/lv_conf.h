@@ -46,7 +46,7 @@
 
 /*1: use custom malloc/free, 0: use the built-in `lv_mem_alloc()` and
  * `lv_mem_free()`*/
-#define LV_MEM_CUSTOM 0
+#define LV_MEM_CUSTOM 1
 #if LV_MEM_CUSTOM == 0
 /*Size of the memory available for `lv_mem_alloc()` in bytes (>= 2kB)*/
 #define LV_MEM_SIZE (32U * 1024U) /*[bytes]*/
@@ -65,8 +65,8 @@
 
 #else /*LV_MEM_CUSTOM*/
 #define LV_MEM_CUSTOM_INCLUDE                                                  \
-  <stdlib.h> /*Header for the dynamic memory function*/
-#define LV_MEM_CUSTOM_ALLOC malloc
+  <esp32-hal-psram.h> /*Header for the dynamic memory function*/
+#define LV_MEM_CUSTOM_ALLOC ps_malloc /* Use ESP32 PSRAM */
 #define LV_MEM_CUSTOM_FREE free
 #define LV_MEM_CUSTOM_REALLOC realloc
 #endif /*LV_MEM_CUSTOM*/
@@ -324,7 +324,7 @@ e.g. "stm32f769xx.h" or "stm32f429xx.h"*/
 #define LV_FONT_MONTSERRAT_30 0
 #define LV_FONT_MONTSERRAT_32 0
 #define LV_FONT_MONTSERRAT_34 0
-#define LV_FONT_MONTSERRAT_36 0
+#define LV_FONT_MONTSERRAT_36 1
 #define LV_FONT_MONTSERRAT_38 0
 #define LV_FONT_MONTSERRAT_40 0
 #define LV_FONT_MONTSERRAT_42 0
@@ -366,6 +366,15 @@ e.g. "stm32f769xx.h" or "stm32f429xx.h"*/
 /*Set the pixel order of the display. Physical order of RGB channels. Doesn't
  * matter with "normal" fonts.*/
 #define LV_FONT_SUBPX_BGR 0 /*0: RGB; 1:BGR order*/
+#endif
+
+/*Enable the Tiny TTF library*/
+#define LV_USE_TINY_TTF 1
+#if LV_USE_TINY_TTF
+/* Maximum cache size to use (when caching enabled) in bytes (requires ~250 bytes context per font) */
+#define LV_TINY_TTF_CACHE_SIZE 512  /* Reduce from 1024 to 128 to save memory */
+/* Add TinyTTF file support (loads from filesystem) */
+#define LV_TINY_TTF_FILE_SUPPORT 0
 #endif
 
 /*=================

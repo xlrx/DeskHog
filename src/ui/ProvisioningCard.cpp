@@ -1,4 +1,5 @@
 #include "ProvisioningCard.h"
+#include "Style.h"
 
 ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterface, uint16_t width, uint16_t height)
     : _parent(parent), _wifiInterface(wifiInterface), _width(width), _height(height),
@@ -7,7 +8,7 @@ ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterfac
     // Create main card container - use full width of parent
     _card = lv_obj_create(_parent);
     lv_obj_set_size(_card, LV_PCT(100), height);
-    lv_obj_set_style_bg_color(_card, lv_color_black(), 0);
+    lv_obj_set_style_bg_color(_card, Style::backgroundColor(), 0);
     lv_obj_set_style_pad_all(_card, 0, 0);
     lv_obj_set_style_radius(_card, 8, 0);
     lv_obj_set_style_border_width(_card, 0, 0);
@@ -21,8 +22,8 @@ ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterfac
     lv_obj_set_size(_statusScreen, LV_PCT(100), LV_PCT(100));
     
     // Set screen backgrounds to black
-    lv_obj_set_style_bg_color(_qrScreen, lv_color_black(), 0);
-    lv_obj_set_style_bg_color(_statusScreen, lv_color_black(), 0);
+    lv_obj_set_style_bg_color(_qrScreen, Style::backgroundColor(), 0);
+    lv_obj_set_style_bg_color(_statusScreen, Style::backgroundColor(), 0);
     
     // Position screens at 0,0 relative to card
     lv_obj_set_pos(_qrScreen, 0, 0);
@@ -72,6 +73,7 @@ void ProvisioningCard::showWiFiStatus() {
 }
 
 void ProvisioningCard::createQRScreen() {
+    // QR codes need to have high contrast - white background with black pattern
     lv_obj_set_style_bg_color(_qrScreen, lv_color_white(), 0);
     lv_obj_set_style_pad_all(_qrScreen, 0, 0);
     lv_obj_set_style_border_width(_qrScreen, 0, 0);
@@ -87,12 +89,12 @@ void ProvisioningCard::createQRScreen() {
 }
 
 void ProvisioningCard::createStatusScreen() {
-    lv_obj_set_style_bg_color(_statusScreen, lv_color_black(), 0);
+    lv_obj_set_style_bg_color(_statusScreen, Style::backgroundColor(), 0);
     lv_obj_set_style_pad_all(_statusScreen, 0, 0);
     lv_obj_set_style_border_width(_statusScreen, 0, 0);
     
     // Define semantic colors
-    lv_color_t rowLabel = lv_color_make(128, 128, 128);  // Medium grey
+    lv_color_t rowLabel = Style::labelColor();
     
     // Create container for status items - use full width of parent
     lv_obj_t* table = lv_obj_create(_statusScreen);
@@ -116,25 +118,28 @@ void ProvisioningCard::createStatusScreen() {
 }
 
 void ProvisioningCard::createTableRow(lv_obj_t* table, uint16_t row, const char* title, lv_obj_t** valueLabel, lv_color_t labelColor) {
+    // Calculate line height based on font
+    int lineHeight = lv_font_get_line_height(Style::valueFont()) + 5;
+    
     // Create container for the row content
     lv_obj_t* container = lv_obj_create(table);
     lv_obj_set_size(container, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_style_pad_all(container, 0, 0);
     lv_obj_set_style_bg_opa(container, 0, 0);
     lv_obj_set_style_border_width(container, 0, 0);
-    lv_obj_set_pos(container, 0, row * (lv_font_montserrat_18.line_height + 5));
+    lv_obj_set_pos(container, 0, row * lineHeight);
     
     // Create title label (left-aligned)
     lv_obj_t* titleLabel = lv_label_create(container);
-    lv_obj_set_style_text_font(titleLabel, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(titleLabel, Style::labelFont(), 0);
     lv_obj_set_style_text_color(titleLabel, labelColor, 0);
     lv_label_set_text(titleLabel, title);
     lv_obj_align(titleLabel, LV_ALIGN_LEFT_MID, 0, 0);
     
     // Create value label (right-aligned)
     *valueLabel = lv_label_create(container);
-    lv_obj_set_style_text_font(*valueLabel, &lv_font_montserrat_18, 0);
-    lv_obj_set_style_text_color(*valueLabel, lv_color_white(), 0);  // White text for values
+    lv_obj_set_style_text_font(*valueLabel, Style::valueFont(), 0);
+    lv_obj_set_style_text_color(*valueLabel, Style::valueColor(), 0);
     lv_obj_align(*valueLabel, LV_ALIGN_RIGHT_MID, 0, 0);
 }
 

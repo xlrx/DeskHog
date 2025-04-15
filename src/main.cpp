@@ -10,6 +10,8 @@
 #include "ui/InsightCard.h"
 #include "hardware/Input.h"
 #include "posthog/PostHogClient.h"
+#include "Style.h"
+#include "esp_heap_caps.h" // For PSRAM management
 
 // Display dimensions
 #define SCREEN_WIDTH 240
@@ -87,12 +89,18 @@ void setup() {
         Serial.println("PSRAM initialized successfully");
         Serial.printf("Total PSRAM: %d bytes\n", ESP.getPsramSize());
         Serial.printf("Free PSRAM: %d bytes\n", ESP.getFreePsram());
+        
+        // Set memory allocation preference to PSRAM
+        heap_caps_malloc_extmem_enable(4096);  // Allow allocations less than 4096 bytes from PSRAM
     } else {
         Serial.println("PSRAM initialization failed!");
         while(1); // Stop here if PSRAM init fails
     }
 
     SystemController::begin();
+    
+    // Initialize styles and fonts
+    Style::init();
     
     // Initialize config manager
     configManager = new ConfigManager();

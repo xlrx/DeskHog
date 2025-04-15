@@ -1,10 +1,10 @@
 #include "InsightCard.h"
-#include "ColorScheme.h"
+#include "Style.h"
 #include "NumberFormat.h"
 
 #define GRAPH_WIDTH 240  // Full screen width
 #define GRAPH_HEIGHT 90  // Height for the graph
-#define FUNNEL_BAR_HEIGHT 7  // Reduced from 15 to 7
+#define FUNNEL_BAR_HEIGHT 5
 #define FUNNEL_BAR_GAP 20    // Increased to accommodate label
 #define FUNNEL_LEFT_MARGIN 0  // No left margin
 #define FUNNEL_LABEL_HEIGHT 20
@@ -46,7 +46,7 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, PostHogClient&
     // Create initial UI elements synchronously since we're in setup()
     _card = lv_obj_create(parent);
     lv_obj_set_size(_card, width, height);
-    lv_obj_set_style_bg_color(_card, ColorScheme::backgroundColor(), 0);
+    lv_obj_set_style_bg_color(_card, Style::backgroundColor(), 0);
     lv_obj_set_style_pad_all(_card, 5, 0);
     
     // Create flex container for vertical layout
@@ -63,8 +63,8 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, PostHogClient&
     // Create title label with wrapping
     _title_label = lv_label_create(flex_col);
     lv_obj_set_width(_title_label, width - 20); // Account for padding
-    lv_obj_set_style_text_color(_title_label, ColorScheme::labelColor(), 0);
-    lv_obj_set_style_text_font(_title_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(_title_label, Style::labelColor(), 0);
+    lv_obj_set_style_text_font(_title_label, Style::labelFont(), 0);
     lv_label_set_long_mode(_title_label, LV_LABEL_LONG_WRAP);
     lv_label_set_text(_title_label, "Loading...");
     
@@ -211,8 +211,8 @@ void InsightCard::createNumericElements() {
     if (!_value_label) return;
     
     lv_obj_center(_value_label);
-    lv_obj_set_style_text_font(_value_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(_value_label, ColorScheme::valueColor(), 0);
+    lv_obj_set_style_text_font(_value_label, Style::largeValueFont(), 0);
+    lv_obj_set_style_text_color(_value_label, Style::valueColor(), 0);
     lv_label_set_text(_value_label, "...");
 }
 
@@ -283,11 +283,29 @@ void InsightCard::updateNumericDisplay(const String& title, double value) {
         
         if (_value_label) {
             char valueBuffer[32];
-            if (value == (int)value) {
-                snprintf(valueBuffer, sizeof(valueBuffer), "%.0f", value);
-            } else {
+            
+            // Format number with appropriate precision and thousands separators
+            if (value >= 1000000) {
+                // Display in millions with 1 decimal place (e.g., 1.2M)
+                double millions = value / 1000000.0;
+                snprintf(valueBuffer, sizeof(valueBuffer), "%.1fM", millions);
+            } else if (value >= 100000) {
+                // Display in thousands with 1 decimal place (e.g., 10.5K)
+                double thousands = value / 1000.0;
+                snprintf(valueBuffer, sizeof(valueBuffer), "%.1fK", thousands);
+            } else if (value == (int)value) {
+                // Integer with no decimal places and commas
+                char tempBuffer[32];
+                snprintf(tempBuffer, sizeof(tempBuffer), "%.0f", value);
+                NumberFormat::addThousandsSeparators(valueBuffer, sizeof(valueBuffer), atoi(tempBuffer));
+            } else if (value < 1) {
+                // Small decimal values with 2 decimal places
                 snprintf(valueBuffer, sizeof(valueBuffer), "%.2f", value);
+            } else {
+                // Values between 1 and 999 with 1 decimal place
+                snprintf(valueBuffer, sizeof(valueBuffer), "%.1f", value);
             }
+            
             lv_label_set_text(_value_label, valueBuffer);
         }
     });
@@ -470,8 +488,8 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
                     _funnel_labels[step] = lv_label_create(_funnel_container);
                     if (_funnel_labels[step]) {
                         lv_obj_set_style_text_align(_funnel_labels[step], LV_TEXT_ALIGN_LEFT, 0);
-                        lv_obj_set_style_text_font(_funnel_labels[step], &lv_font_montserrat_14, 0);
-                        lv_obj_set_style_text_color(_funnel_labels[step], ColorScheme::labelColor(), 0);
+                        lv_obj_set_style_text_font(_funnel_labels[step], Style::valueFont(), 0);
+                        lv_obj_set_style_text_color(_funnel_labels[step], Style::valueColor(), 0);
                     }
                 }
                 
