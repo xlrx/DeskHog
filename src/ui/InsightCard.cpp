@@ -265,8 +265,9 @@ void InsightCard::createFunnelElements() {
     _funnel_container = lv_obj_create(_content_container);
     if (!_funnel_container) return;
     
-    lv_obj_set_size(_funnel_container, GRAPH_WIDTH, GRAPH_HEIGHT);
-    lv_obj_align(_funnel_container, LV_ALIGN_TOP_LEFT, 0, 0);  // Remove the 20px top margin
+    lv_coord_t available_width = lv_obj_get_width(_content_container);
+    lv_obj_set_size(_funnel_container, available_width, GRAPH_HEIGHT);
+    lv_obj_align(_funnel_container, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_clear_flag(_funnel_container, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_pad_all(_funnel_container, 0, 0);
     lv_obj_set_style_border_width(_funnel_container, 0, 0);
@@ -345,7 +346,7 @@ void InsightCard::updateLineGraphDisplay(const String& title, double* values, si
 }
 
 void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser) {
-    if (!_funnel_container) return;
+    if (!_funnel_container || !_title_label) return;
     
     size_t stepCount = parser.getFunnelStepCount();
     size_t breakdownCount = parser.getFunnelBreakdownCount();
@@ -379,7 +380,7 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
     std::vector<StepData> stepDataArray;
     stepDataArray.reserve(stepCount);
     
-    int yOffset = 0;
+    lv_coord_t available_width = lv_obj_get_width(_funnel_container);
     
     // Calculate all data outside the dispatch
     for (size_t step = 0; step < stepCount; step++) {
@@ -404,7 +405,7 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
         
         // Calculate segment widths and offsets
         float stepPercentage = (float)stepData.total / totalFirstStep;
-        float totalWidth = GRAPH_WIDTH * stepPercentage;
+        float totalWidth = available_width * stepPercentage;
         float currentWidth = 0;
         
         for (size_t breakdown = 0; breakdown < breakdownCount; breakdown++) {
@@ -422,7 +423,7 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
     
     // Single dispatch for all UI updates
     dispatchToUI([this, title = String(title), stepCount, breakdownCount, 
-                  stepDataArray = std::move(stepDataArray)]() {
+                  stepDataArray = std::move(stepDataArray), available_width]() {
         if (!_funnel_container || !_title_label) return;
         
         // Update title
@@ -437,7 +438,7 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
             if (!_funnel_bars[step]) {
                 _funnel_bars[step] = lv_obj_create(_funnel_container);
                 if (_funnel_bars[step]) {
-                    lv_obj_set_size(_funnel_bars[step], GRAPH_WIDTH, FUNNEL_BAR_HEIGHT);
+                    lv_obj_set_size(_funnel_bars[step], available_width, FUNNEL_BAR_HEIGHT);
                     lv_obj_set_style_bg_opa(_funnel_bars[step], LV_OPA_0, 0);
                     lv_obj_set_style_border_width(_funnel_bars[step], 0, 0);
                     lv_obj_set_style_pad_all(_funnel_bars[step], 0, 0);
