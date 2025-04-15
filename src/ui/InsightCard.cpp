@@ -1,5 +1,6 @@
 #include "InsightCard.h"
 #include "ColorScheme.h"
+#include "NumberFormat.h"
 
 #define GRAPH_WIDTH 240  // Full screen width
 #define GRAPH_HEIGHT 90  // Height for the graph
@@ -396,11 +397,14 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
         }
         
         // Create label text
+        char numberBuffer[16];
         if (step == 0) {
-            stepData.label = String(stepData.total);
+            NumberFormat::addThousandsSeparators(numberBuffer, sizeof(numberBuffer), stepData.total);
+            stepData.label = String(numberBuffer);
         } else {
-            stepData.label = String(stepData.total) + " (" + 
-                           String(totalFirstStep > 0 ? (stepData.total * 100) / totalFirstStep : 0) + "%)";
+            NumberFormat::addThousandsSeparators(numberBuffer, sizeof(numberBuffer), stepData.total);
+            uint32_t percentage = totalFirstStep > 0 ? (stepData.total * 100) / totalFirstStep : 0;
+            stepData.label = String(numberBuffer) + " - " + String(percentage) + "%";
         }
         
         // Calculate segment widths and offsets
