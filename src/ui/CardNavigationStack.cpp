@@ -213,61 +213,80 @@ void CardNavigationStack::_scroll_event_cb(lv_event_t* e) {
 
 void CardNavigationStack::_update_scroll_indicator(int active_index) {
     uint32_t card_count = lv_obj_get_child_cnt(_main_container);
-    if (active_index >= card_count) return;
+    uint32_t pip_count = lv_obj_get_child_cnt(_scroll_indicator);
     
-    static int previous_index = 0;  // Keep track of previous active pip
+    // Safety check - if we have no cards, don't update anything
+    if (card_count == 0 || pip_count == 0) return;
     
+    // Ensure active_index is valid
+    if (active_index >= card_count) {
+        active_index = card_count - 1;
+        _current_card = active_index; // Update the current card too
+    }
+    
+    // Safety check for pip count
+    if (pip_count != card_count) {
+        // Force re-sync pips with cards
+        _update_pip_count();
+        pip_count = lv_obj_get_child_cnt(_scroll_indicator);
+    }
+    
+    // Keep track of previous active index with a static variable
+    static int previous_index = 0;
+    
+    // Only update if we're changing to a different pip
     if (previous_index != active_index) {
-        // Get previous pip with bounds check
-        lv_obj_t* prev_pip = lv_obj_get_child(_scroll_indicator, previous_index);
-        if (!prev_pip) {
-            Serial.printf("Error: Could not find previous pip at index %d\n", previous_index);
-            return;
+        // Bounds checking for previous pip
+        if (previous_index < pip_count) {
+            // Get previous pip with bounds check
+            lv_obj_t* prev_pip = lv_obj_get_child(_scroll_indicator, previous_index);
+            if (prev_pip) {
+                // Animate previous pip to shrink
+                lv_anim_t a;
+                lv_anim_init(&a);
+                lv_anim_set_var(&a, prev_pip);
+                lv_anim_set_time(&a, PIP_ANIM_DURATION);
+                lv_anim_set_values(&a, PIP_SIZE_ACTIVE, PIP_SIZE);
+                lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_set_width);
+                lv_obj_set_style_bg_color(prev_pip, lv_color_hex(0x808080), 0);
+                lv_anim_start(&a);
+                
+                lv_anim_t a2;
+                lv_anim_init(&a2);
+                lv_anim_set_var(&a2, prev_pip);
+                lv_anim_set_time(&a2, PIP_ANIM_DURATION);
+                lv_anim_set_values(&a2, PIP_SIZE_ACTIVE, PIP_SIZE);
+                lv_anim_set_exec_cb(&a2, (lv_anim_exec_xcb_t)lv_obj_set_height);
+                lv_anim_start(&a2);
+            }
         }
-        
-        // Get new pip with bounds check
-        lv_obj_t* new_pip = lv_obj_get_child(_scroll_indicator, active_index);
-        if (!new_pip) {
-            Serial.printf("Error: Could not find new pip at index %d\n", active_index);
-            return;
+
+        // Bounds checking for new pip
+        if (active_index < pip_count) {
+            // Get new pip with bounds check
+            lv_obj_t* new_pip = lv_obj_get_child(_scroll_indicator, active_index);
+            if (new_pip) {
+                // Animate new pip to grow
+                lv_anim_t b;
+                lv_anim_init(&b);
+                lv_anim_set_var(&b, new_pip);
+                lv_anim_set_time(&b, PIP_ANIM_DURATION);
+                lv_anim_set_values(&b, PIP_SIZE, PIP_SIZE_ACTIVE);
+                lv_anim_set_exec_cb(&b, (lv_anim_exec_xcb_t)lv_obj_set_width);
+                lv_obj_set_style_bg_color(new_pip, lv_color_white(), 0);
+                lv_anim_start(&b);
+                
+                lv_anim_t b2;
+                lv_anim_init(&b2);
+                lv_anim_set_var(&b2, new_pip);
+                lv_anim_set_time(&b2, PIP_ANIM_DURATION);
+                lv_anim_set_values(&b2, PIP_SIZE, PIP_SIZE_ACTIVE);
+                lv_anim_set_exec_cb(&b2, (lv_anim_exec_xcb_t)lv_obj_set_height);
+                lv_anim_start(&b2);
+            }
         }
-        
-        // Animate previous pip to shrink
-        lv_anim_t a;
-        lv_anim_init(&a);
-        lv_anim_set_var(&a, prev_pip);
-        lv_anim_set_time(&a, PIP_ANIM_DURATION);
-        lv_anim_set_values(&a, PIP_SIZE_ACTIVE, PIP_SIZE);
-        lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_set_width);
-        lv_obj_set_style_bg_color(prev_pip, lv_color_hex(0x808080), 0);
-        lv_anim_start(&a);
 
-        lv_anim_t a2;
-        lv_anim_init(&a2);
-        lv_anim_set_var(&a2, prev_pip);
-        lv_anim_set_time(&a2, PIP_ANIM_DURATION);
-        lv_anim_set_values(&a2, PIP_SIZE_ACTIVE, PIP_SIZE);
-        lv_anim_set_exec_cb(&a2, (lv_anim_exec_xcb_t)lv_obj_set_height);
-        lv_anim_start(&a2);
-
-        // Animate new pip to grow
-        lv_anim_t b;
-        lv_anim_init(&b);
-        lv_anim_set_var(&b, new_pip);
-        lv_anim_set_time(&b, PIP_ANIM_DURATION);
-        lv_anim_set_values(&b, PIP_SIZE, PIP_SIZE_ACTIVE);
-        lv_anim_set_exec_cb(&b, (lv_anim_exec_xcb_t)lv_obj_set_width);
-        lv_obj_set_style_bg_color(new_pip, lv_color_white(), 0);
-        lv_anim_start(&b);
-
-        lv_anim_t b2;
-        lv_anim_init(&b2);
-        lv_anim_set_var(&b2, new_pip);
-        lv_anim_set_time(&b2, PIP_ANIM_DURATION);
-        lv_anim_set_values(&b2, PIP_SIZE, PIP_SIZE_ACTIVE);
-        lv_anim_set_exec_cb(&b2, (lv_anim_exec_xcb_t)lv_obj_set_height);
-        lv_anim_start(&b2);
-
+        // Update previous index for next time
         previous_index = active_index;
     }
 }
@@ -298,14 +317,26 @@ bool CardNavigationStack::removeCard(lv_obj_t* card) {
         return false; // Card not found
     }
     
+    // Handle selection state before deleting the card
+    uint32_t new_count = child_count - 1;
+    uint8_t new_selection = _current_card;
+    
     // Adjust current card index if necessary
-    if (_current_card >= child_count - 1) {
-        _current_card = child_count > 1 ? child_count - 2 : 0;
-    } else if (_current_card == card_index) {
+    if (new_count == 0) {
+        // If this was the last card, set index to 0
+        new_selection = 0;
+    } else if (card_index == _current_card) {
         // If we're deleting the current card, switch to the previous one
+        // unless it's the first card, then switch to the next one
         if (_current_card > 0) {
-            _current_card--;
+            new_selection = _current_card - 1;
+        } else {
+            new_selection = 0; // Stay at the first card
         }
+    } else if (card_index < _current_card) {
+        // If we're deleting a card before the current one, 
+        // we need to adjust the current index down by one
+        new_selection = _current_card - 1;
     }
     
     // Delete the card from LVGL
@@ -313,11 +344,21 @@ bool CardNavigationStack::removeCard(lv_obj_t* card) {
     
     // Update the scroll indicator
     _update_pip_count();
-    _update_scroll_indicator(_current_card);
     
-    // Show the current card
-    if (lv_obj_get_child_cnt(_main_container) > 0) {
-        goToCard(_current_card);
+    // Set the new selection - if there are any cards left
+    if (new_count > 0) {
+        // Ensure the new selection is within bounds 
+        new_selection = (new_selection >= new_count) ? (new_count - 1) : new_selection;
+        _current_card = new_selection;
+        
+        // Update scroll indicator and actually show the card
+        _update_scroll_indicator(_current_card);
+        
+        // Force scrolling to the selected card to ensure it's visible
+        lv_obj_t* selected_card = lv_obj_get_child(_main_container, _current_card);
+        if (selected_card) {
+            lv_obj_scroll_to_view(selected_card, LV_ANIM_ON);
+        }
     }
     
     return true;
