@@ -10,10 +10,6 @@ class DisplayInterface;
 
 class CardNavigationStack {
 public:
-    // Constants 
-    static const lv_coord_t PIP_SIZE = 5;
-    static const lv_coord_t PIP_SIZE_ACTIVE = 10;
-
     // Constructor - removed num_cards parameter
     CardNavigationStack(lv_obj_t* parent, uint16_t width, uint16_t height);
     
@@ -48,9 +44,6 @@ public:
     void setMutex(SemaphoreHandle_t* mutex_ptr);
     
 private:
-    // Constants for animation
-    static const uint16_t PIP_ANIM_DURATION = 150;  // ms
-    
     // LVGL objects
     lv_obj_t* _parent;
     lv_obj_t* _main_container;
