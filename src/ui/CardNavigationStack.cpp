@@ -167,7 +167,10 @@ void CardNavigationStack::handleButtonPress(uint8_t button_index) {
 }
 
 void CardNavigationStack::buttonTask(void* parameter) {
-    if (!_instance) return;
+    // Use the parameter if provided, otherwise fall back to static instance
+    CardNavigationStack* instance = parameter ? static_cast<CardNavigationStack*>(parameter) : _instance;
+    
+    if (!instance) return;
     
     while (1) {
         // Update all buttons
@@ -176,13 +179,13 @@ void CardNavigationStack::buttonTask(void* parameter) {
             
             if (buttons[i].pressed()) {
                 // Take mutex if available
-                if (_instance->_mutex_ptr) {
-                    if (xSemaphoreTake(*(_instance->_mutex_ptr), pdMS_TO_TICKS(100)) == pdTRUE) {
-                        _instance->handleButtonPress(i);
-                        xSemaphoreGive(*(_instance->_mutex_ptr));
+                if (instance->_mutex_ptr) {
+                    if (xSemaphoreTake(*(instance->_mutex_ptr), pdMS_TO_TICKS(100)) == pdTRUE) {
+                        instance->handleButtonPress(i);
+                        xSemaphoreGive(*(instance->_mutex_ptr));
                     }
                 } else {
-                    _instance->handleButtonPress(i);
+                    instance->handleButtonPress(i);
                 }
             }
         }

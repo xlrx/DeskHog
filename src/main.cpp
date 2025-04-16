@@ -12,6 +12,7 @@
 #include "posthog/PostHogClient.h"
 #include "Style.h"
 #include "esp_heap_caps.h" // For PSRAM management
+#include "ui/CardController.h" // Add CardController include
 
 // Display dimensions
 #define SCREEN_WIDTH 240
@@ -36,10 +37,8 @@ DisplayInterface* displayInterface;
 ConfigManager* configManager;
 WiFiInterface* wifiInterface;
 CaptivePortal* captivePortal;
-ProvisioningCard* provisioningCard;
-CardNavigationStack* cardStack;
-PostHogClient* posthogClient;  // New global PostHogClient
-std::vector<InsightCard*> insightCards;
+CardController* cardController; // Replace individual card objects with controller
+PostHogClient* posthogClient;
 
 // Task handles
 TaskHandle_t wifiTask;
@@ -123,53 +122,30 @@ void setup() {
     // Initialize buttons
     Input::configureButtons();
     
-    // Get count of insights to determine card count
-    std::vector<String> insightIds = configManager->getAllInsightIds();
-    
-    // Create card navigation stack
-    cardStack = new CardNavigationStack(lv_scr_act(), SCREEN_WIDTH, SCREEN_HEIGHT);
-    
-    // Create provision UI
-    provisioningCard = new ProvisioningCard(
-        lv_scr_act(), 
-        *wifiInterface, 
-        SCREEN_WIDTH, 
-        SCREEN_HEIGHT
+    // Create and initialize card controller
+    cardController = new CardController(
+        lv_scr_act(),
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        *configManager,
+        *wifiInterface,
+        *posthogClient
     );
+    cardController->initialize();
     
-    // Add provisioning card to navigation stack
-    cardStack->addCard(provisioningCard->getCard());
-    
-    // Create and add insight cards
-    for (const String& id : insightIds) {
-        auto* insightCard = new InsightCard(
-            lv_scr_act(),
-            *configManager,
-            *posthogClient,  // Pass PostHog client reference
-            id,
-            SCREEN_WIDTH,
-            SCREEN_HEIGHT
-        );
-        cardStack->addCard(insightCard->getCard());
-        insightCards.push_back(insightCard);
-    }
-    
-    // Connect WiFi manager to UI
-    wifiInterface->setUI(provisioningCard);
+    // Set mutex for thread safety
+    cardController->setMutex(displayInterface->getMutexPtr());
     
     // Initialize captive portal
     captivePortal = new CaptivePortal(*configManager, *wifiInterface);
     captivePortal->begin();
-    
-    // Set mutex for thread safety
-    cardStack->setMutex(displayInterface->getMutexPtr());
     
     // Create task for button handling
     xTaskCreatePinnedToCore(
         CardNavigationStack::buttonTask,
         "buttonTask",
         2048,
-        NULL,
+        cardController->getCardStack(),  // Pass the card stack pointer as parameter
         1,
         &buttonTask,
         0
@@ -241,8 +217,8 @@ void setup() {
         
         // Try to connect to WiFi with stored credentials
         if (wifiInterface->connectToStoredNetwork(WIFI_TIMEOUT)) {
-            provisioningCard->updateConnectionStatus("Connecting to WiFi...");
-            provisioningCard->showWiFiStatus();
+            cardController->getProvisioningCard()->updateConnectionStatus("Connecting to WiFi...");
+            cardController->getProvisioningCard()->showWiFiStatus();
         } else {
             Serial.println("Failed to connect with stored credentials");
             // Start AP mode
