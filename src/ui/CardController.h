@@ -27,6 +27,9 @@ private:
 
     // Handle insight events internally
     void handleInsightEvent(const Event& event);
+    
+    // Handle WiFi events internally
+    void handleWiFiEvent(const Event& event);
 
 public:
     CardController(

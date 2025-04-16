@@ -39,7 +39,7 @@ public:
 
     // Text colors
     static lv_color_t labelColor() {
-        return lv_color_hex(0x888888);  // Dark gray for labels
+        return lv_color_hex(0xAAAAAA);  // Dark gray for labels
     }
 
     static lv_color_t valueColor() {
@@ -48,7 +48,7 @@ public:
 
     // Background colors
     static lv_color_t backgroundColor() {
-        return lv_color_hex(0x000000);  // White background
+        return lv_color_hex(0x000000);
     }
 
 private:

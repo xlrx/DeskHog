@@ -103,8 +103,12 @@ void setup() {
     // Initialize styles and fonts
     Style::init();
     
-    // Initialize config manager
-    configManager = new ConfigManager();
+    // Initialize event queue first
+    eventQueue = new EventQueue(20); // Create queue with capacity for 20 events
+    eventQueue->begin(); // Start event processing
+    
+    // Initialize config manager with event queue
+    configManager = new ConfigManager(*eventQueue);
     configManager->begin();
     
     // Initialize PostHog client
@@ -117,16 +121,12 @@ void setup() {
     );
     displayInterface->begin();
     
-    // Initialize WiFi manager
-    wifiInterface = new WiFiInterface(*configManager);
+    // Initialize WiFi manager with event queue
+    wifiInterface = new WiFiInterface(*configManager, *eventQueue);
     wifiInterface->begin();
     
     // Initialize buttons
     Input::configureButtons();
-    
-    // Initialize event queue
-    eventQueue = new EventQueue(20); // Create queue with capacity for 20 events
-    eventQueue->begin(); // Start event processing
     
     // Create and initialize card controller
     cardController = new CardController(
@@ -217,24 +217,8 @@ void setup() {
         1
     );
     
-    // Check if we have WiFi credentials
-    if (configManager->hasWiFiCredentials()) {
-        Serial.println("Found WiFi credentials, attempting to connect...");
-        
-        // Try to connect to WiFi with stored credentials
-        if (wifiInterface->connectToStoredNetwork(WIFI_TIMEOUT)) {
-            cardController->getProvisioningCard()->updateConnectionStatus("Connecting to WiFi...");
-            cardController->getProvisioningCard()->showWiFiStatus();
-        } else {
-            Serial.println("Failed to connect with stored credentials");
-            // Start AP mode
-            wifiInterface->startAccessPoint();
-        }
-    } else {
-        Serial.println("No WiFi credentials found, starting AP mode");
-        // Start AP mode
-        wifiInterface->startAccessPoint();
-    }
+    // Check if we have WiFi credentials and publish the appropriate event
+    configManager->checkWiFiCredentialsAndPublish();
 
     SystemController::setSystemState(SystemState::SYS_READY);
 }

@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <vector>
+#include "EventQueue.h"
 
 class ConfigManager {
 public:
@@ -12,8 +13,14 @@ public:
     // Constructor
     ConfigManager();
 
+    // Constructor with EventQueue
+    ConfigManager(EventQueue& eventQueue);
+
     // Initialize the config manager
     void begin();
+
+    // Set the event queue (if not set in constructor)
+    void setEventQueue(EventQueue* queue);
 
     // Save WiFi credentials
     bool saveWiFiCredentials(const String& ssid, const String& password);
@@ -26,6 +33,9 @@ public:
 
     // Check if WiFi credentials exist
     bool hasWiFiCredentials();
+
+    // Check if WiFi credentials exist and publish appropriate event
+    bool checkWiFiCredentialsAndPublish();
 
     // Team ID management
     void setTeamId(int teamId);
@@ -76,6 +86,9 @@ private:
     static const size_t MAX_INSIGHT_LENGTH = 1024;
     static const size_t MAX_API_KEY_LENGTH = 64;  // Added reasonable limit for API key
     static const size_t MAX_INSIGHT_ID_LENGTH = 64;  // Added reasonable limit for insight IDs
+
+    // Event queue reference
+    EventQueue* _eventQueue = nullptr;
 };
 
 #endif // CONFIG_MANAGER_H

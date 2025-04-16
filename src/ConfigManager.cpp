@@ -5,6 +5,14 @@ ConfigManager::ConfigManager() {
     // Constructor
 }
 
+ConfigManager::ConfigManager(EventQueue& eventQueue) {
+    _eventQueue = &eventQueue;
+}
+
+void ConfigManager::setEventQueue(EventQueue* queue) {
+    _eventQueue = queue;
+}
+
 void ConfigManager::begin() {
     // Initialize preferences
     _preferences.begin(_namespace, false);
@@ -56,6 +64,11 @@ bool ConfigManager::saveWiFiCredentials(const String& ssid, const String& passwo
     // Commit changes
     commit();
     
+    // Publish event if event queue is available
+    if (_eventQueue != nullptr) {
+        _eventQueue->publishEvent(EventType::WIFI_CREDENTIALS_FOUND, "");
+    }
+    
     return true;
 }
 
@@ -78,10 +91,29 @@ void ConfigManager::clearWiFiCredentials() {
     
     // Commit changes
     commit();
+    
+    // Publish event if event queue is available
+    if (_eventQueue != nullptr) {
+        _eventQueue->publishEvent(EventType::NEED_WIFI_CREDENTIALS, "");
+    }
 }
 
 bool ConfigManager::hasWiFiCredentials() {
     return _preferences.getBool(_hasCredentialsKey, false);
+}
+
+bool ConfigManager::checkWiFiCredentialsAndPublish() {
+    bool hasCredentials = hasWiFiCredentials();
+    
+    if (_eventQueue != nullptr) {
+        if (hasCredentials) {
+            _eventQueue->publishEvent(EventType::WIFI_CREDENTIALS_FOUND, "");
+        } else {
+            _eventQueue->publishEvent(EventType::NEED_WIFI_CREDENTIALS, "");
+        }
+    }
+    
+    return hasCredentials;
 }
 
 bool ConfigManager::saveInsight(const String& id, const String& title) {

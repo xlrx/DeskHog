@@ -77,7 +77,20 @@ void CardController::initialize(DisplayInterface* display) {
     
     // Subscribe to insight events
     eventQueue.subscribe([this](const Event& event) {
-        handleInsightEvent(event);
+        if (event.type == EventType::INSIGHT_ADDED || 
+            event.type == EventType::INSIGHT_DELETED) {
+            handleInsightEvent(event);
+        }
+    });
+    
+    // Subscribe to WiFi events
+    eventQueue.subscribe([this](const Event& event) {
+        if (event.type == EventType::WIFI_CONNECTING || 
+            event.type == EventType::WIFI_CONNECTED ||
+            event.type == EventType::WIFI_CONNECTION_FAILED ||
+            event.type == EventType::WIFI_AP_STARTED) {
+            handleWiFiEvent(event);
+        }
     });
 }
 
@@ -142,4 +155,35 @@ void CardController::handleInsightEvent(const Event& event) {
         
         displayInterface->giveMutex();
     }
+}
+
+// Handle WiFi events
+void CardController::handleWiFiEvent(const Event& event) {
+    if (!displayInterface || !displayInterface->takeMutex(portMAX_DELAY)) {
+        return;
+    }
+    
+    switch (event.type) {
+        case EventType::WIFI_CONNECTING:
+            provisioningCard->updateConnectionStatus("Connecting to WiFi...");
+            break;
+            
+        case EventType::WIFI_CONNECTED:
+            provisioningCard->updateConnectionStatus("Connected");
+            provisioningCard->showWiFiStatus();
+            break;
+            
+        case EventType::WIFI_CONNECTION_FAILED:
+            provisioningCard->updateConnectionStatus("Connection failed");
+            break;
+            
+        case EventType::WIFI_AP_STARTED:
+            provisioningCard->showQRCode();
+            break;
+            
+        default:
+            break;
+    }
+    
+    displayInterface->giveMutex();
 } 

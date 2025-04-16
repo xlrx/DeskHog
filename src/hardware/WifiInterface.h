@@ -6,6 +6,7 @@
 #include <DNSServer.h>
 #include <WebServer.h>
 #include "ConfigManager.h"
+#include "EventQueue.h"
 #include <functional>
 
 // Forward declarations
@@ -24,8 +25,9 @@ typedef std::function<void(WiFiState)> WiFiStateCallback;
 
 class WiFiInterface {
 public:
-    // Constructor
-    WiFiInterface(ConfigManager& configManager);
+    
+    // Constructor with EventQueue
+    WiFiInterface(ConfigManager& configManager, EventQueue& eventQueue);
 
     // Initialize the WiFi manager
     void begin();
@@ -62,10 +64,19 @@ public:
     
     // Register for state changes
     static void onStateChange(WiFiStateCallback callback);
+    
+    // Set the event queue (if not set in constructor)
+    void setEventQueue(EventQueue* queue);
+    
+    // Handle WiFi credential events
+    void handleWiFiCredentialEvent(const Event& event);
 
 private:
     // Config manager reference
     ConfigManager& _configManager;
+    
+    // Event queue reference
+    EventQueue* _eventQueue = nullptr;
 
     // WiFi state
     WiFiState _state;
@@ -100,6 +111,9 @@ private:
     
     // State change callback
     static WiFiStateCallback _stateCallback;
+    
+    // Update WiFi state and publish event
+    void updateState(WiFiState newState);
 };
 
 #endif // WIFI_MANAGER_H

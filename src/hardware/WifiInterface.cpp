@@ -4,10 +4,13 @@
 WiFiInterface* WiFiInterface::_instance = nullptr;
 WiFiStateCallback WiFiInterface::_stateCallback = nullptr;
 
-WiFiInterface::WiFiInterface(ConfigManager& configManager)
+
+
+WiFiInterface::WiFiInterface(ConfigManager& configManager, EventQueue& eventQueue)
     : _configManager(configManager),
+      _eventQueue(&eventQueue),
       _state(WiFiState::DISCONNECTED),
-      _apSSID("ESP32_Setup"),
+      _apSSID("DeskHog_Setup"),
       _apPassword(""),
       _apIP(192, 168, 4, 1),
       _dnsServer(nullptr),
@@ -17,6 +20,51 @@ WiFiInterface::WiFiInterface(ConfigManager& configManager)
       _connectionTimeout(0) {
     
     _instance = this;
+}
+
+void WiFiInterface::setEventQueue(EventQueue* queue) {
+    _eventQueue = queue;
+}
+
+void WiFiInterface::handleWiFiCredentialEvent(const Event& event) {
+    if (event.type == EventType::WIFI_CREDENTIALS_FOUND) {
+        Serial.println("WiFi credentials found event received");
+        connectToStoredNetwork(30000); // 30 second timeout
+    } else if (event.type == EventType::NEED_WIFI_CREDENTIALS) {
+        Serial.println("Need WiFi credentials event received");
+        startAccessPoint();
+    }
+}
+
+void WiFiInterface::updateState(WiFiState newState) {
+    if (_state == newState) return; // No change
+    
+    _state = newState;
+    
+    // Trigger legacy callback for backward compatibility
+    if (_stateCallback) {
+        _stateCallback(_state);
+    }
+    
+    // Publish appropriate event
+    if (_eventQueue != nullptr) {
+        switch (newState) {
+            case WiFiState::CONNECTING:
+                _eventQueue->publishEvent(EventType::WIFI_CONNECTING, "");
+                break;
+            case WiFiState::CONNECTED:
+                _eventQueue->publishEvent(EventType::WIFI_CONNECTED, "");
+                break;
+            case WiFiState::DISCONNECTED:
+                if (!_configManager.hasWiFiCredentials()) {
+                    _eventQueue->publishEvent(EventType::NEED_WIFI_CREDENTIALS, "");
+                }
+                break;
+            case WiFiState::AP_MODE:
+                _eventQueue->publishEvent(EventType::WIFI_AP_STARTED, "");
+                break;
+        }
+    }
 }
 
 void WiFiInterface::onStateChange(WiFiStateCallback callback) {
@@ -33,6 +81,16 @@ void WiFiInterface::begin() {
     
     // Initialize WiFi
     WiFi.mode(WIFI_STA);
+    
+    // Subscribe to WiFi credential events if event queue is available
+    if (_eventQueue != nullptr) {
+        _eventQueue->subscribe([this](const Event& event) {
+            if (event.type == EventType::WIFI_CREDENTIALS_FOUND || 
+                event.type == EventType::NEED_WIFI_CREDENTIALS) {
+                this->handleWiFiCredentialEvent(event);
+            }
+        });
+    }
 }
 
 bool WiFiInterface::connectToStoredNetwork(unsigned long timeout) {
@@ -43,7 +101,7 @@ bool WiFiInterface::connectToStoredNetwork(unsigned long timeout) {
     Serial.print("Connecting to WiFi: ");
     Serial.println(_ssid);
     
-    _state = WiFiState::CONNECTING;
+    updateState(WiFiState::CONNECTING);
     _connectionStartTime = millis();
     _connectionTimeout = timeout;
     
@@ -63,7 +121,7 @@ void WiFiInterface::startAccessPoint() {
     // Create unique AP SSID based on MAC address
     uint8_t mac[6];
     WiFi.macAddress(mac);
-    _apSSID = "ESP32_Setup_" + String(mac[3], HEX) + String(mac[4], HEX) + String(mac[5], HEX);
+    _apSSID = "DeskHog_Setup_" + String(mac[2], HEX) + String(mac[3], HEX) + String(mac[4], HEX) + String(mac[5], HEX);
     
     // Start access point
     WiFi.softAPConfig(_apIP, _apIP, IPAddress(255, 255, 255, 0));
@@ -75,7 +133,7 @@ void WiFiInterface::startAccessPoint() {
         _dnsServer->start(53, "*", _apIP);
     }
     
-    _state = WiFiState::AP_MODE;
+    updateState(WiFiState::AP_MODE);
     
     if (_ui) {
         _ui->showQRCode();
@@ -99,7 +157,7 @@ void WiFiInterface::stopAccessPoint() {
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_STA);
     
-    _state = WiFiState::DISCONNECTED;
+    updateState(WiFiState::DISCONNECTED);
 }
 
 void WiFiInterface::process() {
@@ -116,10 +174,15 @@ void WiFiInterface::process() {
         if (now - _connectionStartTime >= _connectionTimeout) {
             Serial.println("WiFi connection timeout");
             WiFi.disconnect();
-            _state = WiFiState::DISCONNECTED;
+            updateState(WiFiState::DISCONNECTED);
             
             if (_ui) {
                 _ui->updateConnectionStatus("Connection failed: timeout");
+            }
+            
+            // Publish connection failed event
+            if (_eventQueue != nullptr) {
+                _eventQueue->publishEvent(EventType::WIFI_CONNECTION_FAILED, "");
             }
             
             // Start AP mode for provisioning
@@ -189,39 +252,25 @@ void WiFiInterface::onWiFiEvent(WiFiEvent_t event) {
     switch (event) {
         case ARDUINO_EVENT_WIFI_STA_CONNECTED:
             Serial.println("WiFi connected");
-            _instance->_state = WiFiState::CONNECTED;
-            if (_stateCallback) {
-                _stateCallback(_instance->_state);
-            }
+            _instance->updateState(WiFiState::CONNECTED);
             break;
             
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
             Serial.print("WiFi connected, IP address: ");
             Serial.println(WiFi.localIP());
-            _instance->_state = WiFiState::CONNECTED;
-            
             if (_instance->_ui) {
-                _instance->_ui->updateConnectionStatus(_instance->_ssid);
-                _instance->_ui->updateIPAddress(_instance->getIPAddress());
-                _instance->_ui->updateSignalStrength(_instance->getSignalStrength());
-            }
-            
-            if (_stateCallback) {
-                _stateCallback(_instance->_state);
+                _instance->_ui->updateConnectionStatus("Connected");
+                _instance->_ui->updateIPAddress(WiFi.localIP().toString());
             }
             break;
             
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+            Serial.println("WiFi disconnected");
             if (_instance->_state == WiFiState::CONNECTED) {
-                Serial.println("WiFi disconnected");
-                _instance->_state = WiFiState::DISCONNECTED;
+                _instance->updateState(WiFiState::DISCONNECTED);
                 
                 if (_instance->_ui) {
                     _instance->_ui->updateConnectionStatus("Disconnected");
-                }
-                
-                if (_stateCallback) {
-                    _stateCallback(_instance->_state);
                 }
             }
             break;
