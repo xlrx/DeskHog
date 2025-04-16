@@ -82,21 +82,23 @@ void CardNavigationStack::_update_pip_count() {
 }
 
 void CardNavigationStack::addCard(lv_obj_t* card) {
-    // Set the card's parent to our container
+    // First, make the card a child of our container
     lv_obj_set_parent(card, _main_container);
     
-    // Configure the card's size and style
-    lv_obj_set_size(card, lv_pct(100), _height);  // Full width and height
-    lv_obj_set_style_radius(card, 8, 0);
-    lv_obj_set_style_border_width(card, 0, 0);
-    lv_obj_set_style_pad_all(card, 0, 0);
+    // Ensure the card fills the container properly with no borders/margins
+    lv_obj_set_size(card, _width - PIP_SIZE_ACTIVE, _height);
+    lv_obj_set_style_pad_all(card, 0, 0);      // Remove padding
+    lv_obj_set_style_border_width(card, 0, 0); // Remove borders
+    lv_obj_set_style_radius(card, 0, 0);       // Remove rounded corners
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     
-    // Update pip count
+    // Update the scroll indicator
     _update_pip_count();
     
-    // Make sure the first card is centered on initial load
+    // Show the first card if this is the first addition
     if (lv_obj_get_child_cnt(_main_container) == 1) {
-        lv_obj_scroll_to_view(card, LV_ANIM_OFF);
+        _current_card = 0;
+        _update_scroll_indicator(_current_card);
     }
 }
 
@@ -268,4 +270,55 @@ void CardNavigationStack::_update_scroll_indicator(int active_index) {
 
         previous_index = active_index;
     }
+}
+
+// Remove a card from the stack
+bool CardNavigationStack::removeCard(lv_obj_t* card) {
+    // Check if the card is a child of our container
+    lv_obj_t* parent = lv_obj_get_parent(card);
+    if (parent != _main_container) {
+        return false; // Card not in our container
+    }
+    
+    // Find the index of the card
+    uint32_t card_index = 0;
+    bool found = false;
+    
+    uint32_t child_count = lv_obj_get_child_cnt(_main_container);
+    for (uint32_t i = 0; i < child_count; i++) {
+        lv_obj_t* child = lv_obj_get_child(_main_container, i);
+        if (child == card) {
+            card_index = i;
+            found = true;
+            break;
+        }
+    }
+    
+    if (!found) {
+        return false; // Card not found
+    }
+    
+    // Adjust current card index if necessary
+    if (_current_card >= child_count - 1) {
+        _current_card = child_count > 1 ? child_count - 2 : 0;
+    } else if (_current_card == card_index) {
+        // If we're deleting the current card, switch to the previous one
+        if (_current_card > 0) {
+            _current_card--;
+        }
+    }
+    
+    // Delete the card from LVGL
+    lv_obj_del(card);
+    
+    // Update the scroll indicator
+    _update_pip_count();
+    _update_scroll_indicator(_current_card);
+    
+    // Show the current card
+    if (lv_obj_get_child_cnt(_main_container) > 0) {
+        goToCard(_current_card);
+    }
+    
+    return true;
 }

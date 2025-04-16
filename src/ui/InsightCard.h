@@ -16,6 +16,9 @@ public:
     ~InsightCard();
     
     lv_obj_t* getCard();
+    
+    // Get the insight ID
+    String getInsightId() const { return _insight_id; }
 
 protected:
     // Thread-safe UI dispatch helper

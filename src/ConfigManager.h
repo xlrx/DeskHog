@@ -50,6 +50,9 @@ private:
     // Helper method to check and update API configuration state
     void updateApiConfigurationState();
 
+    // Helper method to commit changes to flash
+    void commit();
+
     // Preferences instances for persistent storage
     Preferences _preferences;
     Preferences _insightsPrefs;

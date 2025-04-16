@@ -6,11 +6,12 @@
 #include "ConfigManager.h"
 #include "hardware/WifiInterface.h"
 #include "html_portal.h"  // Include generated HTML header
+#include "EventQueue.h"   // Include the event queue
 
 class CaptivePortal {
 public:
     // Constructor
-    CaptivePortal(ConfigManager& configManager, WiFiInterface& wifiInterface);
+    CaptivePortal(ConfigManager& configManager, WiFiInterface& wifiInterface, EventQueue& eventQueue);
 
     // Initialize the captive portal
     void begin();
@@ -27,6 +28,9 @@ private:
 
     // WiFi manager reference
     WiFiInterface& _wifiInterface;
+    
+    // Event queue reference
+    EventQueue& _eventQueue;
 
     // Store the last scan result
     String _cachedNetworks;

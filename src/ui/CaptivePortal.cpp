@@ -1,8 +1,8 @@
 #include "CaptivePortal.h"
 #include <ArduinoJson.h>
 
-CaptivePortal::CaptivePortal(ConfigManager& configManager, WiFiInterface& wifiInterface)
-    : _server(80), _configManager(configManager), _wifiInterface(wifiInterface), _lastScanTime(0) {
+CaptivePortal::CaptivePortal(ConfigManager& configManager, WiFiInterface& wifiInterface, EventQueue& eventQueue)
+    : _server(80), _configManager(configManager), _wifiInterface(wifiInterface), _eventQueue(eventQueue), _lastScanTime(0) {
 }
 
 void CaptivePortal::begin() {
@@ -152,7 +152,10 @@ void CaptivePortal::handleSaveInsight() {
         String id = _server.arg("insightId");
         
         success = _configManager.saveInsight(id, "");
-        if (!success) {
+        if (success) {
+            // Publish an event that an insight was added
+            _eventQueue.publishEvent(EventType::INSIGHT_ADDED, id);
+        } else {
             message = "Failed to save insight";
         }
     } else {
@@ -185,6 +188,9 @@ void CaptivePortal::handleDeleteInsight() {
             if (id) {
                 _configManager.deleteInsight(id);
                 success = true;
+                
+                // Publish an event that an insight was deleted
+                _eventQueue.publishEvent(EventType::INSIGHT_DELETED, id);
             } else {
                 message = "Missing insight ID";
             }

@@ -30,6 +30,15 @@ void ConfigManager::updateApiConfigurationState() {
     SystemController::setApiState(ApiState::API_CONFIGURED);
 }
 
+// Helper method to commit changes to flash
+void ConfigManager::commit() {
+    _preferences.end();
+    _insightsPrefs.end();
+    
+    _preferences.begin(_namespace, false);
+    _insightsPrefs.begin(_insightsNamespace, false);
+}
+
 bool ConfigManager::saveWiFiCredentials(const String& ssid, const String& password) {
     if (ssid.length() == 0 || ssid.length() > MAX_SSID_LENGTH) {
         return false;
@@ -43,6 +52,9 @@ bool ConfigManager::saveWiFiCredentials(const String& ssid, const String& passwo
     _preferences.putString(_ssidKey, ssid);
     _preferences.putString(_passwordKey, password);
     _preferences.putBool(_hasCredentialsKey, true);
+    
+    // Commit changes
+    commit();
     
     return true;
 }
@@ -63,6 +75,9 @@ void ConfigManager::clearWiFiCredentials() {
     _preferences.remove(_ssidKey);
     _preferences.remove(_passwordKey);
     _preferences.putBool(_hasCredentialsKey, false);
+    
+    // Commit changes
+    commit();
 }
 
 bool ConfigManager::hasWiFiCredentials() {
@@ -82,6 +97,9 @@ bool ConfigManager::saveInsight(const String& id, const String& title) {
         ids.push_back(id);
         updateIdList(ids);
     }
+    
+    // Commit changes
+    commit();
 
     return true;
 }
@@ -98,6 +116,9 @@ void ConfigManager::deleteInsight(const String& id) {
         auto ids = getAllInsightIds();
         ids.erase(std::remove(ids.begin(), ids.end(), id), ids.end());
         updateIdList(ids);
+        
+        // Commit changes
+        commit();
     }
 }
 
@@ -134,10 +155,17 @@ void ConfigManager::updateIdList(const std::vector<String>& ids) {
         }
     }
     _insightsPrefs.putString("_id_list", idList);
+    
+    // Commit changes
+    commit();
 }
 
 void ConfigManager::setTeamId(int teamId) {
     _preferences.putInt(_teamIdKey, teamId);
+    
+    // Commit changes
+    commit();
+    
     updateApiConfigurationState();
 }
 
@@ -150,6 +178,10 @@ int ConfigManager::getTeamId() {
 
 void ConfigManager::clearTeamId() {
     _preferences.remove(_teamIdKey);
+    
+    // Commit changes
+    commit();
+    
     SystemController::setApiState(ApiState::API_AWAITING_CONFIG);
 }
 
@@ -160,6 +192,10 @@ bool ConfigManager::setApiKey(const String& apiKey) {
     }
 
     _preferences.putString(_apiKeyKey, apiKey);
+    
+    // Commit changes
+    commit();
+    
     updateApiConfigurationState();
     return true;
 }
@@ -170,5 +206,9 @@ String ConfigManager::getApiKey() {
 
 void ConfigManager::clearApiKey() {
     _preferences.remove(_apiKeyKey);
+    
+    // Commit changes
+    commit();
+    
     SystemController::setApiState(ApiState::API_AWAITING_CONFIG);
 }

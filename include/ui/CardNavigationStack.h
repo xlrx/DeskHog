@@ -10,11 +10,18 @@ class DisplayInterface;
 
 class CardNavigationStack {
 public:
+    // Constants 
+    static const lv_coord_t PIP_SIZE = 5;
+    static const lv_coord_t PIP_SIZE_ACTIVE = 10;
+
     // Constructor - removed num_cards parameter
     CardNavigationStack(lv_obj_t* parent, uint16_t width, uint16_t height);
     
     // Add an existing LVGL object as a card
     void addCard(lv_obj_t* card);
+    
+    // Remove an existing card
+    bool removeCard(lv_obj_t* card);
     
     // Legacy method for simple colored cards with labels (deprecated)
     void addCard(lv_color_t color, const char* label_text);
@@ -41,9 +48,7 @@ public:
     void setMutex(SemaphoreHandle_t* mutex_ptr);
     
 private:
-    // Constants
-    static const lv_coord_t PIP_SIZE = 5;
-    static const lv_coord_t PIP_SIZE_ACTIVE = 10;
+    // Constants for animation
     static const uint16_t PIP_ANIM_DURATION = 150;  // ms
     
     // LVGL objects
@@ -59,7 +64,7 @@ private:
     // Mutex reference
     SemaphoreHandle_t* _mutex_ptr;
     
-    // Static instance pointer for task - keep for backward compatibility
+    // Static instance pointer for task
     static CardNavigationStack* _instance;
     
     // Private methods

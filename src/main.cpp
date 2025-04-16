@@ -13,6 +13,7 @@
 #include "Style.h"
 #include "esp_heap_caps.h" // For PSRAM management
 #include "ui/CardController.h" // Add CardController include
+#include "EventQueue.h" // Add EventQueue include
 
 // Display dimensions
 #define SCREEN_WIDTH 240
@@ -39,6 +40,7 @@ WiFiInterface* wifiInterface;
 CaptivePortal* captivePortal;
 CardController* cardController; // Replace individual card objects with controller
 PostHogClient* posthogClient;
+EventQueue* eventQueue; // Add global EventQueue
 
 // Task handles
 TaskHandle_t wifiTask;
@@ -122,6 +124,10 @@ void setup() {
     // Initialize buttons
     Input::configureButtons();
     
+    // Initialize event queue
+    eventQueue = new EventQueue(20); // Create queue with capacity for 20 events
+    eventQueue->begin(); // Start event processing
+    
     // Create and initialize card controller
     cardController = new CardController(
         lv_scr_act(),
@@ -129,15 +135,15 @@ void setup() {
         SCREEN_HEIGHT,
         *configManager,
         *wifiInterface,
-        *posthogClient
+        *posthogClient,
+        *eventQueue
     );
-    cardController->initialize();
     
-    // Set mutex for thread safety
-    cardController->setMutex(displayInterface->getMutexPtr());
+    // Initialize with display interface directly
+    cardController->initialize(displayInterface);
     
     // Initialize captive portal
-    captivePortal = new CaptivePortal(*configManager, *wifiInterface);
+    captivePortal = new CaptivePortal(*configManager, *wifiInterface, *eventQueue);
     captivePortal->begin();
     
     // Create task for button handling

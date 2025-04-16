@@ -16,6 +16,9 @@ public:
     // Add an existing LVGL object as a card
     void addCard(lv_obj_t* card);
     
+    // Remove an existing card
+    bool removeCard(lv_obj_t* card);
+    
     // Legacy method for simple colored cards with labels (deprecated)
     void addCard(lv_color_t color, const char* label_text);
     

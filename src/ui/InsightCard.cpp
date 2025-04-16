@@ -47,22 +47,24 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, PostHogClient&
     _card = lv_obj_create(parent);
     lv_obj_set_size(_card, width, height);
     lv_obj_set_style_bg_color(_card, Style::backgroundColor(), 0);
-    lv_obj_set_style_pad_all(_card, 5, 0);
+    lv_obj_set_style_pad_all(_card, 0, 0);
+    lv_obj_set_style_border_width(_card, 0, 0);  // Remove borders
+    lv_obj_set_style_radius(_card, 0, 0);        // Remove rounded corners
     
-    // Create flex container for vertical layout
+    // Create flex container for vertical layout - FILL THE ENTIRE CARD
     lv_obj_t* flex_col = lv_obj_create(_card);
-    lv_obj_set_size(flex_col, width - 10, height - 10); // Account for card padding
+    lv_obj_set_size(flex_col, width, height); // FILL ENTIRE CARD, NO INSETS
     lv_obj_set_style_pad_row(flex_col, 5, 0);  // 5px gap between items
-    lv_obj_set_style_pad_top(flex_col, 0, 0);  // No padding at top
+    lv_obj_set_style_pad_all(flex_col, 5, 0);  // Use padding instead of insets
     lv_obj_set_flex_flow(flex_col, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(flex_col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_clear_flag(flex_col, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_opa(flex_col, LV_OPA_0, 0);
-    lv_obj_set_style_border_width(flex_col, 0, 0);
+    lv_obj_set_style_border_width(flex_col, 0, 0); // No border
     
-    // Create title label with wrapping
+    // Create title label with wrapping - use container width
     _title_label = lv_label_create(flex_col);
-    lv_obj_set_width(_title_label, width - 20); // Account for padding
+    lv_obj_set_width(_title_label, width - 10); // Account for container padding
     lv_obj_set_style_text_color(_title_label, Style::labelColor(), 0);
     lv_obj_set_style_text_font(_title_label, Style::labelFont(), 0);
     lv_label_set_long_mode(_title_label, LV_LABEL_LONG_WRAP);
@@ -70,7 +72,7 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, PostHogClient&
     
     // Create content container that will hold either numeric display, chart, or funnel
     _content_container = lv_obj_create(flex_col);
-    lv_obj_set_size(_content_container, width - 20, height - 40); // Adjust height to account for title
+    lv_obj_set_size(_content_container, width - 10, height - 40); // Adjusted for container padding
     lv_obj_set_style_bg_opa(_content_container, LV_OPA_0, 0);
     lv_obj_set_style_border_width(_content_container, 0, 0);
     lv_obj_set_style_pad_all(_content_container, 0, 0);
@@ -90,14 +92,20 @@ InsightCard::~InsightCard() {
     
     // Clean up UI elements on main thread
     dispatchToUI([this]() {
-        if (_card) {
-            lv_obj_del(_card);  // This will delete all child objects
+        if (_card && lv_obj_is_valid(_card)) {
+            // Mark for deletion rather than trying to delete immediately
+            // This avoids race conditions with ongoing UI operations
+            lv_obj_add_flag(_card, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_del_async(_card);
+            
+            // Clear all pointers to avoid use-after-free
             _card = nullptr;
             _title_label = nullptr;
             _value_label = nullptr;
             _chart = nullptr;
             _series = nullptr;
             _funnel_container = nullptr;
+            _content_container = nullptr;
             
             for (int i = 0; i < MAX_FUNNEL_STEPS; i++) {
                 _funnel_bars[i] = nullptr;
@@ -202,7 +210,7 @@ void InsightCard::createNumericElements() {
     if (!_content_container || !lv_obj_is_valid(_content_container)) return;
     
     // Clean up any existing value label
-    if (_value_label) {
+    if (_value_label && lv_obj_is_valid(_value_label)) {
         lv_obj_del(_value_label);
         _value_label = nullptr;
     }
@@ -220,7 +228,7 @@ void InsightCard::createLineGraphElements() {
     if (!_content_container || !lv_obj_is_valid(_content_container)) return;
     
     // Clean up any existing chart
-    if (_chart) {
+    if (_chart && lv_obj_is_valid(_chart)) {
         lv_obj_del(_chart);
         _chart = nullptr;
         _series = nullptr;
