@@ -75,9 +75,9 @@ public:
     static void setAuthState(AuthState new_state);
     static void setSystemState(SystemState new_state);
     
-    // Callback management
-    void onStateChange(StateChangeCallback callback);
-    void removeAllCallbacks();
+    // Callback management - now static
+    static void onStateChange(StateChangeCallback callback);
+    static void removeAllCallbacks();
     
     // Utility methods
     static bool isSystemFullyReady();
