@@ -17,32 +17,61 @@ DisplayInterface::DisplayInterface(
     _cs_pin(cs_pin),
     _dc_pin(dc_pin),
     _rst_pin(rst_pin),
-    _backlight_pin(backlight_pin) {
+    _backlight_pin(backlight_pin),
+    _tft(nullptr),
+    _display(nullptr),
+    _buf1(nullptr),
+    _buf2(nullptr),
+    _lvgl_mutex(nullptr) {
     
     // Store instance for static callbacks
     instance = this;
     
     // Create TFT object
     _tft = new Adafruit_ST7789(&SPI, _cs_pin, _dc_pin, _rst_pin);
+    if (!_tft) {
+        Serial.println("Failed to create TFT object");
+        return;
+    }
     
-    // Allocate display buffers
-    _buf1 = (lv_color_t*)malloc(_screen_width * _buffer_rows * sizeof(lv_color_t));
-    _buf2 = (lv_color_t*)malloc(_screen_width * _buffer_rows * sizeof(lv_color_t));
-    
-    if (!_buf1 || !_buf2) {
+    // Allocate display buffers using C++ new operator instead of malloc
+    try {
+        _buf1 = new lv_color_t[_screen_width * _buffer_rows];
+        _buf2 = new lv_color_t[_screen_width * _buffer_rows];
+    } catch (std::bad_alloc&) {
         Serial.println("Failed to allocate display buffers");
-        while(1);
+        // Clean up already allocated resources
+        delete _tft;
+        _tft = nullptr;
+        if (_buf1) {
+            delete[] _buf1;
+            _buf1 = nullptr;
+        }
+        return;
     }
     
     // Create LVGL mutex
     _lvgl_mutex = xSemaphoreCreateMutex();
-    if (_lvgl_mutex == NULL) {
+    if (_lvgl_mutex == nullptr) {
         Serial.println("Could not create mutex");
-        while (1);
+        // Clean up already allocated resources
+        delete _tft;
+        _tft = nullptr;
+        delete[] _buf1;
+        _buf1 = nullptr;
+        delete[] _buf2;
+        _buf2 = nullptr;
+        return;
     }
 }
 
 void DisplayInterface::begin() {
+    // Check if initialization failed
+    if (!_tft || !_buf1 || !_buf2 || !_lvgl_mutex) {
+        Serial.println("Cannot initialize display: resources not allocated");
+        return;
+    }
+    
     // Initialize SPI
     SPI.begin();
     
@@ -60,12 +89,21 @@ void DisplayInterface::begin() {
     
     // Initialize and register display for LVGL v9
     _display = lv_display_create(_screen_width, _screen_height);
+    if (!_display) {
+        Serial.println("Failed to create LVGL display");
+        return;
+    }
+    
     lv_display_set_flush_cb(_display, _disp_flush);
     
-    // Set the buffer correctly - using raw buffer pointers directly like in the Arduino example
-    lv_display_set_buffers(_display, _buf1, _buf2, 
-                          _screen_width * _buffer_rows * sizeof(lv_color_t),
-                          LV_DISPLAY_RENDER_MODE_PARTIAL);
+    // Set the buffer correctly
+    lv_display_set_buffers(
+        _display, 
+        _buf1, 
+        _buf2, 
+        _screen_width * _buffer_rows * sizeof(lv_color_t),
+        LV_DISPLAY_RENDER_MODE_PARTIAL
+    );
     
     // Set screen background to black
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_black(), 0);
@@ -85,7 +123,7 @@ void DisplayInterface::handleLVGLTasks() {
 }
 
 void DisplayInterface::tickTask(void* arg) {
-    (void)arg;
+    (void)arg;  // Silence unused parameter warning
     while (1) {
         lv_tick_inc(10);
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -93,11 +131,16 @@ void DisplayInterface::tickTask(void* arg) {
 }
 
 bool DisplayInterface::takeMutex(TickType_t timeout) {
+    if (!_lvgl_mutex) {
+        return false;
+    }
     return xSemaphoreTake(_lvgl_mutex, timeout) == pdTRUE;
 }
 
 void DisplayInterface::giveMutex() {
-    xSemaphoreGive(_lvgl_mutex);
+    if (_lvgl_mutex) {
+        xSemaphoreGive(_lvgl_mutex);
+    }
 }
 
 SemaphoreHandle_t* DisplayInterface::getMutexPtr() {
@@ -105,7 +148,7 @@ SemaphoreHandle_t* DisplayInterface::getMutexPtr() {
 }
 
 void DisplayInterface::_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
-    if (instance) {
+    if (instance && instance->_tft) {
         uint32_t w = (area->x2 - area->x1 + 1);
         uint32_t h = (area->y2 - area->y1 + 1);
         
@@ -119,20 +162,29 @@ void DisplayInterface::_disp_flush(lv_display_t* disp, const lv_area_t* area, ui
 }
 
 DisplayInterface::~DisplayInterface() {
-    if (_buf1) {
-        free(_buf1);
-        _buf1 = nullptr;
+    // Free resources in reverse order of allocation
+    if (_lvgl_mutex) {
+        vSemaphoreDelete(_lvgl_mutex);
+        _lvgl_mutex = nullptr;
     }
+    
     if (_buf2) {
-        free(_buf2);
+        delete[] _buf2;  // Using delete[] for array allocations
         _buf2 = nullptr;
     }
+    
+    if (_buf1) {
+        delete[] _buf1;  // Using delete[] for array allocations
+        _buf1 = nullptr;
+    }
+    
     if (_tft) {
         delete _tft;
         _tft = nullptr;
     }
-    if (_lvgl_mutex) {
-        vSemaphoreDelete(_lvgl_mutex);
-        _lvgl_mutex = nullptr;
+    
+    // Reset the static instance pointer if it points to this object
+    if (instance == this) {
+        instance = nullptr;
     }
 }

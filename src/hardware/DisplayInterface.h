@@ -1,51 +1,93 @@
-#ifndef LVGL_DISPLAY_MANAGER_H
-#define LVGL_DISPLAY_MANAGER_H
+#ifndef DISPLAY_INTERFACE_H
+#define DISPLAY_INTERFACE_H
 
 #include <Arduino.h>
-#include <lvgl.h>
-#include <Adafruit_ST7789.h>
 #include <SPI.h>
-#include "esp_heap_caps.h"
+#include <Adafruit_ST7789.h>
+#include <lvgl.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
+/**
+ * @brief Interface class for TFT display with LVGL integration
+ * 
+ * This class manages the initialization and operation of an ST7789 TFT display
+ * through SPI and integrates it with the LVGL graphics library.
+ */
 class DisplayInterface {
 public:
-    // Constructor
+    /**
+     * @brief Construct a new Display Interface object
+     * 
+     * @param screen_width Width of the display in pixels
+     * @param screen_height Height of the display in pixels
+     * @param buffer_rows Number of rows to buffer for LVGL rendering
+     * @param cs_pin Chip select pin
+     * @param dc_pin Data/command pin
+     * @param rst_pin Reset pin
+     * @param backlight_pin Backlight control pin
+     */
     DisplayInterface(
         uint16_t screen_width,
         uint16_t screen_height,
         uint16_t buffer_rows,
         int8_t cs_pin,
-        int8_t dc_pin,
+        int8_t dc_pin, 
         int8_t rst_pin,
         int8_t backlight_pin
     );
     
-    // Destructor
+    /**
+     * @brief Destroy the Display Interface object and free resources
+     */
     ~DisplayInterface();
     
-    // Initialize display and LVGL
+    /**
+     * @brief Initialize the display and LVGL
+     */
     void begin();
     
-    // Get the display object
+    /**
+     * @brief Get the underlying TFT display object
+     * 
+     * @return Adafruit_ST7789* Pointer to the display
+     */
     Adafruit_ST7789* getDisplay();
     
-    // Run LVGL tasks (to be called in a task)
+    /**
+     * @brief Process LVGL tasks (should be called regularly)
+     */
     void handleLVGLTasks();
     
-    // LVGL tick handler (to be called in a task)
+    /**
+     * @brief FreeRTOS task for LVGL tick handling
+     * 
+     * @param arg Task argument (not used)
+     */
     static void tickTask(void* arg);
     
-    // Take mutex
+    /**
+     * @brief Acquire the LVGL mutex
+     * 
+     * @param timeout Timeout in ticks (default: portMAX_DELAY)
+     * @return true if mutex was acquired
+     * @return false if timeout occurred
+     */
     bool takeMutex(TickType_t timeout = portMAX_DELAY);
     
-    // Give mutex
+    /**
+     * @brief Release the LVGL mutex
+     */
     void giveMutex();
     
-    // Get mutex pointer
+    /**
+     * @brief Get pointer to the mutex
+     * 
+     * @return SemaphoreHandle_t* Pointer to the mutex
+     */
     SemaphoreHandle_t* getMutexPtr();
-    
+
 private:
-    // Display and buffer parameters
     uint16_t _screen_width;
     uint16_t _screen_height;
     uint16_t _buffer_rows;
@@ -54,17 +96,24 @@ private:
     int8_t _rst_pin;
     int8_t _backlight_pin;
     
-    // Global objects
     Adafruit_ST7789* _tft;
-    SemaphoreHandle_t _lvgl_mutex;
-    
-    // LVGL display object and buffers (for v9)
     lv_display_t* _display;
     lv_color_t* _buf1;
     lv_color_t* _buf2;
+    SemaphoreHandle_t _lvgl_mutex;
     
-    // Display flush callback for LVGL v9
+    /**
+     * @brief LVGL display flush callback
+     * 
+     * @param disp LVGL display
+     * @param area Area to flush
+     * @param px_map Pixel data
+     */
     static void _disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
+    
+    // Prevent copying
+    DisplayInterface(const DisplayInterface&) = delete;
+    DisplayInterface& operator=(const DisplayInterface&) = delete;
 };
 
-#endif // LVGL_DISPLAY_MANAGER_H
+#endif // DISPLAY_INTERFACE_H
