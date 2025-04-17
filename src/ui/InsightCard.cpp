@@ -18,6 +18,59 @@ private:
     std::function<void()> _func;
 };
 
+QueueHandle_t InsightCard::uiQueue = nullptr;
+
+void InsightCard::initUIQueue() {
+    // Create a queue that can hold up to 10 update requests
+    uiQueue = xQueueCreate(10, sizeof(UICallback*));
+}
+
+void InsightCard::processUIQueue() {
+    // Process all pending UI updates (call this from lvglHandlerTask)
+    UICallback* callback = nullptr;
+    static int queueCount = 0;
+    int processed = 0;
+    
+    while(xQueueReceive(uiQueue, &callback, 0) == pdTRUE) {
+        if (callback) {
+            processed++;
+            Serial.printf("[UI-DEBUG] Processing callback #%d\n", ++queueCount);
+            
+            callback->execute();
+            
+            // Force immediate refresh
+            lv_display_t* disp = lv_display_get_default();
+            if (disp) {
+                lv_refr_now(disp);
+            }
+            
+            delete callback;
+        }
+    }
+    
+    if (processed > 0) {
+        Serial.printf("[UI-DEBUG] Processed %d callbacks from UI queue\n", processed);
+    }
+}
+
+void InsightCard::dispatchToUI(std::function<void()> update) {
+    static int dispatchCount = 0;
+    dispatchCount++;
+    
+    // Create a callback object to hold the update function
+    UICallback* callback = new UICallback(std::move(update));
+    
+    Serial.printf("[UI-DEBUG] Dispatching UI update #%d from Core %d\n", 
+                 dispatchCount, xPortGetCoreID());
+    
+    // Try to send to queue
+    if (xQueueSend(uiQueue, &callback, 0) != pdTRUE) {
+        // Queue is full, handle error
+        Serial.println("[UI-DEBUG] UI queue full, update discarded");
+        delete callback;
+    }
+}
+
 InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, EventQueue& eventQueue,
                         const String& insightId, uint16_t width, uint16_t height)
     : _config(config)
@@ -133,33 +186,12 @@ bool InsightCard::isValidObject(lv_obj_t* obj) const {
     return obj && lv_obj_is_valid(obj);
 }
 
-void InsightCard::dispatchToUI(std::function<void()> update) {
-    // Try immediate execution if possible
-    if (isValidObject(_content_container)) {
-        lv_display_t* disp = lv_obj_get_display(_content_container);
-        if (disp) {
-            lv_timer_handler();
-            update();
-            lv_display_send_event(disp, LV_EVENT_REFRESH, nullptr);
-            lv_refr_now(disp);
-            return;
-        }
-    }
-    
-    // Fall back to timer-based execution
-    auto* callback = new UICallback(std::move(update));
-    
-    lv_timer_t* timer = lv_timer_create([](lv_timer_t* timer) {
-        auto* cb = static_cast<UICallback*>(lv_timer_get_user_data(timer));
-        if (cb) {
-            cb->execute();
-            delete cb;
-        }
-        lv_timer_del(timer);
-    }, 0, callback);
-}
-
 void InsightCard::onEvent(const Event& event) {
+
+    Serial.printf("onEvent called from Core: %d, Task: %s\n", 
+                  xPortGetCoreID(), 
+                  pcTaskGetTaskName(NULL));
+
     if (event.type == EventType::INSIGHT_DATA_RECEIVED && 
         event.insightId == _insight_id) {
         
@@ -171,10 +203,32 @@ void InsightCard::onEvent(const Event& event) {
                             event.jsonData.length(), _insight_id.c_str());
             }
             
+            // Debug insight type
+            Serial.printf("[FUNNEL-DEBUG] Received event for insight %s\n", _insight_id.c_str());
+            
             // Create a local parser on the UI thread
             // This keeps all parser operations in the same thread as UI updates
             auto parser = std::make_shared<InsightParser>(event.jsonData.c_str());
             if (parser->isValid()) {
+                auto insightType = parser->detectInsightType();
+                Serial.printf("[FUNNEL-DEBUG] Detected insight type: %d\n", (int)insightType);
+                
+                // Check if this is a funnel
+                if (insightType == InsightParser::InsightType::FUNNEL) {
+                    Serial.println("[FUNNEL-DEBUG] Funnel insight detected");
+                    
+                    // Log funnel details
+                    size_t stepCount = parser->getFunnelStepCount();
+                    size_t breakdownCount = parser->getFunnelBreakdownCount();
+                    Serial.printf("[FUNNEL-DEBUG] Raw funnel data: %d steps, %d breakdowns\n", 
+                                stepCount, breakdownCount);
+                }
+                
+                // Check if UI elements are ready
+                Serial.printf("[FUNNEL-DEBUG] UI container ready: %s\n", 
+                            isValidObject(_funnel_container) ? "YES" : "NO");
+                
+                // Proceed with handling
                 handleParsedData(parser);
             } else {
                 Serial.printf("Failed to parse JSON for insight %s\n", _insight_id.c_str());
@@ -195,6 +249,7 @@ void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
     }
     
     auto insightType = parser->detectInsightType();
+    Serial.printf("[FUNNEL-DEBUG] handleParsedData - detected type: %d\n", (int)insightType);
     
     char titleBuffer[64];
     if (!parser->getName(titleBuffer, sizeof(titleBuffer))) {
@@ -206,28 +261,61 @@ void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
         _config.saveInsight(_insight_id, String(titleBuffer));
     }
     
+    // Critical section for funnel rendering issue
+    if (insightType == InsightParser::InsightType::FUNNEL) {
+        // Check if we have a funnel container already
+        bool containerExists = isValidObject(_funnel_container);
+        Serial.printf("[FUNNEL-DEBUG] Funnel container exists: %s\n", containerExists ? "YES" : "NO");
+    }
+    
     // Rebuild UI if type has changed
     if (insightType != _current_type) {
+        Serial.printf("[FUNNEL-DEBUG] Type changed from %d to %d, rebuilding UI\n", 
+                    (int)_current_type, (int)insightType);
         _current_type = insightType;
         
-        dispatchToUI([this, insightType]() {
-            clearCardContent();
+        // CRITICAL FIX: For funnels, we need to ensure UI elements are created before updating
+        if (insightType == InsightParser::InsightType::FUNNEL) {
+            // Try to create the funnel elements immediately on the UI thread
+            Serial.println("[FUNNEL-DEBUG] Creating funnel elements IMMEDIATELY");
+            dispatchToUI([this]() {
+                clearCardContent();
+                createFunnelElements();
+                
+                // Force immediate refresh
+                lv_obj_invalidate(_content_container);
+                lv_display_t* disp = lv_display_get_default();
+                if (disp) {
+                    lv_refr_now(disp);
+                }
+                
+                Serial.println("[FUNNEL-DEBUG] Funnel elements created on UI thread");
+            });
             
-            switch (insightType) {
-                case InsightParser::InsightType::NUMERIC_CARD:
-                    createNumericElements();
-                    break;
-                case InsightParser::InsightType::LINE_GRAPH:
-                    createLineGraphElements();
-                    break;
-                case InsightParser::InsightType::FUNNEL:
-                    createFunnelElements();
-                    break;
-                default:
-                    createNumericElements(); // Fallback
-                    break;
-            }
-        });
+            // Give a little time for UI to update
+            delay(10);
+        }
+        else {
+            dispatchToUI([this, insightType]() {
+                clearCardContent();
+                
+                switch (insightType) {
+                    case InsightParser::InsightType::NUMERIC_CARD:
+                        createNumericElements();
+                        break;
+                    case InsightParser::InsightType::LINE_GRAPH:
+                        createLineGraphElements();
+                        break;
+                    case InsightParser::InsightType::FUNNEL:
+                        Serial.println("[FUNNEL-DEBUG] Creating funnel elements via normal flow");
+                        createFunnelElements();
+                        break;
+                    default:
+                        createNumericElements(); // Fallback
+                        break;
+                }
+            });
+        }
     }
     
     // Update based on type
@@ -248,6 +336,22 @@ void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
         }
             
         case InsightParser::InsightType::FUNNEL:
+            Serial.println("[FUNNEL-DEBUG] Updating funnel display");
+            
+            // Always verify container exists before updating
+            if (!isValidObject(_funnel_container)) {
+                Serial.println("[FUNNEL-DEBUG] CRITICAL ERROR: Funnel container missing before update!");
+                
+                // Try to recreate the container
+                dispatchToUI([this]() {
+                    Serial.println("[FUNNEL-DEBUG] Emergency creating funnel elements");
+                    createFunnelElements();
+                });
+                
+                // Wait for UI update
+                delay(50);
+            }
+            
             updateFunnelDisplay(titleBuffer, *parser);
             break;
             
@@ -311,10 +415,18 @@ void InsightCard::createLineGraphElements() {
 }
 
 void InsightCard::createFunnelElements() {
-    if (!isValidObject(_content_container)) return;
+    Serial.println("[FUNNEL-DEBUG] Entry createFunnelElements()");
+    
+    if (!isValidObject(_content_container)) {
+        Serial.println("[FUNNEL-DEBUG] Content container invalid");
+        return;
+    }
     
     _funnel_container = lv_obj_create(_content_container);
-    if (!_funnel_container) return;
+    if (!_funnel_container) {
+        Serial.println("[FUNNEL-DEBUG] Failed to create funnel container");
+        return;
+    }
     
     lv_coord_t available_width = lv_obj_get_width(_content_container);
     lv_obj_set_size(_funnel_container, available_width, GRAPH_HEIGHT);
@@ -323,6 +435,48 @@ void InsightCard::createFunnelElements() {
     lv_obj_set_style_pad_all(_funnel_container, 0, 0);
     lv_obj_set_style_border_width(_funnel_container, 0, 0);
     lv_obj_set_style_bg_opa(_funnel_container, LV_OPA_0, 0);
+    
+    Serial.printf("[FUNNEL-DEBUG] Creating %d funnel steps with %d breakdowns each\n", 
+                 MAX_FUNNEL_STEPS, MAX_BREAKDOWNS);
+    
+    // Immediately create placeholder elements to ensure first render works
+    for (int i = 0; i < MAX_FUNNEL_STEPS; i++) {
+        // Create bar container
+        _funnel_bars[i] = lv_obj_create(_funnel_container);
+        if (_funnel_bars[i]) {
+            lv_obj_set_size(_funnel_bars[i], available_width, FUNNEL_BAR_HEIGHT);
+            lv_obj_set_style_bg_opa(_funnel_bars[i], LV_OPA_0, 0);
+            lv_obj_set_style_border_width(_funnel_bars[i], 0, 0);
+            lv_obj_set_style_pad_all(_funnel_bars[i], 0, 0);
+            lv_obj_clear_flag(_funnel_bars[i], LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_add_flag(_funnel_bars[i], LV_OBJ_FLAG_HIDDEN); // Hide until data arrives
+            
+            // Create label
+            _funnel_labels[i] = lv_label_create(_funnel_container);
+            if (_funnel_labels[i]) {
+                lv_obj_set_style_text_color(_funnel_labels[i], Style::valueColor(), 0);
+                lv_obj_set_style_text_font(_funnel_labels[i], Style::valueFont(), 0);
+                lv_label_set_long_mode(_funnel_labels[i], LV_LABEL_LONG_DOT);
+                lv_obj_set_width(_funnel_labels[i], available_width);
+                lv_obj_set_height(_funnel_labels[i], FUNNEL_LABEL_HEIGHT);
+                lv_obj_add_flag(_funnel_labels[i], LV_OBJ_FLAG_HIDDEN); // Hide until data arrives
+            }
+            
+            // Create segments
+            for (int j = 0; j < MAX_BREAKDOWNS; j++) {
+                _funnel_segments[i][j] = lv_obj_create(_funnel_bars[i]);
+                if (_funnel_segments[i][j]) {
+                    lv_obj_set_style_bg_color(_funnel_segments[i][j], _breakdown_colors[j], 0);
+                    lv_obj_set_style_border_width(_funnel_segments[i][j], 0, 0);
+                    lv_obj_set_style_radius(_funnel_segments[i][j], 0, 0);
+                    lv_obj_set_style_pad_all(_funnel_segments[i][j], 0, 0);
+                    lv_obj_add_flag(_funnel_segments[i][j], LV_OBJ_FLAG_HIDDEN); // Hide until data arrives
+                }
+            }
+        }
+    }
+    
+    Serial.println("[FUNNEL-DEBUG] Funnel elements created successfully");
 }
 
 void InsightCard::formatNumber(double value, char* buffer, size_t bufferSize) {
@@ -404,46 +558,71 @@ void InsightCard::updateLineGraphDisplay(const String& title, double* values, si
 }
 
 void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser) {
-    if (!_funnel_container || !_title_label) return;
+    // Start debug for this update
+    Serial.printf("[FUNNEL-DEBUG] updateFunnelDisplay called for %s\n", title.c_str());
+
+    // Early validity checks
+    if (!_funnel_container) {
+        Serial.println("[FUNNEL-DEBUG] Funnel container not created");
+        return;
+    }
     
+    // Get funnel data
     size_t stepCount = std::min(parser.getFunnelStepCount(), 
                                static_cast<size_t>(MAX_FUNNEL_STEPS));
     size_t breakdownCount = std::min(parser.getFunnelBreakdownCount(), 
-                                   static_cast<size_t>(MAX_BREAKDOWNS));
+                                    static_cast<size_t>(MAX_BREAKDOWNS));
     
-    if (stepCount == 0 || breakdownCount == 0) {
+    Serial.printf("[FUNNEL-DEBUG] Processing funnel with %d steps and %d breakdowns\n", 
+                 stepCount, breakdownCount);
+    
+    if (stepCount == 0) {
+        Serial.println("[FUNNEL-DEBUG] No funnel steps found");
         return;
     }
     
     // Get raw data
     uint32_t stepCounts[MAX_FUNNEL_STEPS] = {0};
     double conversionRates[MAX_FUNNEL_STEPS-1] = {0.0};
-    parser.getFunnelTotalCounts(0, stepCounts, conversionRates);
+    if (!parser.getFunnelTotalCounts(0, stepCounts, conversionRates)) {
+        Serial.println("[FUNNEL-DEBUG] Failed to get funnel total counts");
+        return;
+    }
+    
+    // Debug step counts
+    Serial.print("[FUNNEL-DEBUG] Step counts: ");
+    for (size_t i = 0; i < stepCount; i++) {
+        Serial.printf("%d ", stepCounts[i]);
+    }
+    Serial.println();
     
     uint32_t totalFirstStep = stepCounts[0];
-    if (totalFirstStep == 0) return;  // Avoid division by zero
+    if (totalFirstStep == 0) {
+        Serial.println("[FUNNEL-DEBUG] First step count is zero");
+        return;  // Avoid division by zero
+    }
     
-    // Pre-calculate step data
-    struct StepData {
-        uint32_t total;
+    // Prepare funnel data before UI update
+    struct FunnelStep {
         String label;
-        std::vector<float> segmentWidths;
-        std::vector<float> segmentOffsets;
+        uint32_t total;
+        float relativeWidth; // 0.0-1.0 relative to first step
+        struct {
+            float width; // Actual pixel width
+            float offset; // X position offset
+        } segments[MAX_BREAKDOWNS];
     };
     
-    std::vector<StepData> steps;
-    steps.reserve(stepCount);
+    FunnelStep steps[MAX_FUNNEL_STEPS];
     lv_coord_t available_width = lv_obj_get_width(_content_container);
     
-    // Process each step
+    Serial.println("[FUNNEL-DEBUG] Preparing funnel data structure");
+    
     for (size_t step = 0; step < stepCount; step++) {
-        StepData stepData;
-        stepData.total = stepCounts[step];
-        
-        // Get breakdown data
-        uint32_t breakdownCounts[MAX_BREAKDOWNS] = {0};
-        double breakdownRates[MAX_BREAKDOWNS] = {0.0};
-        parser.getFunnelBreakdownComparison(step, breakdownCounts, breakdownRates);
+        // Get step data
+        FunnelStep& currentStep = steps[step];
+        currentStep.total = stepCounts[step];
+        currentStep.relativeWidth = static_cast<float>(currentStep.total) / totalFirstStep;
         
         // Get step name
         char stepNameBuffer[32] = {0};
@@ -452,115 +631,134 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
         
         // Create label
         char numberBuffer[16];
+        NumberFormat::addThousandsSeparators(numberBuffer, sizeof(numberBuffer), currentStep.total);
+        
         if (step == 0) {
-            NumberFormat::addThousandsSeparators(numberBuffer, sizeof(numberBuffer), stepData.total);
-            stepData.label = String(numberBuffer);
+            currentStep.label = String(numberBuffer);
             if (stepNameBuffer[0] != '\0') {
-                stepData.label += " - " + String(stepNameBuffer);
+                currentStep.label += " - " + String(stepNameBuffer);
             }
         } else {
-            NumberFormat::addThousandsSeparators(numberBuffer, sizeof(numberBuffer), stepData.total);
-            uint32_t percentage = (stepData.total * 100) / totalFirstStep;
-            stepData.label = String(numberBuffer) + " - " + String(percentage) + "%";
+            uint32_t percentage = (currentStep.total * 100) / totalFirstStep;
+            currentStep.label = String(numberBuffer) + " - " + String(percentage) + "%";
             if (stepNameBuffer[0] != '\0') {
-                stepData.label += " - " + String(stepNameBuffer);
+                currentStep.label += " - " + String(stepNameBuffer);
             }
         }
         
-        // Calculate segments
-        float stepPercentage = static_cast<float>(stepData.total) / totalFirstStep;
-        float totalWidth = available_width * stepPercentage;
-        float offset = 0;
+        // Calculate breakdowns
+        uint32_t breakdownCounts[MAX_BREAKDOWNS] = {0};
+        double breakdownRates[MAX_BREAKDOWNS] = {0.0};
         
-        for (size_t i = 0; i < breakdownCount; i++) {
-            float segmentPercentage = stepData.total > 0 ?
-                static_cast<float>(breakdownCounts[i]) / stepData.total : 0.0f;
+        if (parser.getFunnelBreakdownComparison(step, breakdownCounts, breakdownRates)) {
+            float totalWidth = available_width * currentStep.relativeWidth;
+            float offset = 0;
             
-            float width = totalWidth * segmentPercentage;
-            stepData.segmentWidths.push_back(width);
-            stepData.segmentOffsets.push_back(offset);
-            offset += width;
+            for (size_t i = 0; i < breakdownCount; i++) {
+                float segmentPercentage = currentStep.total > 0 ?
+                    static_cast<float>(breakdownCounts[i]) / currentStep.total : 0.0f;
+                
+                float width = totalWidth * segmentPercentage;
+                
+                currentStep.segments[i].width = width;
+                currentStep.segments[i].offset = offset;
+                
+                offset += width;
+            }
         }
-        
-        steps.push_back(std::move(stepData));
     }
     
     // Update UI
-    dispatchToUI([this, title = String(title), steps = std::move(steps), 
-                 breakdownCount]() {
+    Serial.println("[FUNNEL-DEBUG] Dispatching funnel UI update lambda");
+    
+    dispatchToUI([this, title = String(title), steps, stepCount, breakdownCount]() {
+        Serial.println("[FUNNEL-DEBUG] Started UI update lambda execution");
+        
         if (!isValidObject(_funnel_container) || !isValidObject(_title_label)) {
+            Serial.println("[FUNNEL-DEBUG] Invalid UI objects when updating funnel");
             return;
         }
         
         // Update title
         lv_label_set_text(_title_label, title.c_str());
-        
-        lv_coord_t available_width = lv_obj_get_width(_funnel_container);
+        Serial.printf("[FUNNEL-DEBUG] Set title to: %s\n", title.c_str());
         
         // Update steps
         int yOffset = 0;
-        for (size_t step = 0; step < steps.size(); step++) {
+        
+        for (size_t step = 0; step < stepCount; step++) {
             const auto& stepData = steps[step];
             
-            // Create or update bar container
-            if (!isValidObject(_funnel_bars[step])) {
-                _funnel_bars[step] = lv_obj_create(_funnel_container);
-                if (_funnel_bars[step]) {
-                    lv_obj_set_size(_funnel_bars[step], available_width, FUNNEL_BAR_HEIGHT);
-                    lv_obj_set_style_bg_opa(_funnel_bars[step], LV_OPA_0, 0);
-                    lv_obj_set_style_border_width(_funnel_bars[step], 0, 0);
-                    lv_obj_set_style_pad_all(_funnel_bars[step], 0, 0);
-                    lv_obj_clear_flag(_funnel_bars[step], LV_OBJ_FLAG_SCROLLABLE);
-                }
-            }
+            Serial.printf("[FUNNEL-DEBUG] Updating step %d, label: %s\n", 
+                        (int)step, stepData.label.c_str());
             
             if (isValidObject(_funnel_bars[step])) {
+                // Position the bar
                 lv_obj_align(_funnel_bars[step], LV_ALIGN_TOP_LEFT, 0, yOffset);
+                lv_obj_clear_flag(_funnel_bars[step], LV_OBJ_FLAG_HIDDEN);
                 
-                // Create or update label
-                if (!isValidObject(_funnel_labels[step])) {
-                    _funnel_labels[step] = lv_label_create(_funnel_container);
-                    if (_funnel_labels[step]) {
-                        lv_obj_set_style_text_color(_funnel_labels[step], Style::valueColor(), 0);
-                        lv_obj_set_style_text_font(_funnel_labels[step], Style::valueFont(), 0);
-                        lv_label_set_long_mode(_funnel_labels[step], LV_LABEL_LONG_DOT);
-                        lv_obj_set_width(_funnel_labels[step], available_width);
-                        lv_obj_set_height(_funnel_labels[step], FUNNEL_LABEL_HEIGHT);
-                    }
-                }
-                
+                // Update label
                 if (isValidObject(_funnel_labels[step])) {
                     lv_label_set_text(_funnel_labels[step], stepData.label.c_str());
                     lv_obj_align(_funnel_labels[step], LV_ALIGN_TOP_LEFT, 1, 
-                                yOffset + FUNNEL_BAR_HEIGHT + 2);
+                               yOffset + FUNNEL_BAR_HEIGHT + 2);
+                    lv_obj_clear_flag(_funnel_labels[step], LV_OBJ_FLAG_HIDDEN);
+                    Serial.printf("[FUNNEL-DEBUG] Step %d label displayed\n", (int)step);
                 }
                 
-                // Create or update segments
-                for (size_t i = 0; i < stepData.segmentWidths.size() && i < breakdownCount; i++) {
-                    if (!isValidObject(_funnel_segments[step][i])) {
-                        _funnel_segments[step][i] = lv_obj_create(_funnel_bars[step]);
-                        if (_funnel_segments[step][i]) {
-                            lv_obj_set_style_bg_color(_funnel_segments[step][i],
-                                                   _breakdown_colors[i], 0);
-                            lv_obj_set_style_border_width(_funnel_segments[step][i], 0, 0);
-                            lv_obj_set_style_radius(_funnel_segments[step][i], 0, 0);
-                            lv_obj_set_style_pad_all(_funnel_segments[step][i], 0, 0);
-                        }
-                    }
-                    
+                // Update segments
+                for (size_t i = 0; i < breakdownCount; i++) {
                     if (isValidObject(_funnel_segments[step][i])) {
                         // Ensure minimum width of 1px for visibility
-                        int width = std::max(1, static_cast<int>(stepData.segmentWidths[i]));
+                        int width = std::max(1, static_cast<int>(stepData.segments[i].width));
                         lv_obj_set_size(_funnel_segments[step][i], width, FUNNEL_BAR_HEIGHT);
                         lv_obj_align(_funnel_segments[step][i], LV_ALIGN_LEFT_MID,
-                                   static_cast<int>(stepData.segmentOffsets[i]), 0);
+                                   static_cast<int>(stepData.segments[i].offset), 0);
+                        
+                        // Only show if width > 0
+                        if (width > 0) {
+                            lv_obj_clear_flag(_funnel_segments[step][i], LV_OBJ_FLAG_HIDDEN);
+                        } else {
+                            lv_obj_add_flag(_funnel_segments[step][i], LV_OBJ_FLAG_HIDDEN);
+                        }
                     }
                 }
+                
+                // Hide unused segments
+                for (size_t i = breakdownCount; i < MAX_BREAKDOWNS; i++) {
+                    if (isValidObject(_funnel_segments[step][i])) {
+                        lv_obj_add_flag(_funnel_segments[step][i], LV_OBJ_FLAG_HIDDEN);
+                    }
+                }
+            } else {
+                Serial.printf("[FUNNEL-DEBUG] ERROR: Funnel bar %d is invalid!\n", (int)step);
             }
             
             yOffset += FUNNEL_BAR_HEIGHT + FUNNEL_BAR_GAP;
         }
+        
+        // Hide unused steps
+        for (size_t step = stepCount; step < MAX_FUNNEL_STEPS; step++) {
+            if (isValidObject(_funnel_bars[step])) {
+                lv_obj_add_flag(_funnel_bars[step], LV_OBJ_FLAG_HIDDEN);
+            }
+            if (isValidObject(_funnel_labels[step])) {
+                lv_obj_add_flag(_funnel_labels[step], LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+        
+        // Force an immediate refresh of the display
+        lv_obj_invalidate(_funnel_container);
+        lv_display_t* disp = lv_display_get_default();
+        if (disp) {
+            lv_refr_now(disp);
+            Serial.println("[FUNNEL-DEBUG] Forced immediate refresh");
+        }
+        
+        Serial.println("[FUNNEL-DEBUG] Completed UI update lambda execution");
     });
+    
+    Serial.println("[FUNNEL-DEBUG] updateFunnelDisplay complete");
 }
 
 void InsightCard::initBreakdownColors() {

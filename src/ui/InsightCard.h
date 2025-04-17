@@ -48,6 +48,9 @@ public:
      * @return String Insight ID
      */
     String getInsightId() const;
+
+    static void initUIQueue();
+    static void processUIQueue();
     
 private:
     // Constants
@@ -59,6 +62,9 @@ private:
     static constexpr int FUNNEL_BAR_GAP = 20;
     static constexpr int FUNNEL_LEFT_MARGIN = 0;
     static constexpr int FUNNEL_LABEL_HEIGHT = 20;
+
+    static QueueHandle_t uiQueue;
+
     
     /**
      * @brief Thread-safe method to dispatch UI updates

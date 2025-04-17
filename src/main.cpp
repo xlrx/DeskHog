@@ -88,6 +88,8 @@ void lvglHandlerTask(void* parameter) {
     while (1) {
         // Handle LVGL tasks
         displayInterface->handleLVGLTasks();
+
+        InsightCard::processUIQueue();
         
         // Poll buttons at regular intervals
         TickType_t currentTime = xTaskGetTickCount();
@@ -125,6 +127,9 @@ void setup() {
         Serial.println("PSRAM initialization failed!");
         while(1); // Stop here if PSRAM init fails
     }
+
+    InsightCard::initUIQueue();
+
 
     SystemController::begin();
     
@@ -238,4 +243,5 @@ void setup() {
 void loop() {
     // Empty - tasks handle everything
     vTaskDelete(NULL);
+    
 }
