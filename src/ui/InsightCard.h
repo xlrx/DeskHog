@@ -6,12 +6,12 @@
 #include <memory>
 #include "lv_conf.h"
 #include "../ConfigManager.h"
-#include "../posthog/PostHogClient.h"
 #include "../posthog/parsers/InsightParser.h"
+#include "../EventQueue.h"
 
 class InsightCard {
 public:
-    InsightCard(lv_obj_t* parent, ConfigManager& config, PostHogClient& posthog_client,
+    InsightCard(lv_obj_t* parent, ConfigManager& config, EventQueue& eventQueue, 
                 const String& insightId, uint16_t width, uint16_t height);
     ~InsightCard();
     
@@ -31,15 +31,15 @@ protected:
     void clearCardContent();
     
     // Data handling methods
-    void handleNewData(const String& response);
-    static void onDataReceived(void* context, const String& response);
+    void handleParsedData(std::shared_ptr<InsightParser> parser);
+    void onEvent(const Event& event);
 
 private:
     static constexpr size_t MAX_FUNNEL_STEPS = 5;
     static constexpr size_t MAX_BREAKDOWNS = 5;
     
     ConfigManager& _config;
-    PostHogClient& _posthog_client;
+    EventQueue& _event_queue;
     String _insight_id;
     
     // LVGL Objects

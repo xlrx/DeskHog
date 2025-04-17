@@ -39,10 +39,10 @@ void InsightCard::dispatchToUI(std::function<void()> update) {
     }, 0, callback);
 }
 
-InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, PostHogClient& posthog_client,
+InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, EventQueue& eventQueue,
                         const String& insightId, uint16_t width, uint16_t height)
     : _config(config)
-    , _posthog_client(posthog_client)
+    , _event_queue(eventQueue)
     , _insight_id(insightId)
     , _card(nullptr)
     , _title_label(nullptr)
@@ -98,18 +98,23 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, PostHogClient&
     lv_obj_set_style_border_width(_content_container, 0, 0);
     lv_obj_set_style_pad_all(_content_container, 0, 0);
     
-    // Create initial numeric display
+    // Create initial numeric elements
     createNumericElements();
     
-    // Subscribe to PostHog updates
-    _posthog_client.subscribeToInsight(insightId, onDataReceived, this);
-
-    _posthog_client.queueRequest(insightId, onDataReceived, this);
+    // Subscribe to events from the event queue
+    _event_queue.subscribe([this](const Event& event) {
+        // Only process events for this insight
+        if (event.type == EventType::INSIGHT_DATA_RECEIVED && 
+            event.insightId == _insight_id && 
+            event.parser) {
+            this->onEvent(event);
+        }
+    });
+    
+    // Data will be provided by the event system when available
 }
 
 InsightCard::~InsightCard() {
-    _posthog_client.unsubscribeFromInsight(_insight_id);
-    
     // Clean up UI elements on main thread
     dispatchToUI([this]() {
         if (_card && lv_obj_is_valid(_card)) {
@@ -142,31 +147,30 @@ lv_obj_t* InsightCard::getCard() {
     return _card;
 }
 
-void InsightCard::onDataReceived(void* context, const String& response) {
-    InsightCard* card = static_cast<InsightCard*>(context);
-    card->handleNewData(response);
+void InsightCard::onEvent(const Event& event) {
+    if (event.type == EventType::INSIGHT_DATA_RECEIVED && 
+        event.insightId == _insight_id && 
+        event.parser) {
+        
+        // Handle the parsed data directly
+        handleParsedData(event.parser);
+    }
 }
 
-void InsightCard::handleNewData(const String& response) {
-    unsigned long start_time = millis();
-    
-    InsightParser parser(response.c_str());
-    unsigned long parsing_time = millis() - start_time;
-    Serial.printf("InsightCard %s: JSON parsing time: %lu ms\n", _insight_id.c_str(), parsing_time);
-    
-    if (!parser.isValid()) {
+void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
+    if (!parser || !parser->isValid()) {
         updateNumericDisplay("Parse Error", 0);
         return;
     }
     
-    start_time = millis();
-    auto insightType = parser.detectInsightType();
+    unsigned long start_time = millis();
+    auto insightType = parser->detectInsightType();
     unsigned long detect_time = millis() - start_time;
-    Serial.printf("InsightCard %s: Type detection time: %lu ms\n", _insight_id.c_str(), detect_time);
+    Serial.printf("InsightCard %s (event): Type detection time: %lu ms\n", _insight_id.c_str(), detect_time);
     
     char titleBuffer[64];
     
-    if (!parser.getName(titleBuffer, sizeof(titleBuffer))) {
+    if (!parser->getName(titleBuffer, sizeof(titleBuffer))) {
         strcpy(titleBuffer, "Unnamed Insight");
     }
 
@@ -195,27 +199,27 @@ void InsightCard::handleNewData(const String& response) {
     
     // Update based on type
     if (insightType == InsightParser::InsightType::NUMERIC_CARD) {
-        double value = parser.getNumericCardValue();
+        double value = parser->getNumericCardValue();
         updateNumericDisplay(titleBuffer, value);
     } 
     else if (insightType == InsightParser::InsightType::LINE_GRAPH) {
-        size_t pointCount = parser.getSeriesPointCount();
+        size_t pointCount = parser->getSeriesPointCount();
         if (pointCount > 0) {
             std::unique_ptr<double[]> values(new double[pointCount]);
-            if (parser.getSeriesYValues(values.get())) {
+            if (parser->getSeriesYValues(values.get())) {
                 updateLineGraphDisplay(titleBuffer, values.get(), pointCount);
             }
         }
     }
     else if (insightType == InsightParser::InsightType::FUNNEL) {
-        updateFunnelDisplay(titleBuffer, parser);
+        updateFunnelDisplay(titleBuffer, *parser);
     }
     else {
         updateNumericDisplay("Unsupported Type", 0);
     }
     
     unsigned long process_time = millis() - start_time;
-    Serial.printf("InsightCard %s: Data processing time: %lu ms\n", _insight_id.c_str(), process_time);
+    Serial.printf("InsightCard %s (event): Data processing time: %lu ms\n", _insight_id.c_str(), process_time);
 }
 
 void InsightCard::clearCardContent() {

@@ -139,8 +139,8 @@ void setup() {
     configManager = new ConfigManager(*eventQueue);
     configManager->begin();
     
-    // Initialize PostHog client
-    posthogClient = new PostHogClient(*configManager);
+    // Initialize PostHog client with event queue
+    posthogClient = new PostHogClient(*configManager, *eventQueue);
     
     // Initialize display manager
     displayInterface = new DisplayInterface(
@@ -213,7 +213,7 @@ void setup() {
         "lv_tick_task",
         2048,
         NULL,
-        2,
+        1,
         NULL,
         1
     );

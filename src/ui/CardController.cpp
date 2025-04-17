@@ -113,7 +113,7 @@ InsightCard* CardController::createInsightCard(const String& insightId) {
     InsightCard* insightCard = new InsightCard(
         screen,
         configManager,
-        posthogClient,
+        eventQueue,
         insightId,
         screenWidth,
         screenHeight
@@ -124,6 +124,9 @@ InsightCard* CardController::createInsightCard(const String& insightId) {
     
     // Add to our list of cards
     insightCards.push_back(insightCard);
+    
+    // Request immediate data for this insight
+    posthogClient.requestInsightData(insightId);
     
     displayInterface->giveMutex();
     return insightCard;

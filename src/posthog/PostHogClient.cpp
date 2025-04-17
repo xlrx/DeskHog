@@ -3,33 +3,24 @@
 
 const char* PostHogClient::BASE_URL = "https://us.posthog.com/api/projects/";
 
-PostHogClient::PostHogClient(ConfigManager& config) 
+PostHogClient::PostHogClient(ConfigManager& config, EventQueue& eventQueue) 
     : _config(config)
-    , has_active_request(false) {
+    , _eventQueue(eventQueue)
+    , has_active_request(false)
+    , last_refresh_check(0) {
     _http.setReuse(true);
 }
 
-void PostHogClient::subscribeToInsight(const String& insight_id, DataCallback callback, void* context) {
-    InsightSubscription subscription = {
-        .callback = callback,
-        .callback_context = context,
-        .last_refresh_time = 0
-    };
-    insight_subscriptions[insight_id] = subscription;
-}
-
-void PostHogClient::unsubscribeFromInsight(const String& insight_id) {
-    insight_subscriptions.erase(insight_id);
-}
-
-void PostHogClient::queueRequest(const String& insight_id, DataCallback callback, void* context) {
+void PostHogClient::requestInsightData(const String& insight_id) {
+    // Add to queue for immediate fetch
     QueuedRequest request = {
         .insight_id = insight_id,
-        .callback = callback,
-        .callback_context = context,
         .retry_count = 0
     };
     request_queue.push(request);
+    
+    // Add to our set of known insights for future refreshes
+    requested_insights.insert(insight_id);
 }
 
 bool PostHogClient::isReady() const {
@@ -38,31 +29,23 @@ bool PostHogClient::isReady() const {
            _config.getApiKey().length() > 0;
 }
 
-bool PostHogClient::hasSubscription(const String& insight_id) const {
-    return insight_subscriptions.find(insight_id) != insight_subscriptions.end();
-}
-
-std::vector<String> PostHogClient::getSubscribedInsights() const {
-    std::vector<String> insights;
-    for (const auto& pair : insight_subscriptions) {
-        insights.push_back(pair.first);
-    }
-    return insights;
-}
-
 void PostHogClient::process() {
     if (!isReady()) {
         return;
     }
 
-    // Process any queued requests first
+    // Process any queued requests
     if (!has_active_request) {
         processQueue();
     }
 
     // Check for needed refreshes
     if (!has_active_request) {
-        checkRefreshes();
+        unsigned long now = millis();
+        if (now - last_refresh_check >= REFRESH_INTERVAL) {
+            last_refresh_check = now;
+            checkRefreshes();
+        }
     }
 }
 
@@ -82,7 +65,8 @@ void PostHogClient::processQueue() {
     String response;
     
     if (fetchInsight(request.insight_id, response)) {
-        request.callback(request.callback_context, response);
+        // Publish to the event system
+        publishInsightDataEvent(request.insight_id, response);
         request_queue.pop();
     } else {
         // Handle failure - retry if under max attempts
@@ -108,19 +92,36 @@ void PostHogClient::processQueue() {
 }
 
 void PostHogClient::checkRefreshes() {
-    unsigned long now = millis();
+    if (requested_insights.empty()) {
+        return;
+    }
     
-    for (auto& pair : insight_subscriptions) {
-        const String& insight_id = pair.first;
-        InsightSubscription& subscription = pair.second;
-        
-        if (now - subscription.last_refresh_time >= FETCH_INTERVAL) {
-            String response;
-            if (fetchInsight(insight_id, response)) {
-                subscription.callback(subscription.callback_context, response);
-                subscription.last_refresh_time = now;
-            }
-            break;  // Only process one refresh at a time
+    // Pick one insight to refresh
+    String refresh_id;
+    
+    // This cycles through insights in a round-robin fashion since sets are ordered
+    static auto it = requested_insights.begin();
+    if (it == requested_insights.end()) {
+        it = requested_insights.begin();
+    }
+    
+    if (it != requested_insights.end()) {
+        refresh_id = *it;
+        ++it;
+    } else {
+        // Reset if we're at the end
+        it = requested_insights.begin();
+        if (it != requested_insights.end()) {
+            refresh_id = *it;
+            ++it;
+        }
+    }
+    
+    if (!refresh_id.isEmpty()) {
+        String response;
+        if (fetchInsight(refresh_id, response)) {
+            // Publish to the event system
+            publishInsightDataEvent(refresh_id, response);
         }
     }
 }
@@ -207,4 +208,20 @@ bool PostHogClient::fetchInsight(const String& insight_id, String& response) {
     
     has_active_request = false;
     return success;
+}
+
+void PostHogClient::publishInsightDataEvent(const String& insight_id, const String& response) {
+    // Parse the response and create a shared_ptr to the parser
+    auto parser = std::make_shared<InsightParser>(response.c_str());
+    
+    // Only publish if the parsing was successful
+    if (parser->isValid()) {
+        // Publish the event with the parsed data
+        _eventQueue.publishEvent(EventType::INSIGHT_DATA_RECEIVED, insight_id, parser);
+        
+        // Log for debugging
+        Serial.printf("Published parsed insight data for %s\n", insight_id.c_str());
+    } else {
+        Serial.printf("Failed to parse insight data for %s\n", insight_id.c_str());
+    }
 } 

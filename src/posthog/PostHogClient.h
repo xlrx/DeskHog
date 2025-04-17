@@ -4,35 +4,29 @@
 #include <Arduino.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
-#include <map>
 #include <queue>
 #include <vector>
+#include <set>
+#include <memory>
 #include "../ConfigManager.h"
 #include "SystemController.h"
+#include "EventQueue.h"
+#include "parsers/InsightParser.h"
 
 class PostHogClient {
 public:
-    // Callback type for when data is fetched
-    typedef void (*DataCallback)(void* context, const String& response);
-    
     // Constructor
-    explicit PostHogClient(ConfigManager& config);
+    explicit PostHogClient(ConfigManager& config, EventQueue& eventQueue);
     
     // Delete copy constructor and assignment operator
     PostHogClient(const PostHogClient&) = delete;
     void operator=(const PostHogClient&) = delete;
     
-    // Subscription management
-    void subscribeToInsight(const String& insight_id, DataCallback callback, void* context);
-    void unsubscribeFromInsight(const String& insight_id);
-    
     // Queue an immediate fetch (separate from refresh cycle)
-    void queueRequest(const String& insight_id, DataCallback callback, void* context);
+    void requestInsightData(const String& insight_id);
     
     // Utility methods
     bool isReady() const;
-    bool hasSubscription(const String& insight_id) const;
-    std::vector<String> getSubscribedInsights() const;
     
     // Process function to be called in loop
     void process();
@@ -40,31 +34,24 @@ public:
 private:
     // Configuration
     ConfigManager& _config;
-    
-    // Subscription tracking
-    struct InsightSubscription {
-        DataCallback callback;
-        void* callback_context;
-        unsigned long last_refresh_time;
-    };
+    EventQueue& _eventQueue;
     
     // Queue request tracking
     struct QueuedRequest {
         String insight_id;
-        DataCallback callback;
-        void* callback_context;
         uint8_t retry_count;
     };
     
     // Member variables
-    std::map<String, InsightSubscription> insight_subscriptions;
+    std::set<String> requested_insights;  // Track all insights we've seen
     std::queue<QueuedRequest> request_queue;
     bool has_active_request;
     HTTPClient _http;
+    unsigned long last_refresh_check;  // When we last checked for refreshes
     
     // Constants
     static const char* BASE_URL;
-    static const unsigned long FETCH_INTERVAL = 30000; 
+    static const unsigned long REFRESH_INTERVAL = 30000; // 30 seconds
     static const uint8_t MAX_RETRIES = 3;              // Maximum number of retry attempts
     static const unsigned long RETRY_DELAY = 1000;     // Delay between retries (ms)
     
@@ -74,6 +61,9 @@ private:
     void checkRefreshes();
     bool fetchInsight(const String& insight_id, String& response);
     String buildInsightUrl(const String& insight_id, const char* refresh_mode = "force_cache") const;
+    
+    // Event-related methods
+    void publishInsightDataEvent(const String& insight_id, const String& response);
 };
 
 #endif // POSTHOG_CLIENT_H 

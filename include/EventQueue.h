@@ -4,9 +4,11 @@
 #include <functional>
 #include <vector>
 #include <string>
+#include <memory>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
+#include "posthog/parsers/InsightParser.h"
 
 /**
  * @brief Event types in the system
@@ -14,6 +16,7 @@
 enum class EventType {
     INSIGHT_ADDED,
     INSIGHT_DELETED,
+    INSIGHT_DATA_RECEIVED,
     WIFI_CREDENTIALS_FOUND,
     NEED_WIFI_CREDENTIALS,
     WIFI_CONNECTING,
@@ -26,12 +29,16 @@ enum class EventType {
  * @brief Represents an event in the system
  */
 struct Event {
-    EventType type;     // Type of event
-    String insightId;   // ID of the insight related to the event
+    EventType type;                         // Type of event
+    String insightId;                       // ID of the insight related to the event
+    std::shared_ptr<InsightParser> parser;  // Optional parsed insight data
     
     Event() {}
     
-    Event(EventType t, const String& id) : type(t), insightId(id) {}
+    Event(EventType t, const String& id) : type(t), insightId(id), parser(nullptr) {}
+    
+    Event(EventType t, const String& id, std::shared_ptr<InsightParser> p)
+        : type(t), insightId(id), parser(p) {}
 };
 
 /**
@@ -65,6 +72,17 @@ public:
      * @return false if the queue is full
      */
     bool publishEvent(EventType eventType, const String& insightId);
+    
+    /**
+     * @brief Publish an event with parsed insight data
+     * 
+     * @param eventType Type of the event
+     * @param insightId ID of the insight related to the event
+     * @param parser Shared pointer to parsed insight data
+     * @return true if the event was successfully queued
+     * @return false if the queue is full
+     */
+    bool publishEvent(EventType eventType, const String& insightId, std::shared_ptr<InsightParser> parser);
     
     /**
      * @brief Alternative method to publish a pre-constructed Event

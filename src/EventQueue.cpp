@@ -29,6 +29,11 @@ bool EventQueue::publishEvent(EventType eventType, const String& insightId) {
     return publishEvent(event);
 }
 
+bool EventQueue::publishEvent(EventType eventType, const String& insightId, std::shared_ptr<InsightParser> parser) {
+    Event event(eventType, insightId, parser);
+    return publishEvent(event);
+}
+
 bool EventQueue::publishEvent(const Event& event) {
     // Add the event to the queue
     if (xQueueSend(eventQueue, &event, 0) == pdPASS) {
