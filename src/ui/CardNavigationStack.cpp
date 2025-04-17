@@ -149,12 +149,20 @@ void CardNavigationStack::goToCard(uint8_t index) {
         return;
     }
     
-    // Add yield to prevent watchdog timeout during scroll operations
-    vTaskDelay(pdMS_TO_TICKS(1));
+    // Calculate target scroll position based on child position
+    lv_coord_t target_y = index * _height;
     
-    lv_obj_scroll_to_view(target_card, LV_ANIM_ON);
+    // Create a custom animation
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, _main_container);
+    lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_scroll_to_y);
+    lv_anim_set_values(&a, lv_obj_get_scroll_y(_main_container), target_y);
+    lv_anim_set_time(&a, 200);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    lv_anim_start(&a);
     
-    // Add another yield after the scroll operation
+    // Short delay after animation
     vTaskDelay(pdMS_TO_TICKS(1));
     
     _update_scroll_indicator(_current_card);
