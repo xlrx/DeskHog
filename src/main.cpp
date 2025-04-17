@@ -45,7 +45,6 @@ EventQueue* eventQueue; // Add global EventQueue
 // Task handles
 TaskHandle_t wifiTask;
 TaskHandle_t portalTask;
-TaskHandle_t buttonTask;
 TaskHandle_t insightTask;
 
 // WiFi connection timeout in milliseconds
@@ -78,6 +77,35 @@ void insightTaskFunction(void* parameter) {
     while (1) {
         posthogClient->process();  // Use the global instance
         vTaskDelay(pdMS_TO_TICKS(100));  // Check every 100ms
+    }
+}
+
+// LVGL handler task that includes button polling - added here to consolidate UI operations
+void lvglHandlerTask(void* parameter) {
+    TickType_t lastButtonCheck = xTaskGetTickCount();
+    const TickType_t buttonCheckInterval = pdMS_TO_TICKS(50); // Check buttons every 50ms
+    
+    while (1) {
+        // Handle LVGL tasks
+        displayInterface->handleLVGLTasks();
+        
+        // Poll buttons at regular intervals
+        TickType_t currentTime = xTaskGetTickCount();
+        if ((currentTime - lastButtonCheck) >= buttonCheckInterval) {
+            lastButtonCheck = currentTime;
+            
+            // Poll all buttons
+            for (int i = 0; i < NUM_BUTTONS; i++) {
+                buttons[i].update();
+                
+                if (buttons[i].pressed()) {
+                    // Process button directly in LVGL context
+                    cardController->getCardStack()->handleButtonPress(i);
+                }
+            }
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
 
@@ -146,17 +174,6 @@ void setup() {
     captivePortal = new CaptivePortal(*configManager, *wifiInterface, *eventQueue);
     captivePortal->begin();
     
-    // Create task for button handling
-    xTaskCreatePinnedToCore(
-        CardNavigationStack::buttonTask,
-        "buttonTask",
-        2048,
-        cardController->getCardStack(),  // Pass the card stack pointer as parameter
-        1,
-        &buttonTask,
-        0
-    );
-    
     // Create task for WiFi operations
     xTaskCreatePinnedToCore(
         wifiTaskFunction,
@@ -201,16 +218,11 @@ void setup() {
         1
     );
     
-    // Create LVGL handler task
+    // Create LVGL handler task (now includes button polling)
     xTaskCreatePinnedToCore(
-        [](void *parameter) {
-            while (1) {
-                displayInterface->handleLVGLTasks();
-                vTaskDelay(pdMS_TO_TICKS(5));
-            }
-        },
+        lvglHandlerTask,
         "lvglTask",
-        4096,
+        8192,
         NULL,
         2,
         NULL,

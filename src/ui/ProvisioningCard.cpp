@@ -73,8 +73,7 @@ void ProvisioningCard::showWiFiStatus() {
 }
 
 void ProvisioningCard::createQRScreen() {
-    // QR codes need to have high contrast - white background with black pattern
-    lv_obj_set_style_bg_color(_qrScreen, lv_color_white(), 0);
+    lv_obj_set_style_bg_color(_qrScreen, Style::backgroundColor(), 0);
     lv_obj_set_style_pad_all(_qrScreen, 0, 0);
     lv_obj_set_style_border_width(_qrScreen, 0, 0);
     
@@ -83,7 +82,11 @@ void ProvisioningCard::createQRScreen() {
     const int qr_size = _height - 20;  // Leave some padding
     
     // Create a placeholder QR code with empty data (will be updated later)
-    _qrCode = lv_qrcode_create(_qrScreen, qr_size, lv_color_black(), lv_color_white());
+    _qrCode = lv_qrcode_create(_qrScreen);
+    // In LVGL v9, we set properties separately
+    lv_qrcode_set_size(_qrCode, qr_size);
+    lv_qrcode_set_dark_color(_qrCode, lv_color_black());
+    lv_qrcode_set_light_color(_qrCode, lv_color_white()); 
     lv_obj_center(_qrCode);
     lv_qrcode_update(_qrCode, "WIFI:T:WPA;", 10); // Placeholder text
 }

@@ -1,13 +1,22 @@
 /**
  * @file fonts.h
- * @brief Includes all font headers
+ * @brief Includes all LVGL font headers
  */
 
-#ifndef FONTS_H
-#define FONTS_H
+#ifndef LVGL_FONTS_H
+#define LVGL_FONTS_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // Include all font headers
-#include "Inter_18pt_SemiBold.h"
-#include "Inter_18pt_Regular.h"
+#include "font_label.h"
+#include "font_value.h"
+#include "font_value_large.h"
 
-#endif /* FONTS_H */
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* LVGL_FONTS_H */

@@ -37,9 +37,6 @@ public:
     // Process button input
     void handleButtonPress(uint8_t button_index);
     
-    // Button handling task
-    static void buttonTask(void* parameter);
-    
     // Set mutex reference
     void setMutex(SemaphoreHandle_t* mutex_ptr);
     
@@ -56,9 +53,6 @@ private:
     
     // Mutex reference
     SemaphoreHandle_t* _mutex_ptr;
-    
-    // Static instance pointer for task
-    static CardNavigationStack* _instance;
     
     // Private methods
     static void _scroll_event_cb(lv_event_t* e);

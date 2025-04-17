@@ -1,7 +1,91 @@
 #!/usr/bin/env python3
 import os
+import sys
 import glob
 import re
+import subprocess
+import json
+
+def check_npm_installed():
+    """Check if npm is installed"""
+    try:
+        subprocess.check_call(["npm", "--version"], 
+                             stdout=subprocess.DEVNULL, 
+                             stderr=subprocess.DEVNULL)
+        return True
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return False
+
+def convert_font(ttf_file, output_dir, size, font_name_override=None):
+    """Convert TTF file to LVGL compatible C font"""
+    font_name = font_name_override if font_name_override else safe_font_name(ttf_file)
+    output_c_file = os.path.join(output_dir, f"{font_name}.c")
+    
+    # Define character range (0-255, basic Latin)
+    range_arg = "0x20-0x7F,0xA0-0xFF"
+    
+    # Build the lv_font_conv command with appropriate parameters
+    cmd = [
+        "npx", "lv_font_conv",
+        "--font", ttf_file,
+        "--range", range_arg,
+        "--size", str(size),  # Use the provided size
+        "--format", "lvgl",
+        "--bpp", "4",  # 4 bits per pixel for grayscale
+        "--no-compress",
+        "--output", output_c_file,
+        "--lv-font-name", font_name  # Correct param for LVGL font name
+    ]
+    
+    try:
+        print(f"Converting {ttf_file} at {size}pt as {font_name}...")
+        subprocess.check_call(cmd)
+        
+        if os.path.exists(output_c_file):
+            # Fix the include path in the generated file
+            with open(output_c_file, 'r') as f:
+                content = f.read()
+            
+            # Replace the include path
+            content = content.replace('#include "lvgl/lvgl.h"', '#include "lvgl.h"')
+            
+            with open(output_c_file, 'w') as f:
+                f.write(content)
+            
+            # Also create a header file for inclusion
+            header_file = os.path.join(output_dir, f"{font_name}.h")
+            with open(header_file, 'w') as f:
+                header_content = f"""/**
+ * @file {font_name}.h
+ * @brief LVGL font generated from {os.path.basename(ttf_file)} at {size}pt
+ */
+
+#ifndef {font_name.upper()}_H
+#define {font_name.upper()}_H
+
+#ifdef __cplusplus
+extern "C" {{
+#endif
+
+#include "lvgl.h"
+
+extern const lv_font_t {font_name};
+
+#ifdef __cplusplus
+}}
+#endif
+
+#endif /* {font_name.upper()}_H */
+"""
+                f.write(header_content)
+            print(f"Generated {output_c_file} and {header_file}")
+            return True
+        else:
+            print(f"Failed to generate {output_c_file}")
+            return False
+    except subprocess.SubprocessError as e:
+        print(f"Error converting font: {e}")
+        return False
 
 def safe_font_name(filename):
     """Convert filename to safe C variable name"""
@@ -11,95 +95,89 @@ def safe_font_name(filename):
     name = re.sub(r'[^a-zA-Z0-9]', '_', name)
     return name
 
-def ttf_to_header(ttf_file, output_dir):
-    """Convert TTF file to C header"""
-    with open(ttf_file, 'rb') as f:
-        font_data = f.read()
-    
-    font_name = safe_font_name(ttf_file)
-    output_file = os.path.join(output_dir, f"{font_name}.h")
-    
-    # Calculate size
-    size = len(font_data)
-    
-    # Format data as C array
-    hex_array = []
-    for i, byte in enumerate(font_data):
-        if i % 12 == 0:
-            hex_array.append("\n  ")
-        hex_array.append(f"0x{byte:02x}, ")
-    
-    font_data_str = "".join(hex_array)
-    
-    # Create header content - use FLASH_ATTR for ESP32 to store in flash memory
-    header_content = f"""/**
- * @file {font_name}.h
- * @brief TTF font for TinyTTF
- * Generated from {os.path.basename(ttf_file)}
- */
-
-#ifndef {font_name.upper()}_H
-#define {font_name.upper()}_H
-
-#include <stdint.h>
-
-/**
- * {os.path.basename(ttf_file)} font data
- * Stored in flash memory to save RAM
- */
-const uint8_t {font_name}_data[] = {{{font_data_str}
-}};
-
-/**
- * Font data size
- */
-const uint32_t {font_name}_size = {size};
-
-#endif /* {font_name.upper()}_H */
-"""
-    
-    # Write to file
-    with open(output_file, 'w') as f:
-        f.write(header_content)
-    
-    print(f"Generated {output_file} from {ttf_file}")
-    return True
-
 def main():
+    print("TTF to LVGL Font Converter")
+    print("==========================")
+    
+    # Check if npm is installed
+    if not check_npm_installed():
+        print("npm is required but not installed. Please install Node.js and npm first.")
+        sys.exit(1)
+    
+    # Install lv_font_conv if not already installed
+    print("Installing lv_font_conv (if not already installed)...")
+    try:
+        subprocess.check_call(["npm", "install", "--no-save", "lv_font_conv"])
+    except subprocess.SubprocessError as e:
+        print(f"Failed to install lv_font_conv: {e}")
+        print("Please install manually with: npm install -g lv_font_conv")
+        sys.exit(1)
+    
     # Create output directory if it doesn't exist
     output_dir = "include/fonts"
     os.makedirs(output_dir, exist_ok=True)
     
-    # Process all TTF files in typography directory
-    ttf_files = glob.glob("typography/*.ttf")
-    if not ttf_files:
-        print("No TTF files found in typography directory")
-        return
+    # Define the fonts to create
+    font_configs = [
+        {"name": "font_label", "file": "typography/Inter_18pt-Regular.ttf", "size": 15},
+        {"name": "font_value", "file": "typography/Inter_18pt-SemiBold.ttf", "size": 16},
+        {"name": "font_value_large", "file": "typography/Inter_18pt-SemiBold.ttf", "size": 36}
+    ]
     
-    for ttf_file in ttf_files:
-        ttf_to_header(ttf_file, output_dir)
+    success_count = 0
+    converted_fonts = []
+    
+    for config in font_configs:
+        if os.path.exists(config["file"]):
+            if convert_font(config["file"], output_dir, config["size"], config["name"]):
+                success_count += 1
+                converted_fonts.append(config["name"])
+        else:
+            print(f"Font file not found: {config['file']}")
     
     # Generate fonts.h file that includes all font headers
-    headers = [safe_font_name(f) for f in ttf_files]
-    fonts_h_content = f"""/**
+    fonts_h_content = """/**
  * @file fonts.h
- * @brief Includes all font headers
+ * @brief Includes all LVGL font headers
  */
 
-#ifndef FONTS_H
-#define FONTS_H
+#ifndef LVGL_FONTS_H
+#define LVGL_FONTS_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // Include all font headers
 """
-    for header in headers:
-        fonts_h_content += f'#include "{header}.h"\n'
+    for font_name in converted_fonts:
+        fonts_h_content += f'#include "{font_name}.h"\n'
     
-    fonts_h_content += "\n#endif /* FONTS_H */\n"
+    fonts_h_content += """
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* LVGL_FONTS_H */
+"""
     
     with open(os.path.join(output_dir, "fonts.h"), 'w') as f:
         f.write(fonts_h_content)
     
     print(f"Generated {output_dir}/fonts.h")
+    print(f"Successfully processed {success_count} of {len(font_configs)} fonts")
+    
+    if success_count == len(font_configs):
+        print("All fonts were successfully converted to LVGL format!")
+    else:
+        print("Some fonts could not be processed. See errors above.")
+    
+    print("\nNext steps:")
+    print("1. Include 'fonts.h' in your code")
+    print("2. Use the fonts with LVGL like this:")
+    print("   - For labels: lv_style_set_text_font(&style, &font_label);")
+    print("   - For values: lv_style_set_text_font(&style, &font_value);")
+    print("   - For large values: lv_style_set_text_font(&style, &font_value_large);")
 
 if __name__ == "__main__":
     main() 

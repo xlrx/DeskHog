@@ -9,13 +9,16 @@
 #define FUNNEL_LEFT_MARGIN 0  // No left margin
 #define FUNNEL_LABEL_HEIGHT 20
 
+// In LVGL v9, user_data is accessed through getter function
 void InsightCard::dispatchToUI(std::function<void()> update) {
+    auto* callback = new std::function<void()>(update);
+    
     lv_timer_t* timer = lv_timer_create([](lv_timer_t* timer) {
-        auto* callback = static_cast<std::function<void()>*>(timer->user_data);
+        auto* callback = static_cast<std::function<void()>*>(lv_timer_get_user_data(timer));
         (*callback)();
         delete callback;
         lv_timer_del(timer);
-    }, 0, new std::function<void()>(update));
+    }, 0, callback);
 }
 
 InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, PostHogClient& posthog_client,
@@ -62,12 +65,12 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, PostHogClient&
     lv_obj_set_style_bg_opa(flex_col, LV_OPA_0, 0);
     lv_obj_set_style_border_width(flex_col, 0, 0); // No border
     
-    // Create title label with wrapping - use container width
+    // Create title label with single-line truncation with ellipsis
     _title_label = lv_label_create(flex_col);
     lv_obj_set_width(_title_label, width - 10); // Account for container padding
     lv_obj_set_style_text_color(_title_label, Style::labelColor(), 0);
     lv_obj_set_style_text_font(_title_label, Style::labelFont(), 0);
-    lv_label_set_long_mode(_title_label, LV_LABEL_LONG_WRAP);
+    lv_label_set_long_mode(_title_label, LV_LABEL_LONG_DOT);
     lv_label_set_text(_title_label, "Loading...");
     
     // Create content container that will hold either numeric display, chart, or funnel
@@ -82,8 +85,7 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, PostHogClient&
     
     // Subscribe to PostHog updates
     _posthog_client.subscribeToInsight(insightId, onDataReceived, this);
-    
-    // Queue an immediate fetch
+
     _posthog_client.queueRequest(insightId, onDataReceived, this);
 }
 
@@ -128,6 +130,7 @@ void InsightCard::onDataReceived(void* context, const String& response) {
 }
 
 void InsightCard::handleNewData(const String& response) {
+
     InsightParser parser(response.c_str());
     
     if (!parser.isValid()) {
@@ -248,7 +251,8 @@ void InsightCard::createLineGraphElements() {
         return;
     }
     
-    lv_obj_set_style_size(_chart, 0, LV_PART_INDICATOR);
+    // In LVGL v9, lv_obj_set_style_size requires width and height parameters
+    lv_obj_set_style_size(_chart, 0, 0, LV_PART_INDICATOR);
     lv_obj_set_style_line_width(_chart, 2, LV_PART_ITEMS);
 }
 
@@ -498,6 +502,9 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
                         lv_obj_set_style_text_align(_funnel_labels[step], LV_TEXT_ALIGN_LEFT, 0);
                         lv_obj_set_style_text_font(_funnel_labels[step], Style::valueFont(), 0);
                         lv_obj_set_style_text_color(_funnel_labels[step], Style::valueColor(), 0);
+                        lv_obj_set_width(_funnel_labels[step], available_width);
+                        lv_label_set_long_mode(_funnel_labels[step], LV_LABEL_LONG_DOT);
+                        lv_obj_add_flag(_funnel_labels[step], LV_OBJ_FLAG_OVERFLOW_VISIBLE);
                     }
                 }
                 

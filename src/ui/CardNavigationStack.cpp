@@ -1,8 +1,5 @@
 #include "CardNavigationStack.h"
 
-// Static instance pointer
-CardNavigationStack* CardNavigationStack::_instance = nullptr;
-
 // External button objects - defined in main.cpp
 extern Bounce2::Button buttons[];
 
@@ -11,9 +8,6 @@ extern Bounce2::Button buttons[];
 
 CardNavigationStack::CardNavigationStack(lv_obj_t* parent, uint16_t width, uint16_t height)
     : _parent(parent), _width(width), _height(height), _current_card(0), _mutex_ptr(nullptr) {
-    
-    // Store instance for static task
-    _instance = this;
     
     // Create main container
     _main_container = lv_obj_create(_parent);
@@ -155,7 +149,14 @@ void CardNavigationStack::goToCard(uint8_t index) {
         return;
     }
     
+    // Add yield to prevent watchdog timeout during scroll operations
+    vTaskDelay(pdMS_TO_TICKS(1));
+    
     lv_obj_scroll_to_view(target_card, LV_ANIM_ON);
+    
+    // Add another yield after the scroll operation
+    vTaskDelay(pdMS_TO_TICKS(1));
+    
     _update_scroll_indicator(_current_card);
 }
 
@@ -168,6 +169,13 @@ void CardNavigationStack::setMutex(SemaphoreHandle_t* mutex_ptr) {
 }
 
 void CardNavigationStack::handleButtonPress(uint8_t button_index) {
+    // Only handle button press if we have a mutex and can acquire it
+    if (_mutex_ptr) {
+        if (xSemaphoreTake(*_mutex_ptr, pdMS_TO_TICKS(10)) != pdTRUE) {
+            return; // Could not acquire mutex, skip this button press
+        }
+    }
+    
     // Next card (Button 0)
     if (button_index == 0) {
         nextCard();
@@ -176,38 +184,15 @@ void CardNavigationStack::handleButtonPress(uint8_t button_index) {
     else if (button_index == 2) {
         prevCard();
     }
-}
-
-void CardNavigationStack::buttonTask(void* parameter) {
-    // Use the parameter if provided, otherwise fall back to static instance
-    CardNavigationStack* instance = parameter ? static_cast<CardNavigationStack*>(parameter) : _instance;
     
-    if (!instance) return;
-    
-    while (1) {
-        // Update all buttons
-        for (int i = 0; i < NUM_BUTTONS; i++) {
-            buttons[i].update();
-            
-            if (buttons[i].pressed()) {
-                // Take mutex if available
-                if (instance->_mutex_ptr) {
-                    if (xSemaphoreTake(*(instance->_mutex_ptr), pdMS_TO_TICKS(100)) == pdTRUE) {
-                        instance->handleButtonPress(i);
-                        xSemaphoreGive(*(instance->_mutex_ptr));
-                    }
-                } else {
-                    instance->handleButtonPress(i);
-                }
-            }
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(10));
+    // Release mutex if we acquired it
+    if (_mutex_ptr) {
+        xSemaphoreGive(*_mutex_ptr);
     }
 }
 
 void CardNavigationStack::_scroll_event_cb(lv_event_t* e) {
-    lv_obj_t* cont = lv_event_get_target(e);
+    lv_obj_t* cont = static_cast<lv_obj_t*>(lv_event_get_target(e));
     lv_area_t cont_a;
     lv_obj_get_coords(cont, &cont_a);
     int32_t cont_y_center = cont_a.y1 + lv_area_get_height(&cont_a) / 2;

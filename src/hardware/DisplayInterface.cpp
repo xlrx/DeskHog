@@ -58,16 +58,14 @@ void DisplayInterface::begin() {
     // Initialize LVGL
     lv_init();
     
-    // Initialize display buffer
-    lv_disp_draw_buf_init(&_draw_buf, _buf1, _buf2, _screen_width * _buffer_rows);
+    // Initialize and register display for LVGL v9
+    _display = lv_display_create(_screen_width, _screen_height);
+    lv_display_set_flush_cb(_display, _disp_flush);
     
-    // Initialize display driver
-    lv_disp_drv_init(&_disp_drv);
-    _disp_drv.hor_res = _screen_width;
-    _disp_drv.ver_res = _screen_height;
-    _disp_drv.flush_cb = _disp_flush;
-    _disp_drv.draw_buf = &_draw_buf;
-    lv_disp_drv_register(&_disp_drv);
+    // Set the buffer correctly - using raw buffer pointers directly like in the Arduino example
+    lv_display_set_buffers(_display, _buf1, _buf2, 
+                          _screen_width * _buffer_rows * sizeof(lv_color_t),
+                          LV_DISPLAY_RENDER_MODE_PARTIAL);
     
     // Set screen background to black
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_black(), 0);
@@ -106,18 +104,18 @@ SemaphoreHandle_t* DisplayInterface::getMutexPtr() {
     return &_lvgl_mutex;
 }
 
-void DisplayInterface::_disp_flush(lv_disp_drv_t* disp, const lv_area_t* area, lv_color_t* color_p) {
+void DisplayInterface::_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     if (instance) {
         uint32_t w = (area->x2 - area->x1 + 1);
         uint32_t h = (area->y2 - area->y1 + 1);
         
         instance->_tft->startWrite();
         instance->_tft->setAddrWindow(area->x1, area->y1, w, h);
-        instance->_tft->writePixels((uint16_t*)color_p, w * h);
+        instance->_tft->writePixels((uint16_t*)px_map, w * h);
         instance->_tft->endWrite();
     }
     
-    lv_disp_flush_ready(disp);
+    lv_display_flush_ready(disp);
 }
 
 DisplayInterface::~DisplayInterface() {

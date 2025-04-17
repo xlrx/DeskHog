@@ -2,8 +2,7 @@
 #define COLOR_SCHEME_H
 
 #include "lvgl.h"
-#include "fonts/Inter_18pt_Regular.h"
-#include "fonts/Inter_18pt_SemiBold.h"
+#include "fonts/fonts.h"
 
 class Style {
 private:
@@ -44,6 +43,11 @@ public:
 
     static lv_color_t valueColor() {
         return lv_color_hex(0xFFFFFF);
+    }
+
+    // Accent color for highlights and indicators
+    static lv_color_t accentColor() {
+        return lv_color_hex(0x2980b9);  // Blue accent color
     }
 
     // Background colors

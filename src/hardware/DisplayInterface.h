@@ -58,14 +58,13 @@ private:
     Adafruit_ST7789* _tft;
     SemaphoreHandle_t _lvgl_mutex;
     
-    // LVGL display buffers
-    lv_disp_draw_buf_t _draw_buf;
+    // LVGL display object and buffers (for v9)
+    lv_display_t* _display;
     lv_color_t* _buf1;
     lv_color_t* _buf2;
-    lv_disp_drv_t _disp_drv;
     
-    // Display flush callback
-    static void _disp_flush(lv_disp_drv_t* disp, const lv_area_t* area, lv_color_t* color_p);
+    // Display flush callback for LVGL v9
+    static void _disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
 };
 
 #endif // LVGL_DISPLAY_MANAGER_H
