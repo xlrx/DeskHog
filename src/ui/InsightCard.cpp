@@ -292,8 +292,6 @@ void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
                 Serial.println("[FUNNEL-DEBUG] Funnel elements created on UI thread");
             });
             
-            // Give a little time for UI to update
-            delay(10);
         }
         else {
             dispatchToUI([this, insightType]() {
