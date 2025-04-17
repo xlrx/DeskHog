@@ -9,7 +9,20 @@
 // Define constant to match the one in InsightCard.h
 #define MAX_BREAKDOWNS 5
 
-InsightParser::InsightParser(const char* json) : doc(262144), valid(false) {  // 256KB
+// Filter to dramatically reduce memory usage by filtering out unused fields
+static StaticJsonDocument<128> createFilter() {
+    StaticJsonDocument<128> filter;
+    filter["results"][0]["name"] = true;
+    filter["results"][0]["result"] = true;
+    filter["results"][0]["query"]["display"] = true;
+    filter["results"][0]["filters"]["insight"] = true;
+    filter["results"][0]["compare"] = true;
+    return filter;
+}
+
+InsightParser::InsightParser(const char* json) : doc(65536), valid(false) {  // Reduced size from 256KB to 64KB
+    static StaticJsonDocument<128> filter = createFilter();
+    
     // Initialize PSRAM if available
 #ifdef ARDUINO
     if (psramFound()) {
@@ -17,15 +30,15 @@ InsightParser::InsightParser(const char* json) : doc(262144), valid(false) {  //
         size_t psramFree = ESP.getFreePsram();
         Serial.printf("PSRAM available: %zu bytes, free: %zu bytes\n", psramSize, psramFree);
         
-        if (psramFree < 262144) {
-            Serial.println("Warning: Less than 256KB PSRAM free, parsing may fail");
+        if (psramFree < 65536) {
+            Serial.println("Warning: Less than 64KB PSRAM free, parsing may fail");
         }
     } else {
         Serial.println("Warning: PSRAM not found, using SRAM for JSON parsing");
     }
 #endif
     
-    DeserializationError error = deserializeJson(doc, json);
+    DeserializationError error = deserializeJson(doc, json, DeserializationOption::Filter(filter));
     if (error) {
         printf("JSON Deserialization failed: %s\n", error.c_str());
         return;

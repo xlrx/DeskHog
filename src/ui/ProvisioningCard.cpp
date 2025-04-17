@@ -39,37 +39,134 @@ ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterfac
 }
 
 void ProvisioningCard::updateConnectionStatus(const String& status) {
-    lv_label_set_text(_statusLabel, status.c_str());
+    // Create a static dispatch method to safely update UI from any thread
+    static auto dispatchToUI = [](lv_obj_t* label, const String& text) {
+        // Make a copy of the string for the callback
+        auto* callback = new std::pair<lv_obj_t*, String>(label, text);
+        
+        lv_timer_t* timer = lv_timer_create([](lv_timer_t* timer) {
+            auto* params = static_cast<std::pair<lv_obj_t*, String>*>(lv_timer_get_user_data(timer));
+            if (params && params->first && lv_obj_is_valid(params->first)) {
+                lv_label_set_text(params->first, params->second.c_str());
+            }
+            delete params;
+            lv_timer_del(timer);
+        }, 0, callback);
+    };
+    
+    // Dispatch the UI update instead of doing it directly
+    dispatchToUI(_statusLabel, status);
     showWiFiStatus();
 }
 
 void ProvisioningCard::updateIPAddress(const String& ip) {
-    lv_label_set_text(_ipLabel, ip.c_str());
+    // Create a static dispatch method to safely update UI from any thread
+    static auto dispatchToUI = [](lv_obj_t* label, const String& text) {
+        // Make a copy of the string for the callback
+        auto* callback = new std::pair<lv_obj_t*, String>(label, text);
+        
+        lv_timer_t* timer = lv_timer_create([](lv_timer_t* timer) {
+            auto* params = static_cast<std::pair<lv_obj_t*, String>*>(lv_timer_get_user_data(timer));
+            if (params && params->first && lv_obj_is_valid(params->first)) {
+                lv_label_set_text(params->first, params->second.c_str());
+            }
+            delete params;
+            lv_timer_del(timer);
+        }, 0, callback);
+    };
+    
+    // Dispatch the UI update instead of doing it directly
+    dispatchToUI(_ipLabel, ip);
 }
 
 void ProvisioningCard::updateSignalStrength(int strength) {
-    lv_label_set_text(_signalLabel, (String(strength) + "%").c_str());
+    // Create a static dispatch method to safely update UI from any thread
+    static auto dispatchToUI = [](lv_obj_t* label, int value) {
+        auto* callback = new std::pair<lv_obj_t*, int>(label, value);
+        
+        lv_timer_t* timer = lv_timer_create([](lv_timer_t* timer) {
+            auto* params = static_cast<std::pair<lv_obj_t*, int>*>(lv_timer_get_user_data(timer));
+            if (params && params->first && lv_obj_is_valid(params->first)) {
+                lv_label_set_text(params->first, (String(params->second) + "%").c_str());
+            }
+            delete params;
+            lv_timer_del(timer);
+        }, 0, callback);
+    };
+    
+    // Dispatch the UI update instead of doing it directly
+    dispatchToUI(_signalLabel, strength);
 }
 
 void ProvisioningCard::showQRCode() {
-    // Show QR screen and hide status screen
-    lv_obj_clear_flag(_qrScreen, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(_statusScreen, LV_OBJ_FLAG_HIDDEN);
-    
     // Generate QR code for the AP
     String ssid = _wifiInterface.getSSID();
     
     // Create QR code for WiFi network
     String qrData = generateQRCodeData(ssid, "");
     
-    // Update QR code with new data
-    lv_qrcode_update(_qrCode, qrData.c_str(), qrData.length());
+    // Dispatch visibility changes and QR update to UI thread
+    static auto dispatchToUI = [](lv_obj_t* show_screen, lv_obj_t* hide_screen, lv_obj_t* qr_code, const String& qr_data) {
+        // Create struct for callback data
+        struct QRUpdateData {
+            lv_obj_t* show_screen;
+            lv_obj_t* hide_screen;
+            lv_obj_t* qr_code;
+            String qr_data;
+            
+            QRUpdateData(lv_obj_t* s, lv_obj_t* h, lv_obj_t* q, const String& d) 
+                : show_screen(s), hide_screen(h), qr_code(q), qr_data(d) {}
+        };
+        
+        auto* data = new QRUpdateData(show_screen, hide_screen, qr_code, qr_data);
+        
+        lv_timer_t* timer = lv_timer_create([](lv_timer_t* timer) {
+            auto* params = static_cast<QRUpdateData*>(lv_timer_get_user_data(timer));
+            if (params) {
+                // Update screen visibility
+                if (params->show_screen && lv_obj_is_valid(params->show_screen)) {
+                    lv_obj_clear_flag(params->show_screen, LV_OBJ_FLAG_HIDDEN);
+                }
+                if (params->hide_screen && lv_obj_is_valid(params->hide_screen)) {
+                    lv_obj_add_flag(params->hide_screen, LV_OBJ_FLAG_HIDDEN);
+                }
+                
+                // Update QR code
+                if (params->qr_code && lv_obj_is_valid(params->qr_code)) {
+                    lv_qrcode_update(params->qr_code, params->qr_data.c_str(), params->qr_data.length());
+                }
+            }
+            delete params;
+            lv_timer_del(timer);
+        }, 0, data);
+    };
+    
+    // Show QR screen, hide status screen, and update QR code
+    dispatchToUI(_qrScreen, _statusScreen, _qrCode, qrData);
 }
 
 void ProvisioningCard::showWiFiStatus() {
+    // Dispatch screen visibility changes to the UI thread
+    static auto dispatchToUI = [](lv_obj_t* show_screen, lv_obj_t* hide_screen) {
+        auto* screens = new std::pair<lv_obj_t*, lv_obj_t*>(show_screen, hide_screen);
+        
+        lv_timer_t* timer = lv_timer_create([](lv_timer_t* timer) {
+            auto* params = static_cast<std::pair<lv_obj_t*, lv_obj_t*>*>(lv_timer_get_user_data(timer));
+            if (params) {
+                if (params->first && lv_obj_is_valid(params->first)) {
+                    lv_obj_clear_flag(params->first, LV_OBJ_FLAG_HIDDEN);
+                }
+                if (params->second && lv_obj_is_valid(params->second)) {
+                    lv_obj_add_flag(params->second, LV_OBJ_FLAG_HIDDEN);
+                }
+            }
+            delete params;
+            lv_timer_del(timer);
+        }, 0, screens);
+    };
+    
     // Show status screen and hide QR screen
-    lv_obj_clear_flag(_statusScreen, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(_qrScreen, LV_OBJ_FLAG_HIDDEN);
+    dispatchToUI(_statusScreen, _qrScreen);
 }
 
 void ProvisioningCard::createQRScreen() {

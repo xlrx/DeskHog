@@ -26,7 +26,8 @@ void PostHogClient::queueRequest(const String& insight_id, DataCallback callback
     QueuedRequest request = {
         .insight_id = insight_id,
         .callback = callback,
-        .callback_context = context
+        .callback_context = context,
+        .retry_count = 0
     };
     request_queue.push(request);
 }
@@ -83,6 +84,26 @@ void PostHogClient::processQueue() {
     if (fetchInsight(request.insight_id, response)) {
         request.callback(request.callback_context, response);
         request_queue.pop();
+    } else {
+        // Handle failure - retry if under max attempts
+        if (request.retry_count < MAX_RETRIES) {
+            // Update retry count and push back to end of queue
+            request.retry_count++;
+            Serial.printf("Request for insight %s failed, retrying (%d/%d)...\n", 
+                          request.insight_id.c_str(), request.retry_count, MAX_RETRIES);
+            
+            // Remove from front and add to back with incremented retry count
+            request_queue.pop();
+            request_queue.push(request);
+            
+            // Add delay before next attempt
+            delay(RETRY_DELAY);
+        } else {
+            // Max retries reached, drop request
+            Serial.printf("Max retries reached for insight %s, dropping request\n", 
+                         request.insight_id.c_str());
+            request_queue.pop();
+        }
     }
 }
 
@@ -121,6 +142,7 @@ bool PostHogClient::fetchInsight(const String& insight_id, String& response) {
         return false;
     }
 
+    unsigned long start_time = millis();
     has_active_request = true;
     
     // First, try to get cached data
@@ -133,7 +155,13 @@ bool PostHogClient::fetchInsight(const String& insight_id, String& response) {
     bool needsRefresh = false;
     
     if (httpCode == HTTP_CODE_OK) {
+        unsigned long network_time = millis() - start_time;
+        Serial.printf("Network fetch time for %s: %lu ms\n", insight_id.c_str(), network_time);
+        
+        start_time = millis();
         response = _http.getString();
+        unsigned long string_time = millis() - start_time;
+        Serial.printf("Response processing time: %lu ms\n", string_time);
         
         // Quick check if we need to refresh (look for null result)
         if (response.indexOf("\"result\":null") >= 0 || 
@@ -142,6 +170,10 @@ bool PostHogClient::fetchInsight(const String& insight_id, String& response) {
         } else {
             success = true;
         }
+    } else {
+        // Handle HTTP errors
+        Serial.print("HTTP GET failed, error: ");
+        Serial.println(httpCode);
     }
     
     _http.end();
@@ -150,12 +182,24 @@ bool PostHogClient::fetchInsight(const String& insight_id, String& response) {
     if (needsRefresh) {
         url = buildInsightUrl(insight_id, "blocking");
         
+        unsigned long refresh_start = millis();
         _http.begin(url);
         httpCode = _http.GET();
         
         if (httpCode == HTTP_CODE_OK) {
+            unsigned long refresh_network = millis() - refresh_start;
+            Serial.printf("Refresh network time: %lu ms\n", refresh_network);
+            
+            refresh_start = millis();
             response = _http.getString();
+            unsigned long refresh_string = millis() - refresh_start;
+            Serial.printf("Refresh string time: %lu ms\n", refresh_string);
+            
             success = true;
+        } else {
+            // Handle HTTP errors
+            Serial.print("HTTP GET (blocking) failed, error: ");
+            Serial.println(httpCode);
         }
         
         _http.end();

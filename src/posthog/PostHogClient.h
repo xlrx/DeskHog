@@ -53,6 +53,7 @@ private:
         String insight_id;
         DataCallback callback;
         void* callback_context;
+        uint8_t retry_count;
     };
     
     // Member variables
@@ -63,7 +64,9 @@ private:
     
     // Constants
     static const char* BASE_URL;
-    static const unsigned long FETCH_INTERVAL = 5000;  // 5 seconds between refreshes
+    static const unsigned long FETCH_INTERVAL = 30000; 
+    static const uint8_t MAX_RETRIES = 3;              // Maximum number of retry attempts
+    static const unsigned long RETRY_DELAY = 1000;     // Delay between retries (ms)
     
     // Private methods
     void onSystemStateChange(SystemState state);

@@ -11,6 +11,24 @@
 
 // In LVGL v9, user_data is accessed through getter function
 void InsightCard::dispatchToUI(std::function<void()> update) {
+    // Try to execute immediately if we can
+    if (_content_container) {
+        // Find the display by getting the nearest display to our container
+        lv_display_t* disp = lv_obj_get_display(_content_container);
+        if (disp) {
+            lv_timer_handler(); // Process pending timers first
+            
+            // Execute the UI update right now
+            update();
+            
+            // Force a refresh
+            lv_display_send_event(disp, LV_EVENT_REFRESH, nullptr);
+            lv_refr_now(disp);
+            return;
+        }
+    }
+    
+    // Fall back to timer-based update if we couldn't update immediately
     auto* callback = new std::function<void()>(update);
     
     lv_timer_t* timer = lv_timer_create([](lv_timer_t* timer) {
@@ -130,15 +148,22 @@ void InsightCard::onDataReceived(void* context, const String& response) {
 }
 
 void InsightCard::handleNewData(const String& response) {
-
+    unsigned long start_time = millis();
+    
     InsightParser parser(response.c_str());
+    unsigned long parsing_time = millis() - start_time;
+    Serial.printf("InsightCard %s: JSON parsing time: %lu ms\n", _insight_id.c_str(), parsing_time);
     
     if (!parser.isValid()) {
         updateNumericDisplay("Parse Error", 0);
         return;
     }
     
+    start_time = millis();
     auto insightType = parser.detectInsightType();
+    unsigned long detect_time = millis() - start_time;
+    Serial.printf("InsightCard %s: Type detection time: %lu ms\n", _insight_id.c_str(), detect_time);
+    
     char titleBuffer[64];
     
     if (!parser.getName(titleBuffer, sizeof(titleBuffer))) {
@@ -166,6 +191,8 @@ void InsightCard::handleNewData(const String& response) {
         });
     }
     
+    start_time = millis();
+    
     // Update based on type
     if (insightType == InsightParser::InsightType::NUMERIC_CARD) {
         double value = parser.getNumericCardValue();
@@ -186,6 +213,9 @@ void InsightCard::handleNewData(const String& response) {
     else {
         updateNumericDisplay("Unsupported Type", 0);
     }
+    
+    unsigned long process_time = millis() - start_time;
+    Serial.printf("InsightCard %s: Data processing time: %lu ms\n", _insight_id.c_str(), process_time);
 }
 
 void InsightCard::clearCardContent() {
@@ -289,6 +319,8 @@ void InsightCard::createFunnelElements() {
 
 void InsightCard::updateNumericDisplay(const String& title, double value) {
     dispatchToUI([this, title = String(title), value]() {
+        unsigned long ui_start = millis();
+        
         if (_title_label) {
             lv_label_set_text(_title_label, title.c_str());
         }
@@ -320,6 +352,9 @@ void InsightCard::updateNumericDisplay(const String& title, double value) {
             
             lv_label_set_text(_value_label, valueBuffer);
         }
+        
+        unsigned long ui_time = millis() - ui_start;
+        Serial.printf("InsightCard %s: UI update time: %lu ms\n", _insight_id.c_str(), ui_time);
     });
 }
 
@@ -340,39 +375,35 @@ void InsightCard::updateLineGraphDisplay(const String& title, double* values, si
     double scaleFactor = maxVal > 1000 ? 1000.0 / maxVal : 1.0;
     Serial.printf("Max value: %.2f, Scale factor: %.2f\n", maxVal, scaleFactor);
 
-    // Print first and last few values to verify data
-    Serial.println("First 3 values:");
-    for(size_t i = 0; i < min(pointCount, (size_t)3); i++) {
-        Serial.printf("  [%d]: %.2f -> %.2f\n", i, values[i], values[i] * scaleFactor);
-    }
-    
-    Serial.println("Last 3 values:");
-    for(size_t i = max((int)pointCount - 3, 0); i < pointCount; i++) {
-        Serial.printf("  [%d]: %.2f -> %.2f\n", i, values[i], values[i] * scaleFactor);
-    }
-
-    // Pre-calculate all scaled values
-    std::vector<int32_t> scaledValues;
-    scaledValues.reserve(pointCount);
-    for(size_t i = 0; i < pointCount; i++) {
-        scaledValues.push_back((int32_t)(values[i] * scaleFactor));
-    }
-
-    // Do all LVGL operations in a single dispatch to maintain exact ordering
-    dispatchToUI([this, title = String(title), pointCount, scaledValues = std::move(scaledValues)]() {
-        if (!_chart || !_series || !_title_label) return;
+    dispatchToUI([this, title = String(title), values, pointCount, maxVal, scaleFactor]() {
+        unsigned long ui_start = millis();
         
-        // Update exactly in original order
-        lv_label_set_text(_title_label, title.c_str());
-        lv_chart_set_point_count(_chart, pointCount);
-        
-        // Add all points in sequence
-        for(int32_t value : scaledValues) {
-            lv_chart_set_next_value(_chart, _series, value);
+        if (_title_label) {
+            lv_label_set_text(_title_label, title.c_str());
         }
         
-        lv_chart_refresh(_chart);
-        Serial.println("Chart updated\n");
+        if (_chart && _series) {
+            // Update chart point values (scaled)
+            lv_chart_set_point_count(_chart, pointCount > 20 ? 20 : pointCount);  // Limit to 20 points max
+            
+            // Clear previous data
+            lv_chart_set_all_value(_chart, _series, 0);
+            
+            // Add new points
+            for (size_t i = 0; i < pointCount && i < 20; i++) {
+                int16_t y_val = static_cast<int16_t>(values[i] * scaleFactor);
+                lv_chart_set_value_by_id(_chart, _series, i, y_val);
+            }
+            
+            // Set up ranges and labels
+            lv_chart_set_range(_chart, LV_CHART_AXIS_PRIMARY_Y, 0, static_cast<int32_t>(maxVal * scaleFactor * 1.1));
+            
+            // Refresh the chart
+            lv_chart_refresh(_chart);
+        }
+        
+        unsigned long ui_time = millis() - ui_start;
+        Serial.printf("InsightCard %s: Chart update time: %lu ms\n", _insight_id.c_str(), ui_time);
     });
 }
 
@@ -499,12 +530,11 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
                 if (!_funnel_labels[step]) {
                     _funnel_labels[step] = lv_label_create(_funnel_container);
                     if (_funnel_labels[step]) {
-                        lv_obj_set_style_text_align(_funnel_labels[step], LV_TEXT_ALIGN_LEFT, 0);
-                        lv_obj_set_style_text_font(_funnel_labels[step], Style::valueFont(), 0);
                         lv_obj_set_style_text_color(_funnel_labels[step], Style::valueColor(), 0);
-                        lv_obj_set_width(_funnel_labels[step], available_width);
+                        lv_obj_set_style_text_font(_funnel_labels[step], Style::valueFont(), 0);
                         lv_label_set_long_mode(_funnel_labels[step], LV_LABEL_LONG_DOT);
-                        lv_obj_add_flag(_funnel_labels[step], LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+                        lv_obj_set_width(_funnel_labels[step], available_width);
+                        lv_obj_set_height(_funnel_labels[step], FUNNEL_LABEL_HEIGHT); // Constrain to single line height
                     }
                 }
                 
@@ -524,6 +554,7 @@ void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser
                             lv_obj_set_style_border_width(_funnel_segments[step][breakdown], 0, 0);
                             lv_obj_set_style_radius(_funnel_segments[step][breakdown], 0, 0);
                             lv_obj_set_style_pad_all(_funnel_segments[step][breakdown], 0, 0);
+
                         }
                     }
                     
