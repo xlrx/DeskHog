@@ -92,8 +92,7 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, EventQueue& ev
     // Subscribe to events
     _event_queue.subscribe([this](const Event& event) {
         if (event.type == EventType::INSIGHT_DATA_RECEIVED && 
-            event.insightId == _insight_id && 
-            event.parser) {
+            event.insightId == _insight_id) {
             this->onEvent(event);
         }
     });
@@ -162,9 +161,30 @@ void InsightCard::dispatchToUI(std::function<void()> update) {
 
 void InsightCard::onEvent(const Event& event) {
     if (event.type == EventType::INSIGHT_DATA_RECEIVED && 
-        event.insightId == _insight_id && 
-        event.parser) {
-        handleParsedData(event.parser);
+        event.insightId == _insight_id) {
+        
+        // If the event contains raw JSON, parse it in this thread
+        if (event.jsonData.length() > 0) {
+            // Log JSON size for debugging
+            if (event.jsonData.length() > 8192) { // 8KB threshold
+                Serial.printf("Processing large JSON (%u bytes) for insight %s\n", 
+                            event.jsonData.length(), _insight_id.c_str());
+            }
+            
+            // Create a local parser on the UI thread
+            // This keeps all parser operations in the same thread as UI updates
+            auto parser = std::make_shared<InsightParser>(event.jsonData.c_str());
+            if (parser->isValid()) {
+                handleParsedData(parser);
+            } else {
+                Serial.printf("Failed to parse JSON for insight %s\n", _insight_id.c_str());
+                updateNumericDisplay("Parse Error", 0);
+            }
+        }
+        // Backward compatibility for events with parser already included
+        else if (event.parser) {
+            handleParsedData(event.parser);
+        }
     }
 }
 

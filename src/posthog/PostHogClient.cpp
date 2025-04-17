@@ -160,9 +160,21 @@ bool PostHogClient::fetchInsight(const String& insight_id, String& response) {
         Serial.printf("Network fetch time for %s: %lu ms\n", insight_id.c_str(), network_time);
         
         start_time = millis();
+        
+        // Get content length for allocation
+        size_t contentLength = _http.getSize();
+        
+        // Pre-allocate in PSRAM if content is large
+        if (contentLength > 8192) { // 8KB threshold
+            // Force allocation in PSRAM for large responses
+            response = String();
+            response.reserve(contentLength);
+            Serial.printf("Pre-allocated %u bytes in PSRAM for large response\n", contentLength);
+        }
+        
         response = _http.getString();
         unsigned long string_time = millis() - start_time;
-        Serial.printf("Response processing time: %lu ms\n", string_time);
+        Serial.printf("Response processing time: %lu ms (size: %u bytes)\n", string_time, response.length());
         
         // Quick check if we need to refresh (look for null result)
         if (response.indexOf("\"result\":null") >= 0 || 
@@ -192,9 +204,21 @@ bool PostHogClient::fetchInsight(const String& insight_id, String& response) {
             Serial.printf("Refresh network time: %lu ms\n", refresh_network);
             
             refresh_start = millis();
+            
+            // Get content length for allocation
+            size_t contentLength = _http.getSize();
+            
+            // Pre-allocate in PSRAM if content is large
+            if (contentLength > 8192) { // 8KB threshold
+                // Force allocation in PSRAM for large responses
+                response = String();
+                response.reserve(contentLength);
+                Serial.printf("Pre-allocated %u bytes in PSRAM for refresh response\n", contentLength);
+            }
+            
             response = _http.getString();
             unsigned long refresh_string = millis() - refresh_start;
-            Serial.printf("Refresh string time: %lu ms\n", refresh_string);
+            Serial.printf("Refresh string time: %lu ms (size: %u bytes)\n", refresh_string, response.length());
             
             success = true;
         } else {
@@ -211,17 +235,15 @@ bool PostHogClient::fetchInsight(const String& insight_id, String& response) {
 }
 
 void PostHogClient::publishInsightDataEvent(const String& insight_id, const String& response) {
-    // Parse the response and create a shared_ptr to the parser
-    auto parser = std::make_shared<InsightParser>(response.c_str());
-    
-    // Only publish if the parsing was successful
-    if (parser->isValid()) {
-        // Publish the event with the parsed data
-        _eventQueue.publishEvent(EventType::INSIGHT_DATA_RECEIVED, insight_id, parser);
-        
-        // Log for debugging
-        Serial.printf("Published parsed insight data for %s\n", insight_id.c_str());
-    } else {
-        Serial.printf("Failed to parse insight data for %s\n", insight_id.c_str());
+    // Check if response is empty or invalid
+    if (response.length() == 0) {
+        Serial.printf("Empty response for insight %s\n", insight_id.c_str());
+        return;
     }
+    
+    // Publish the event with the raw JSON response
+    _eventQueue.publishEvent(EventType::INSIGHT_DATA_RECEIVED, insight_id, response);
+    
+    // Log for debugging
+    Serial.printf("Published raw JSON data for %s\n", insight_id.c_str());
 } 

@@ -34,6 +34,16 @@ bool EventQueue::publishEvent(EventType eventType, const String& insightId, std:
     return publishEvent(event);
 }
 
+bool EventQueue::publishEvent(EventType eventType, const String& insightId, const String& jsonData) {
+    // For large JSON data, we need to handle it carefully
+    if (jsonData.length() > 8192) { // 8KB threshold
+        Serial.printf("Large JSON detected (%u bytes), handling via event\n", jsonData.length());
+    }
+    
+    Event event(eventType, insightId, jsonData);
+    return publishEvent(event);
+}
+
 bool EventQueue::publishEvent(const Event& event) {
     // Add the event to the queue
     if (xQueueSend(eventQueue, &event, 0) == pdPASS) {

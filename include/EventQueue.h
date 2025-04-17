@@ -32,6 +32,7 @@ struct Event {
     EventType type;                         // Type of event
     String insightId;                       // ID of the insight related to the event
     std::shared_ptr<InsightParser> parser;  // Optional parsed insight data
+    String jsonData;                        // Raw JSON data for insights
     
     Event() {}
     
@@ -39,6 +40,9 @@ struct Event {
     
     Event(EventType t, const String& id, std::shared_ptr<InsightParser> p)
         : type(t), insightId(id), parser(p) {}
+        
+    Event(EventType t, const String& id, const String& json)
+        : type(t), insightId(id), parser(nullptr), jsonData(json) {}
 };
 
 /**
@@ -83,6 +87,17 @@ public:
      * @return false if the queue is full
      */
     bool publishEvent(EventType eventType, const String& insightId, std::shared_ptr<InsightParser> parser);
+    
+    /**
+     * @brief Publish an event with raw JSON data
+     * 
+     * @param eventType Type of the event
+     * @param insightId ID of the insight related to the event
+     * @param jsonData Raw JSON data string
+     * @return true if the event was successfully queued
+     * @return false if the queue is full
+     */
+    bool publishEvent(EventType eventType, const String& insightId, const String& jsonData);
     
     /**
      * @brief Alternative method to publish a pre-constructed Event
