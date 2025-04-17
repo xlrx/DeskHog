@@ -1,4 +1,5 @@
 #include "CardNavigationStack.h"
+#include "hardware/Input.h"
 
 // External button objects - defined in main.cpp
 extern Bounce2::Button buttons[];
@@ -11,7 +12,7 @@ CardNavigationStack::CardNavigationStack(lv_obj_t* parent, uint16_t width, uint1
     
     // Create main container
     _main_container = lv_obj_create(_parent);
-    lv_obj_set_size(_main_container, _width - 2, _height);
+    lv_obj_set_size(_main_container, _width - 7, _height);  // Reduced width to create 5px gap with indicator
     lv_obj_align(_main_container, LV_ALIGN_LEFT_MID, 0, 0);
     lv_obj_set_style_bg_color(_main_container, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(_main_container, LV_OPA_COVER, 0);
@@ -30,7 +31,7 @@ CardNavigationStack::CardNavigationStack(lv_obj_t* parent, uint16_t width, uint1
     // Create scroll indicator container
     _scroll_indicator = lv_obj_create(_parent);
     lv_obj_set_size(_scroll_indicator, 2, _height);  // 2px wide container
-    lv_obj_align(_scroll_indicator, LV_ALIGN_RIGHT_MID, 0, 0);  // Align exactly to right edge
+    lv_obj_align(_scroll_indicator, LV_ALIGN_RIGHT_MID, 0, 0);  // Keep flush with right edge
     lv_obj_set_style_bg_color(_scroll_indicator, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(_scroll_indicator, LV_OPA_TRANSP, 0);  // Make container transparent
     lv_obj_set_style_border_width(_scroll_indicator, 0, 0);
@@ -90,10 +91,9 @@ void CardNavigationStack::addCard(lv_obj_t* card) {
     lv_obj_set_parent(card, _main_container);
     
     // Ensure the card fills the container properly with no borders/margins
-    lv_obj_set_size(card, _width - 2, _height);
-    lv_obj_set_style_pad_all(card, 0, 0);      // Remove padding
+    lv_obj_set_size(card, _width - 7, _height);
+    // Don't override child padding/margin settings that might be needed for rounded corners
     lv_obj_set_style_border_width(card, 0, 0); // Remove borders
-    lv_obj_set_style_radius(card, 0, 0);       // Remove rounded corners
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     
     // Update the scroll indicator
@@ -184,12 +184,35 @@ void CardNavigationStack::handleButtonPress(uint8_t button_index) {
         }
     }
     
+    // Handle center button (Button 1) - delegate to active card if it has an input handler
+    if (button_index == Input::BUTTON_CENTER) {
+        // Find the input handler for the current card
+        bool handled = false;
+        for (const auto& handler_pair : _input_handlers) {
+            if (handler_pair.first == lv_obj_get_child(_main_container, _current_card)) {
+                // Found a handler for the current card
+                if (handler_pair.second) {
+                    handled = handler_pair.second->handleButtonPress(button_index);
+                    if (handled) {
+                        // Handler processed the button press, don't do default behavior
+                        if (_mutex_ptr) {
+                            xSemaphoreGive(*_mutex_ptr);
+                        }
+                        return;
+                    }
+                }
+                break;
+            }
+        }
+        // If not handled by card, fall through to default behavior (if any)
+    }
+    
     // Next card (Button 0)
-    if (button_index == 0) {
+    if (button_index == Input::BUTTON_DOWN) {
         nextCard();
     }
     // Previous card (Button 2)
-    else if (button_index == 2) {
+    else if (button_index == Input::BUTTON_UP) {
         prevCard();
     }
     
@@ -197,6 +220,23 @@ void CardNavigationStack::handleButtonPress(uint8_t button_index) {
     if (_mutex_ptr) {
         xSemaphoreGive(*_mutex_ptr);
     }
+}
+
+void CardNavigationStack::registerInputHandler(lv_obj_t* card, InputHandler* handler) {
+    // Don't register null handlers
+    if (!card || !handler) return;
+    
+    // Check if this card already has a handler
+    for (auto& handler_pair : _input_handlers) {
+        if (handler_pair.first == card) {
+            // Update existing handler
+            handler_pair.second = handler;
+            return;
+        }
+    }
+    
+    // Add new handler
+    _input_handlers.push_back(std::make_pair(card, handler));
 }
 
 void CardNavigationStack::_scroll_event_cb(lv_event_t* e) {

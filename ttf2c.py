@@ -22,7 +22,11 @@ def convert_font(ttf_file, output_dir, size, font_name_override=None):
     output_c_file = os.path.join(output_dir, f"{font_name}.c")
     
     # Define character range (0-255, basic Latin)
-    range_arg = "0x20-0x7F,0xA0-0xFF"
+    # Use a simplified range for LoudNoises font which may have limited glyphs
+    if "LoudNoises" in ttf_file or font_name == "font_loud_noises":
+        range_arg = "0x20-0x7F"  # Basic Latin only
+    else:
+        range_arg = "0x20-0x7F,0xA0-0xFF"  # Full Latin
     
     # Build the lv_font_conv command with appropriate parameters
     cmd = [
@@ -121,7 +125,8 @@ def main():
     font_configs = [
         {"name": "font_label", "file": "typography/Inter_18pt-Regular.ttf", "size": 15},
         {"name": "font_value", "file": "typography/Inter_18pt-SemiBold.ttf", "size": 16},
-        {"name": "font_value_large", "file": "typography/Inter_18pt-SemiBold.ttf", "size": 36}
+        {"name": "font_value_large", "file": "typography/Inter_18pt-SemiBold.ttf", "size": 36},
+        {"name": "font_loud_noises", "file": "typography/LoudNoises.ttf", "size": 20}
     ]
     
     success_count = 0

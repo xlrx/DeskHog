@@ -14,6 +14,7 @@ extern "C" {
 #include "font_label.h"
 #include "font_value.h"
 #include "font_value_large.h"
+#include "font_loud_noises.h"
 
 #ifdef __cplusplus
 }

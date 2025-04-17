@@ -1,9 +1,11 @@
 #ifndef CARD_NAVIGATION_STACK_H
 #define CARD_NAVIGATION_STACK_H
 
-#include <Arduino.h>
 #include <lvgl.h>
+#include <Arduino.h>
 #include <Bounce2.h>
+#include <vector>
+#include "ui/InputHandler.h"
 
 // Forward declaration
 class DisplayInterface;
@@ -13,51 +15,57 @@ public:
     // Constructor - removed num_cards parameter
     CardNavigationStack(lv_obj_t* parent, uint16_t width, uint16_t height);
     
-    // Add an existing LVGL object as a card
+    // Add a card to the navigation stack
     void addCard(lv_obj_t* card);
     
-    // Remove an existing card
-    bool removeCard(lv_obj_t* card);
-    
-    // Legacy method for simple colored cards with labels (deprecated)
+    // Add a simple colored card with text
     void addCard(lv_color_t color, const char* label_text);
     
-    // Navigate to next card
+    // Remove a card from the stack (returns true if successful)
+    bool removeCard(lv_obj_t* card);
+    
+    // Navigation methods
     void nextCard();
-    
-    // Navigate to previous card
     void prevCard();
-    
-    // Navigate to a specific card by index
     void goToCard(uint8_t index);
     
     // Get current card index
     uint8_t getCurrentIndex() const;
     
-    // Process button input
-    void handleButtonPress(uint8_t button_index);
-    
-    // Set mutex reference
+    // Set mutex for thread-safe button handling
     void setMutex(SemaphoreHandle_t* mutex_ptr);
     
+    // Handle button press events
+    void handleButtonPress(uint8_t button_index);
+    
+    // Register a card as an input handler
+    void registerInputHandler(lv_obj_t* card, InputHandler* handler);
+    
 private:
-    // LVGL objects
+    // LVGL event callback for scrolling
+    static void _scroll_event_cb(lv_event_t* e);
+    
+    // Update the scroll indicator pips
+    void _update_pip_count();
+    void _update_scroll_indicator(int active_index);
+    
+    // UI elements
     lv_obj_t* _parent;
     lv_obj_t* _main_container;
     lv_obj_t* _scroll_indicator;
     
-    // State
-    uint8_t _current_card;
+    // Dimensions
     uint16_t _width;
     uint16_t _height;
     
-    // Mutex reference
+    // Navigation state
+    uint8_t _current_card;
+    
+    // Thread safety
     SemaphoreHandle_t* _mutex_ptr;
     
-    // Private methods
-    static void _scroll_event_cb(lv_event_t* e);
-    void _update_scroll_indicator(int active_index);
-    void _update_pip_count();
-};
+    // Input handlers for each card
+    std::vector<std::pair<lv_obj_t*, InputHandler*>> _input_handlers;
+}; 
 
 #endif // CARD_NAVIGATION_STACK_H 

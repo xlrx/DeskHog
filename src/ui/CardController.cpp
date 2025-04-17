@@ -17,6 +17,7 @@ CardController::CardController(
     eventQueue(eventQueue),
     cardStack(nullptr),
     provisioningCard(nullptr),
+    animationCard(nullptr),
     displayInterface(nullptr)
 {
 }
@@ -28,6 +29,9 @@ CardController::~CardController() {
     
     delete provisioningCard;
     provisioningCard = nullptr;
+    
+    delete animationCard;
+    animationCard = nullptr;
     
     // Use mutex if available before cleaning up insight cards
     if (displayInterface && displayInterface->getMutexPtr()) {
@@ -63,6 +67,9 @@ void CardController::initialize(DisplayInterface* display) {
     
     // Add provisioning card to navigation stack
     cardStack->addCard(provisioningCard->getCard());
+    
+    // Create animation card
+    createAnimationCard();
     
     // Get count of insights to determine card count
     std::vector<String> insightIds = configManager.getAllInsightIds();
@@ -101,6 +108,26 @@ void CardController::setDisplayInterface(DisplayInterface* display) {
     if (cardStack && displayInterface) {
         cardStack->setMutex(displayInterface->getMutexPtr());
     }
+}
+
+// Create an animation card with the walking sprites
+void CardController::createAnimationCard() {
+    if (!displayInterface || !displayInterface->takeMutex(portMAX_DELAY)) {
+        return;
+    }
+    
+    // Create new animation card
+    animationCard = new AnimationCard(
+        screen
+    );
+    
+    // Add to navigation stack
+    cardStack->addCard(animationCard->getCard());
+    
+    // Register the animation card as an input handler
+    cardStack->registerInputHandler(animationCard->getCard(), animationCard);
+    
+    displayInterface->giveMutex();
 }
 
 // Create an insight card and add it to the UI
