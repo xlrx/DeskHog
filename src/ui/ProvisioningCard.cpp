@@ -1,14 +1,6 @@
 #include "ProvisioningCard.h"
 #include "Style.h"
 
-/**
- * @brief Construct a new WiFi provisioning card UI component
- * 
- * @param parent Parent LVGL container
- * @param wifiInterface Reference to WiFi interface
- * @param width Card width
- * @param height Card height
- */
 ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterface, uint16_t width, uint16_t height)
     : _parent(parent), _wifiInterface(wifiInterface), _width(width), _height(height),
     _card(nullptr), _qrScreen(nullptr), _statusScreen(nullptr),
@@ -23,9 +15,6 @@ ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterfac
     lv_obj_add_flag(_statusScreen, LV_OBJ_FLAG_HIDDEN);
 }
 
-/**
- * @brief Creates main card container
- */
 void ProvisioningCard::createCard() {
     // Create main card container - use full width of parent
     _card = lv_obj_create(_parent);
@@ -52,38 +41,20 @@ void ProvisioningCard::createCard() {
     lv_obj_set_pos(_statusScreen, 0, 0);
 }
 
-/**
- * @brief Updates connection status text and shows status screen
- * 
- * @param status WiFi connection status text
- */
 void ProvisioningCard::updateConnectionStatus(const String& status) {
     safeUpdateLabel(_statusLabel, status);
     showWiFiStatus();
 }
 
-/**
- * @brief Updates IP address display
- * 
- * @param ip IP address string
- */
 void ProvisioningCard::updateIPAddress(const String& ip) {
     safeUpdateLabel(_ipLabel, ip);
 }
 
-/**
- * @brief Updates signal strength percentage
- * 
- * @param strength Signal strength (0-100)
- */
 void ProvisioningCard::updateSignalStrength(int strength) {
     const int boundedStrength = std::max(0, std::min(100, strength));
     safeUpdateLabel(_signalLabel, String(boundedStrength) + "%");
 }
 
-/**
- * @brief Generates and displays QR code for WiFi network
- */
 void ProvisioningCard::showQRCode() {
     const String& ssid = _wifiInterface.getSSID();
     const String qrData = generateQRCodeData(ssid, "");
@@ -122,16 +93,10 @@ void ProvisioningCard::showQRCode() {
     }, 0, data);
 }
 
-/**
- * @brief Shows WiFi status screen and hides QR code screen
- */
 void ProvisioningCard::showWiFiStatus() {
     toggleScreens(_statusScreen, _qrScreen);
 }
 
-/**
- * @brief Creates the QR code screen
- */
 void ProvisioningCard::createQRScreen() {
     lv_obj_set_style_bg_color(_qrScreen, Style::backgroundColor(), 0);
     lv_obj_set_style_pad_all(_qrScreen, 0, 0);
@@ -151,9 +116,6 @@ void ProvisioningCard::createQRScreen() {
     lv_qrcode_update(_qrCode, "WIFI:T:WPA;", 10);
 }
 
-/**
- * @brief Creates the status display screen
- */
 void ProvisioningCard::createStatusScreen() {
     lv_obj_set_style_bg_color(_statusScreen, Style::backgroundColor(), 0);
     lv_obj_set_style_pad_all(_statusScreen, 0, 0);
@@ -178,15 +140,6 @@ void ProvisioningCard::createStatusScreen() {
     lv_label_set_text(_signalLabel, "0%");
 }
 
-/**
- * @brief Creates a table row with label and value
- * 
- * @param table Parent table object
- * @param row Row index (0-based)
- * @param title Label text
- * @param valueLabel Pointer to store created value label
- * @param labelColor Color for the label
- */
 void ProvisioningCard::createTableRow(lv_obj_t* table, uint16_t row, const char* title, 
                                      lv_obj_t** valueLabel, lv_color_t labelColor) {
     // Calculate line height based on font
@@ -214,13 +167,6 @@ void ProvisioningCard::createTableRow(lv_obj_t* table, uint16_t row, const char*
     lv_obj_align(*valueLabel, LV_ALIGN_RIGHT_MID, 0, 0);
 }
 
-/**
- * @brief Generates QR code data string for WiFi network
- * 
- * @param ssid Network SSID (escaped if needed)
- * @param password Network password (escaped if needed)
- * @return Formatted QR code data string
- */
 String ProvisioningCard::generateQRCodeData(const String& ssid, const String& password) {
     // Escape special characters in SSID and password
     String escapedSsid = escapeString(ssid);
@@ -235,12 +181,6 @@ String ProvisioningCard::generateQRCodeData(const String& ssid, const String& pa
     return "WIFI:S:" + escapedSsid + ";T:WPA;P:" + escapedPassword + ";;";
 }
 
-/**
- * @brief Escapes special characters in strings for QR code
- * 
- * @param input Input string
- * @return Escaped string
- */
 String ProvisioningCard::escapeString(const String& input) {
     String result = input;
     result.replace("\\", "\\\\");
@@ -251,12 +191,6 @@ String ProvisioningCard::escapeString(const String& input) {
     return result;
 }
 
-/**
- * @brief Safely updates a label's text from any thread
- * 
- * @param label Label to update
- * @param text New text content
- */
 void ProvisioningCard::safeUpdateLabel(lv_obj_t* label, const String& text) {
     // Make a copy of the string for the callback
     auto* callback = new std::pair<lv_obj_t*, String>(label, text);
@@ -271,12 +205,6 @@ void ProvisioningCard::safeUpdateLabel(lv_obj_t* label, const String& text) {
     }, 0, callback);
 }
 
-/**
- * @brief Safely toggles visibility between two screens
- * 
- * @param showScreen Screen to show
- * @param hideScreen Screen to hide
- */
 void ProvisioningCard::toggleScreens(lv_obj_t* showScreen, lv_obj_t* hideScreen) {
     auto* screens = new std::pair<lv_obj_t*, lv_obj_t*>(showScreen, hideScreen);
     
@@ -295,11 +223,6 @@ void ProvisioningCard::toggleScreens(lv_obj_t* showScreen, lv_obj_t* hideScreen)
     }, 0, screens);
 }
 
-/**
- * @brief Get the underlying LVGL card object
- * 
- * @return lv_obj_t* Pointer to the LVGL card container
- */
 lv_obj_t* ProvisioningCard::getCard() const {
     return _card;
 }
