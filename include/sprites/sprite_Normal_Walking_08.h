@@ -3,8 +3,7 @@
  * @brief LVGL sprite generated from Normal-Walking_08.png
  */
 
-#ifndef SPRITE_NORMAL_WALKING_08_H
-#define SPRITE_NORMAL_WALKING_08_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,5 +17,3 @@ extern const lv_img_dsc_t sprite_Normal_Walking_08;
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* SPRITE_NORMAL_WALKING_08_H */

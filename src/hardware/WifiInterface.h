@@ -1,5 +1,4 @@
-#ifndef WIFI_MANAGER_H
-#define WIFI_MANAGER_H
+#pragma once
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -115,5 +114,3 @@ private:
     // Update WiFi state and publish event
     void updateState(WiFiState newState);
 };
-
-#endif // WIFI_MANAGER_H

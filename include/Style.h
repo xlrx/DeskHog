@@ -1,5 +1,4 @@
-#ifndef COLOR_SCHEME_H
-#define COLOR_SCHEME_H
+#pragma once
 
 #include "lvgl.h"
 #include "fonts/fonts.h"
@@ -67,6 +66,4 @@ private:
 };
 
 // Static member declarations are in the header
-// Definitions will be in Style.cpp
-
-#endif // COLOR_SCHEME_H 
+// Definitions will be in Style.cpp 

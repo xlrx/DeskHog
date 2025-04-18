@@ -1,5 +1,4 @@
-#ifndef POSTHOG_CLIENT_H
-#define POSTHOG_CLIENT_H
+#pragma once
 
 #include <Arduino.h>
 #include <HTTPClient.h>
@@ -64,6 +63,4 @@ private:
     
     // Event-related methods
     void publishInsightDataEvent(const String& insight_id, const String& response);
-};
-
-#endif // POSTHOG_CLIENT_H 
+}; 

@@ -1,5 +1,4 @@
-#ifndef CONFIG_MANAGER_H
-#define CONFIG_MANAGER_H
+#pragma once
 
 #include <Arduino.h>
 #include <Preferences.h>
@@ -90,5 +89,3 @@ private:
     // Event queue reference
     EventQueue* _eventQueue = nullptr;
 };
-
-#endif // CONFIG_MANAGER_H

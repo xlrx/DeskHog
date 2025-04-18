@@ -1,5 +1,4 @@
-#ifndef NUMBER_FORMAT_H
-#define NUMBER_FORMAT_H
+#pragma once
 
 #include <Arduino.h>
 
@@ -44,6 +43,4 @@ public:
 private:
     // Private constructor to prevent instantiation
     NumberFormat() {}
-};
-
-#endif // NUMBER_FORMAT_H 
+}; 

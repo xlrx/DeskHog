@@ -74,11 +74,9 @@ def html_to_header():
     # Create header content
     header_content = f"""// Generated file - do not edit!
 // Source: {html_file}
-#ifndef GENERATED_HTML_PORTAL_H
-#define GENERATED_HTML_PORTAL_H
+#pragma once
 #include <pgmspace.h>
 static const char PORTAL_HTML[] PROGMEM = "{escape_for_cpp(html_content)}";
-#endif // GENERATED_HTML_PORTAL_H
 """
     
     # Write header file

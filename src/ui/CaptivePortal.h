@@ -1,5 +1,4 @@
-#ifndef CAPTIVE_PORTAL_H
-#define CAPTIVE_PORTAL_H
+#pragma once
 
 #include <Arduino.h>
 #include <WebServer.h>
@@ -68,5 +67,3 @@ private:
     // New method to handle scanning
     void performWiFiScan();
 };
-
-#endif // CAPTIVE_PORTAL_H

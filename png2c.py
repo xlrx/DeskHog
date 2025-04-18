@@ -91,8 +91,7 @@ const lv_img_dsc_t sprite_{var_name} = {{
  * @brief LVGL sprite generated from {os.path.basename(png_file)}
  */
 
-#ifndef SPRITE_{var_name.upper()}_H
-#define SPRITE_{var_name.upper()}_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {{
@@ -106,8 +105,6 @@ extern const lv_img_dsc_t sprite_{var_name};
 #ifdef __cplusplus
 }}
 #endif
-
-#endif /* SPRITE_{var_name.upper()}_H */
 """)
     
     print(f"Generated {output_c_file} and {output_h_file}")
@@ -133,8 +130,7 @@ def create_dummy_sprite_files(output_dir, file_names):
  * This is a dummy sprite because PIL was not installed
  */
 
-#ifndef SPRITE_{var_name.upper()}_H
-#define SPRITE_{var_name.upper()}_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {{
@@ -148,8 +144,6 @@ extern const lv_img_dsc_t sprite_{var_name};
 #ifdef __cplusplus
 }}
 #endif
-
-#endif /* SPRITE_{var_name.upper()}_H */
 """)
         
         # Create placeholder C file with updated LVGL 9.x descriptor format

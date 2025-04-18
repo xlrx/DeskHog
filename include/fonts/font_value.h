@@ -3,8 +3,7 @@
  * @brief LVGL font generated from Inter_18pt-SemiBold.ttf at 16pt
  */
 
-#ifndef FONT_VALUE_H
-#define FONT_VALUE_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,5 +16,3 @@ extern const lv_font_t font_value;
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* FONT_VALUE_H */

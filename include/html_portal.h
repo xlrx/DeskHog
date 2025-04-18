@@ -1,7 +1,6 @@
 // Generated file - do not edit!
 // Source: html/portal.html
-#ifndef GENERATED_HTML_PORTAL_H
-#define GENERATED_HTML_PORTAL_H
+#pragma once
 #include <pgmspace.h>
 static const char PORTAL_HTML[] PROGMEM = "<!DOCTYPE html>\n"
 "<html>\n"
@@ -562,4 +561,3 @@ static const char PORTAL_HTML[] PROGMEM = "<!DOCTYPE html>\n"
 "\n"
 "</body>\n"
 "</html>";
-#endif // GENERATED_HTML_PORTAL_H

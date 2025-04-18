@@ -64,8 +64,7 @@ def convert_font(ttf_file, output_dir, size, font_name_override=None):
  * @brief LVGL font generated from {os.path.basename(ttf_file)} at {size}pt
  */
 
-#ifndef {font_name.upper()}_H
-#define {font_name.upper()}_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {{
@@ -78,8 +77,6 @@ extern const lv_font_t {font_name};
 #ifdef __cplusplus
 }}
 #endif
-
-#endif /* {font_name.upper()}_H */
 """
                 f.write(header_content)
             print(f"Generated {output_c_file} and {header_file}")
@@ -146,8 +143,7 @@ def main():
  * @brief Includes all LVGL font headers
  */
 
-#ifndef LVGL_FONTS_H
-#define LVGL_FONTS_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -162,8 +158,6 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* LVGL_FONTS_H */
 """
     
     with open(os.path.join(output_dir, "fonts.h"), 'w') as f:

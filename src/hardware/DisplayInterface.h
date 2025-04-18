@@ -1,5 +1,4 @@
-#ifndef DISPLAY_INTERFACE_H
-#define DISPLAY_INTERFACE_H
+#pragma once
 
 #include <Arduino.h>
 #include <SPI.h>
@@ -115,5 +114,3 @@ private:
     DisplayInterface(const DisplayInterface&) = delete;
     DisplayInterface& operator=(const DisplayInterface&) = delete;
 };
-
-#endif // DISPLAY_INTERFACE_H

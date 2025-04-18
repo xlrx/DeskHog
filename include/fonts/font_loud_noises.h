@@ -3,8 +3,7 @@
  * @brief LVGL font generated from LoudNoises.ttf at 20pt
  */
 
-#ifndef FONT_LOUD_NOISES_H
-#define FONT_LOUD_NOISES_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,5 +16,3 @@ extern const lv_font_t font_loud_noises;
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* FONT_LOUD_NOISES_H */

@@ -1,5 +1,4 @@
-#ifndef INPUT_H
-#define INPUT_H
+#pragma once
 
 #include <Arduino.h>
 #include <Bounce2.h>
@@ -43,6 +42,4 @@ public:
     static bool isCenterReleased() { return buttons[BUTTON_CENTER].released(); }
     static bool isUpReleased() { return buttons[BUTTON_UP].released(); }
 };
-
-#endif // INPUT_H
 

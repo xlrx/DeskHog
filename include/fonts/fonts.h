@@ -3,8 +3,7 @@
  * @brief Includes all LVGL font headers
  */
 
-#ifndef LVGL_FONTS_H
-#define LVGL_FONTS_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,5 +18,3 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* LVGL_FONTS_H */

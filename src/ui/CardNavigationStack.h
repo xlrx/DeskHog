@@ -1,5 +1,4 @@
-#ifndef CARD_NAVIGATION_STACK_H
-#define CARD_NAVIGATION_STACK_H
+#pragma once
 
 #include <lvgl.h>
 #include <Arduino.h>
@@ -67,5 +66,3 @@ private:
     // Input handlers for each card
     std::vector<std::pair<lv_obj_t*, InputHandler*>> _input_handlers;
 }; 
-
-#endif // CARD_NAVIGATION_STACK_H 

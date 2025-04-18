@@ -3,8 +3,7 @@
  * @brief LVGL font generated from Inter_18pt-Regular.ttf at 15pt
  */
 
-#ifndef FONT_LABEL_H
-#define FONT_LABEL_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,5 +16,3 @@ extern const lv_font_t font_label;
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* FONT_LABEL_H */

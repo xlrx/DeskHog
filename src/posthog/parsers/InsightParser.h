@@ -1,5 +1,4 @@
-#ifndef INSIGHT_PARSER_H
-#define INSIGHT_PARSER_H
+#pragma once
 
 #define ARDUINOJSON_DEFAULT_NESTING_LIMIT 50
 #include <ArduinoJson.h>
@@ -99,6 +98,4 @@ private:
 
     DynamicJsonDocument doc;  // Changed from StaticJsonDocument to DynamicJsonDocument
     bool valid;
-};
-
-#endif // INSIGHT_PARSER_H 
+}; 
