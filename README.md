@@ -6,7 +6,7 @@ Keep an eye on your data at all times with this desktop terminal for PostHog.
 
 - **Coming soon:** Order a kit with all hardware
 - ESP32-S3 Reverse TFT Feather (buy: [Adafruit](https://www.adafruit.com/product/5691), [DigiKey](https://www.digikey.com/en/products/detail/adafruit-industries-llc/5691/18627502?s=N4IgjCBcoLQBxVAYygMwIYBsDOBTANCAPZQDa4ArAEwIC6AvvYVWSBQGwCcEDQA))
-- Optional: LiPo battery (buy: [Adafruit](https://www.adafruit.com/product/2750))
+- Optional: PKCell 552035 350mAh 3.7V LiPoly battery (buy: [Adafruit](https://www.adafruit.com/product/2750))
 - 3D printed enclosure (print: 3mf file)
 
 ## Requirements
