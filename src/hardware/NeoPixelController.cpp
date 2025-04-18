@@ -35,11 +35,19 @@ void NeoPixelController::update() {
     float greenVar = sin(breathPhase * 0.9f) * COLOR_VARIANCE;
     float blueVar = sin(breathPhase * 1.2f) * COLOR_VARIANCE;
     
-    // Calculate final RGB values with chromatic variation
-    uint8_t red = constrain((brightness + redVar) * 255, 0, 255);
-    uint8_t green = constrain((brightness + greenVar) * 255, 0, 255);
-    uint8_t blue = constrain((brightness + blueVar) * 255, 0, 255);
+    // Calculate RGB values with color variation
+    float red = (brightness + redVar);
+    float green = (brightness + greenVar);
+    float blue = (brightness + blueVar);
     
-    pixel.setPixelColor(0, red, green, blue);
+    // Apply minimum brightness of 5% (12.75 in 0-255 range)
+    const uint8_t MIN_VALUE = 5 / 255;  // ~5% of 255
+    
+    // Convert to final RGB values, ensuring minimum brightness
+    uint8_t finalRed = constrain(red * 255, MIN_VALUE, 255);
+    uint8_t finalGreen = constrain(green * 255, MIN_VALUE, 255);
+    uint8_t finalBlue = constrain(blue * 255, MIN_VALUE, 255);
+    
+    pixel.setPixelColor(0, finalRed, finalGreen, finalBlue);
     pixel.show();
 } 
