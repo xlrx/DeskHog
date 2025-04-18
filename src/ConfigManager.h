@@ -5,87 +5,202 @@
 #include <vector>
 #include "EventQueue.h"
 
+/**
+ * @class ConfigManager
+ * @brief Manages persistent configuration storage for the device
+ * 
+ * Features:
+ * - Secure storage of WiFi credentials
+ * - PostHog API configuration (team ID and API key)
+ * - Insight configuration management
+ * - Event-based state change notifications
+ * - Thread-safe operations
+ * 
+ * Uses ESP32's non-volatile storage (NVS) through Preferences library
+ * with size limits enforced for all stored values.
+ */
 class ConfigManager {
 public:
     static const int NO_TEAM_ID = -1;  // Sentinel value for no team ID
 
-    // Constructor
+    /**
+     * @brief Default constructor
+     */
     ConfigManager();
 
-    // Constructor with EventQueue
+    /**
+     * @brief Constructor with event queue integration
+     * @param eventQueue Reference to the event queue for state change notifications
+     */
     ConfigManager(EventQueue& eventQueue);
 
-    // Initialize the config manager
+    /**
+     * @brief Initialize the configuration system
+     */
     void begin();
 
-    // Set the event queue (if not set in constructor)
+    /**
+     * @brief Set the event queue for state change notifications
+     * @param queue Pointer to the event queue
+     */
     void setEventQueue(EventQueue* queue);
 
-    // Save WiFi credentials
+    /**
+     * @brief Store WiFi credentials in persistent storage
+     * @param ssid Network SSID
+     * @param password Network password
+     * @return true if saved successfully, false otherwise
+     */
     bool saveWiFiCredentials(const String& ssid, const String& password);
 
-    // Get WiFi credentials
+    /**
+     * @brief Retrieve stored WiFi credentials
+     * @param ssid Reference to store the SSID
+     * @param password Reference to store the password
+     * @return true if credentials exist and were retrieved, false otherwise
+     */
     bool getWiFiCredentials(String& ssid, String& password);
 
-    // Clear WiFi credentials
+    /**
+     * @brief Remove stored WiFi credentials
+     */
     void clearWiFiCredentials();
 
-    // Check if WiFi credentials exist
+    /**
+     * @brief Check if WiFi credentials are stored
+     * @return true if credentials exist, false otherwise
+     */
     bool hasWiFiCredentials();
 
-    // Check if WiFi credentials exist and publish appropriate event
+    /**
+     * @brief Check WiFi credentials and publish status event
+     * @return true if credentials exist, false otherwise
+     */
     bool checkWiFiCredentialsAndPublish();
 
-    // Team ID management
+    /**
+     * @brief Store team identifier
+     * @param teamId The team identifier to store
+     */
     void setTeamId(int teamId);
-    int getTeamId();  // Returns NO_TEAM_ID if not set
+
+    /**
+     * @brief Retrieve stored team identifier
+     * @return The team ID or NO_TEAM_ID if not set
+     */
+    int getTeamId();
+
+    /**
+     * @brief Remove stored team identifier
+     */
     void clearTeamId();
 
-    // API Key management
+    /**
+     * @brief Store API key
+     * @param apiKey The API key to store
+     * @return true if saved successfully, false otherwise
+     */
     bool setApiKey(const String& apiKey);
-    String getApiKey();  // Returns empty string if not set
+
+    /**
+     * @brief Retrieve stored API key
+     * @return The API key or empty string if not set
+     */
+    String getApiKey();
+
+    /**
+     * @brief Remove stored API key
+     */
     void clearApiKey();
 
-    // Insight management
+    /**
+     * @brief Store insight configuration
+     * @param id Unique insight identifier
+     * @param title Insight title/configuration
+     * @return true if saved successfully, false otherwise
+     */
     bool saveInsight(const String& id, const String& title);
+
+    /**
+     * @brief Retrieve stored insight configuration
+     * @param id Insight identifier to retrieve
+     * @return The insight configuration or empty string if not found
+     */
     String getInsight(const String& id);
+
+    /**
+     * @brief Remove stored insight configuration
+     * @param id Insight identifier to remove
+     */
     void deleteInsight(const String& id);
+
+    /**
+     * @brief Get all stored insight identifiers
+     * @return Vector of insight IDs
+     */
     std::vector<String> getAllInsightIds();
 
 private:
-    // Helper method to update the insight ID list
+    /**
+     * @brief Updates the internal list of insight IDs in preferences
+     * 
+     * Maintains a special "_id_list" key in preferences that stores all insight IDs
+     * as a comma-separated string. This list is used by getAllInsightIds() to track
+     * which insights are currently stored.
+     * 
+     * @param ids Vector of insight IDs to store
+     * @note Calls commit() after updating the list
+     */
     void updateIdList(const std::vector<String>& ids);
     
-    // Helper method to check and update API configuration state
+    /**
+     * @brief Validates and updates the API configuration state
+     * 
+     * Checks if both team ID and API key are properly set in preferences.
+     * Updates the system state via SystemController to one of:
+     * - API_AWAITING_CONFIG: if either team ID or API key is missing
+     * - API_CONFIGURED: if both team ID and API key are properly set
+     */
     void updateApiConfigurationState();
 
-    // Helper method to commit changes to flash
+    /**
+     * @brief Ensures preferences changes are persisted to flash
+     * 
+     * Closes and reopens both preference namespaces to ensure changes
+     * are written to flash storage. Required after any preference modifications
+     * to ensure changes survive power cycles.
+     */
     void commit();
 
     // Preferences instances for persistent storage
-    Preferences _preferences;
-    Preferences _insightsPrefs;
+    Preferences _preferences;      ///< Main preferences storage instance
+    Preferences _insightsPrefs;   ///< Separate storage for insight data
 
-    // Namespace for WiFi credentials
-    const char* _namespace = "wifi_config";
-    const char* _insightsNamespace = "insights";
+    // Namespace constants for preferences organization
+    const char* _namespace = "wifi_config";        ///< Namespace for WiFi and general config
+    const char* _insightsNamespace = "insights";   ///< Namespace for insight data
 
-    // Keys for SSID and password
-    const char* _ssidKey = "ssid";
-    const char* _passwordKey = "password";
-    const char* _hasCredentialsKey = "has_creds";
+    // Storage keys for WiFi configuration
+    const char* _ssidKey = "ssid";                ///< Key for stored WiFi SSID
+    const char* _passwordKey = "password";         ///< Key for stored WiFi password
+    const char* _hasCredentialsKey = "has_creds"; ///< Key for WiFi credentials presence flag
 
-    // Keys for team ID and API key
-    const char* _teamIdKey = "team_id";
-    const char* _apiKeyKey = "api_key";
+    // Storage keys for API configuration
+    const char* _teamIdKey = "team_id";           ///< Key for stored team ID
+    const char* _apiKeyKey = "api_key";           ///< Key for stored API key
 
-    // Max lengths for credentials
+    // Storage size limits
+    /** @brief Maximum length for WiFi SSID (per IEEE 802.11 spec) */
     static const size_t MAX_SSID_LENGTH = 32;
+    /** @brief Maximum length for WiFi password (per WPA2 spec) */
     static const size_t MAX_PASSWORD_LENGTH = 64;
+    /** @brief Maximum length for insight configuration data */
     static const size_t MAX_INSIGHT_LENGTH = 1024;
-    static const size_t MAX_API_KEY_LENGTH = 64;  // Added reasonable limit for API key
-    static const size_t MAX_INSIGHT_ID_LENGTH = 64;  // Added reasonable limit for insight IDs
+    /** @brief Maximum length for API key */
+    static const size_t MAX_API_KEY_LENGTH = 64;
+    /** @brief Maximum length for insight identifier */
+    static const size_t MAX_INSIGHT_ID_LENGTH = 64;
 
-    // Event queue reference
-    EventQueue* _eventQueue = nullptr;
+    // Event system
+    EventQueue* _eventQueue = nullptr;  ///< Optional event queue for state notifications
 };

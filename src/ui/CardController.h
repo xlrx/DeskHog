@@ -14,8 +14,27 @@
 #include "hardware/DisplayInterface.h"
 #include "EventQueue.h"
 
+/**
+ * @class CardController
+ * @brief Main UI controller managing card-based interface components
+ * 
+ * Coordinates the creation, management, and interaction between different
+ * UI cards including insights, provisioning, and animations. Handles thread-safe
+ * display updates and event-driven UI state changes.
+ */
 class CardController {
 public:
+    /**
+     * @brief Constructor for CardController
+     * 
+     * @param screen LVGL screen object
+     * @param screenWidth Width of the display in pixels
+     * @param screenHeight Height of the display in pixels
+     * @param configManager Reference to configuration manager
+     * @param wifiInterface Reference to WiFi interface
+     * @param posthogClient Reference to PostHog client
+     * @param eventQueue Reference to event queue for state changes
+     */
     CardController(
         lv_obj_t* screen,
         uint16_t screenWidth,
@@ -26,46 +45,95 @@ public:
         EventQueue& eventQueue
     );
     
+    /**
+     * @brief Destructor - cleans up UI resources
+     */
     ~CardController();
     
+    /**
+     * @brief Initialize the controller with a display interface
+     * @param display Pointer to display interface for thread-safe updates
+     */
     void initialize(DisplayInterface* display);
+
+    /**
+     * @brief Set the display interface for thread-safe updates
+     * @param display Pointer to display interface
+     */
     void setDisplayInterface(DisplayInterface* display);
     
-    // Create an insight card and add it to the UI
+    /**
+     * @brief Create and add a new insight card to the UI
+     * @param insightId Unique identifier for the insight
+     * @return Pointer to the created insight card
+     */
     InsightCard* createInsightCard(const String& insightId);
     
-    // Getters for UI components
+    /**
+     * @brief Get the card navigation stack
+     * @return Pointer to card navigation stack
+     */
     CardNavigationStack* getCardStack() { return cardStack; }
+
+    /**
+     * @brief Get the provisioning card
+     * @return Pointer to provisioning card
+     */
     ProvisioningCard* getProvisioningCard() { return provisioningCard; }
+
+    /**
+     * @brief Get the animation card
+     * @return Pointer to animation card
+     */
     AnimationCard* getAnimationCard() { return animationCard; }
+
+    /**
+     * @brief Get all insight cards
+     * @return Reference to vector of insight card pointers
+     */
     std::vector<InsightCard*>& getInsightCards() { return insightCards; }
+
+    /**
+     * @brief Get the display interface
+     * @return Pointer to display interface
+     */
     DisplayInterface* getDisplayInterface() { return displayInterface; }
 
 private:
     // Screen reference
-    lv_obj_t* screen;
-    uint16_t screenWidth;
-    uint16_t screenHeight;
+    lv_obj_t* screen;              ///< Main LVGL screen object
+    uint16_t screenWidth;          ///< Screen width in pixels
+    uint16_t screenHeight;         ///< Screen height in pixels
     
     // System components
-    ConfigManager& configManager;
-    WiFiInterface& wifiInterface;
-    PostHogClient& posthogClient;
-    EventQueue& eventQueue;
+    ConfigManager& configManager;   ///< Configuration manager reference
+    WiFiInterface& wifiInterface;  ///< WiFi interface reference
+    PostHogClient& posthogClient;  ///< PostHog client reference
+    EventQueue& eventQueue;        ///< Event queue reference
     
     // UI Components
-    CardNavigationStack* cardStack;
-    ProvisioningCard* provisioningCard;
-    AnimationCard* animationCard;
-    std::vector<InsightCard*> insightCards;
+    CardNavigationStack* cardStack;     ///< Navigation stack for cards
+    ProvisioningCard* provisioningCard; ///< Card for device provisioning
+    AnimationCard* animationCard;       ///< Card for animations
+    std::vector<InsightCard*> insightCards; ///< Collection of insight cards
     
     // Display interface for thread safety
-    DisplayInterface* displayInterface;
+    DisplayInterface* displayInterface;  ///< Thread-safe display interface
     
-    // Private methods
+    /**
+     * @brief Create and initialize the animation card
+     */
     void createAnimationCard();
     
-    // Event handlers
+    /**
+     * @brief Handle insight-related events
+     * @param event Event containing insight data
+     */
     void handleInsightEvent(const Event& event);
+
+    /**
+     * @brief Handle WiFi-related events
+     * @param event Event containing WiFi state
+     */
     void handleWiFiEvent(const Event& event);
 }; 
