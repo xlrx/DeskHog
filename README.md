@@ -2,6 +2,8 @@
 
 Keep an eye on your data at all times with this desktop terminal for PostHog.
 
+<img width="992" alt="Screenshot 2025-04-18 at 1 31 29 AM" src="https://github.com/user-attachments/assets/6e5d1fe6-1887-4d66-8497-4b582eb0391a" />
+
 ## Hardware
 
 - **Coming soon:** Order a kit with all hardware
