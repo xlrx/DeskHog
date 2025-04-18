@@ -97,6 +97,7 @@ The following PRs would be interesting, and may earn you a free DeskHog kit:
 - Enhance the web UI and `ConfigManger` to allow re-ordering of insights, set custom titles per-insight
 - LLM slop mitigation: if you see anything obviously stupid in this code that hasn't yet been caught and cleaned up
 - DX improvements around task isolation: if your experience with embedded code says there's a better way to architect this, happy to follow your lead
+- Improved C++: not my preferred language
 - Desk utilities, like a pomodoro timer; also constrained: center button only. Be creative!
 
 ## Feedback
