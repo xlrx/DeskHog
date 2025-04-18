@@ -103,6 +103,7 @@ The following PRs would be interesting, and may earn you a free DeskHog kit:
 - Improved C++: not my preferred language, feel free to suggest idiomatic and architectural improvements
 - Desk utilities, like a pomodoro timer; also constrained: center button only. Be creative!
 - PlatformIO config improvements: flashing builds causes a reboot that seems unnecessary, maybe you know a better configuration
+- OTA update mechanisms
 
 ## Feedback
 
