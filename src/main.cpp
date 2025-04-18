@@ -1,3 +1,20 @@
+/**
+ * DeskHog - PostHog Analytics Display
+ * ===================================
+ * 
+ * An ESP32-S3-based project that displays PostHog analytics insights on a 240x135 TFT screen.
+ * Built for the Adafruit ESP32-S3 Reverse TFT Feather, this project provides a compact, desk-friendly way to monitor your PostHog analytics in real-time.
+ * 
+ * Components:
+ * - Hardware: ESP32-S3 with integrated 240x135 TFT display
+ * - UI: LVGL-based card interface for displaying insights
+ * - Network: WiFi connectivity with captive portal for configuration
+ * 
+ * Development note:
+ * Keep this main.cpp file lean, tidy and simple. Do not leak implementation details into the main file.
+ * Keep main.cpp focused on setup and task creation. Encapsulate and isolate components into their own files.
+ */
+
 #include <Arduino.h>
 #include <lvgl.h>
 #include <Adafruit_ST7789.h>
@@ -12,8 +29,8 @@
 #include "posthog/PostHogClient.h"
 #include "Style.h"
 #include "esp_heap_caps.h" // For PSRAM management
-#include "ui/CardController.h" // Add CardController include
-#include "EventQueue.h" // Add EventQueue include
+#include "ui/CardController.h"
+#include "EventQueue.h"
 
 // Display dimensions
 #define SCREEN_WIDTH 240
@@ -122,7 +139,7 @@ void setup() {
         Serial.printf("Free PSRAM: %d bytes\n", ESP.getFreePsram());
         
         // Set memory allocation preference to PSRAM
-        heap_caps_malloc_extmem_enable(4096);  // Allow allocations less than 4096 bytes from PSRAM
+        heap_caps_malloc_extmem_enable(4096);
     } else {
         Serial.println("PSRAM initialization failed!");
         while(1); // Stop here if PSRAM init fails
