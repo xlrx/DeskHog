@@ -20,6 +20,7 @@
 #include <Adafruit_ST7789.h>
 #include "ConfigManager.h"
 #include "hardware/WifiInterface.h"
+#include "hardware/NeoPixelController.h"
 #include "ui/CaptivePortal.h"
 #include "ui/ProvisioningCard.h"
 #include "hardware/DisplayInterface.h"
@@ -58,11 +59,13 @@ CaptivePortal* captivePortal;
 CardController* cardController; // Replace individual card objects with controller
 PostHogClient* posthogClient;
 EventQueue* eventQueue; // Add global EventQueue
+NeoPixelController* neoPixelController;  // Renamed from neoPixelManager
 
 // Task handles
 TaskHandle_t wifiTask;
 TaskHandle_t portalTask;
 TaskHandle_t insightTask;
+TaskHandle_t neoPixelTask;
 
 // WiFi connection timeout in milliseconds
 #define WIFI_TIMEOUT 30000
@@ -128,6 +131,14 @@ void lvglHandlerTask(void* parameter) {
     }
 }
 
+// NeoPixel update task
+void neoPixelTaskFunction(void* parameter) {
+    while (1) {
+        neoPixelController->update();
+        vTaskDelay(pdMS_TO_TICKS(5));  // Small delay to prevent task starvation
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(100);  // Give serial port time to initialize
@@ -156,6 +167,10 @@ void setup() {
     // Initialize event queue first
     eventQueue = new EventQueue(20); // Create queue with capacity for 20 events
     eventQueue->begin(); // Start event processing
+    
+    // Initialize NeoPixel controller
+    neoPixelController = new NeoPixelController();
+    neoPixelController->begin();
     
     // Initialize config manager with event queue
     configManager = new ConfigManager(*eventQueue);
@@ -249,6 +264,17 @@ void setup() {
         2,
         NULL,
         1
+    );
+    
+    // Create NeoPixel task
+    xTaskCreatePinnedToCore(
+        neoPixelTaskFunction,
+        "neoPixelTask",
+        2048,
+        NULL,
+        1,
+        &neoPixelTask,
+        0
     );
     
     // Check if we have WiFi credentials and publish the appropriate event
