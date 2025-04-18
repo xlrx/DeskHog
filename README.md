@@ -30,6 +30,7 @@ We've got two cores and multiple "tasks" assigned between them – task is [Free
 - WiFi
 - Web portal server
 - Insight parsing
+- NeoPixel control
 
 **Core 1 (Application CPU) tasks:**
 
@@ -99,6 +100,7 @@ The following PRs would be interesting, and may earn you a free DeskHog kit:
 - DX improvements around task isolation: if your experience with embedded code says there's a better way to architect this, happy to follow your lead
 - Improved C++: not my preferred language, feel free to suggest idiomatic and architectural improvements
 - Desk utilities, like a pomodoro timer; also constrained: center button only. Be creative!
+- PlatformIO config improvements: flashing builds causes a reboot that seems unnecessary, maybe you know a better configuration
 
 ## Feedback
 
