@@ -59,6 +59,15 @@ If the board isn't responding:
 
 The board will restart in bootloader mode, where it can be re-flashed using PlatformIO.
 
+## UI progress
+
+- Status card: working
+- WiFi provisioning card with QR Code: working
+- Friend card to give you (mild) reassurance: working
+- Numeric card for Big Number insights: working
+- Funnel card: needs a redesign; probably should be horizontal layout instead, won't display more than three steps right now
+- Line graph card: broken, not properly scaling larger data sets, probably fine if you have an insight scoped between 7-30 days
+
 ## Important components
 
 ### Event queue
