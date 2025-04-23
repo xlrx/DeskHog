@@ -67,6 +67,7 @@ The board will restart in bootloader mode, where it can be re-flashed using Plat
 - Numeric card for Big Number insights: working
 - Funnel card: needs a redesign; probably should be horizontal layout instead, won't display more than three steps right now
 - Line graph card: broken, not properly scaling larger data sets, probably fine if you have an insight scoped between 7-30 days
+- Other insights: not yet supported
 
 ## Important components
 
