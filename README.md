@@ -47,6 +47,18 @@ Nothing wrong with a little agent-driven coding. This project has leaned on it p
 
 But beware: the LLM agents are very bad at modeling cross-thread interactions and thread-safe architectures on their own. You'll need to lead them explicitly. The existing architecture seems pretty stable and predictable at this point. Lean on it. If your robot ventures off the trail and takes *initiative* that breaks these patterns, you'll end up with crashes and your pulls will not be accepted.
 
+### Buttons
+
+<img width="500" alt="diagram" src="https://github.com/user-attachments/assets/14ea2440-90d8-4540-bebb-045c18fbbc99" />
+
+If the board isn't responding:
+
+- Hold **▼ (Page down/D0)**
+- Press **Reset**
+- Release **▼ (Page down/D0)**
+
+The board will restart in bootloader mode, where it can be re-flashed using PlatformIO.
+
 ## Important components
 
 ### Event queue
