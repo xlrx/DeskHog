@@ -6,6 +6,9 @@
 #include "hardware/WifiInterface.h"
 #include "html_portal.h"  // Include generated HTML header
 #include "EventQueue.h"   // Include the event queue
+// #include "OtaManager.h" // Will be included in .cpp, forward declare here
+
+class OtaManager; // Forward declaration
 
 /**
  * @class CaptivePortal
@@ -51,6 +54,7 @@ private:
     EventQueue& _eventQueue;         ///< Event system reference
     String _cachedNetworks;         ///< Cached JSON of available networks
     unsigned long _lastScanTime;     ///< Timestamp of last WiFi scan
+    OtaManager* _otaManager = nullptr; ///< OTA Update Manager instance
 
     /**
      * @brief Serve the main portal page
@@ -123,4 +127,19 @@ private:
      * Updates _cachedNetworks and _lastScanTime
      */
     void performWiFiScan();
+
+    /**
+     * @brief Handle request to check for firmware updates.
+     */
+    void handleCheckUpdate();
+
+    /**
+     * @brief Handle request to start a firmware update.
+     */
+    void handleStartUpdate();
+
+    /**
+     * @brief Handle request for OTA update status.
+     */
+    void handleUpdateStatus();
 };

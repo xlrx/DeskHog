@@ -80,4 +80,24 @@ The backend logic will reside primarily in a new class, coordinated by the exist
         *   `handleUpdateStatus()`: Calls `otaManager.getStatus()`, formats the `UpdateStatus` struct into a JSON response.
     *   **`CaptivePortal::begin()`:** Register routes `/check-update` (GET), `/start-update` (POST), and `/update-status` (GET) to map to the new handler methods.
 
+## Implementation Progress
+
+*   **Partition Scheme (`partitions.csv`):** Updated to support OTA with two application partitions (~1.84MB each) and a smaller SPIFFS partition (256KB).
+    *   _Affected file:_ `partitions.csv`
+*   **`OtaManager` Class (`src/OtaManager.h`, `src/OtaManager.cpp`):
+    *   Skeleton created with basic structure, structs (`UpdateInfo`, `UpdateStatus`), and method signatures.
+    *   `_githubApiRootCa` updated with DigiCert Global Root G2 certificate.
+    *   `checkForUpdate()` method implemented as **non-blocking** using a FreeRTOS task (`_checkUpdateTaskRunner`):
+        *   Handles HTTPS GET request to GitHub API (`_performHttpsRequest`).
+        *   Parses JSON response (`_parseGithubApiResponse`).
+        *   Compares versions and identifies firmware asset URL.
+        *   Updates internal status and makes results available via `getStatus()` and `getLastCheckResult()`.
+    *   _Affected files:_ `src/OtaManager.h`, `src/OtaManager.cpp`
+
+## Next Steps (OtaManager)
+
+1.  Implement `OtaManager::beginUpdate()` using a FreeRTOS task to handle firmware download (HTTPS) and flashing with `Update.writeStream()`.
+2.  Implement robust error handling and status reporting for the `beginUpdate` process.
+3.  Implement a reliable mechanism for defining/retrieving `CURRENT_FIRMWARE_VERSION`.
+
 This structure maintains separation of concerns, keeping web request handling (`CaptivePortal`) distinct from the OTA update mechanism (`OtaManager`). 

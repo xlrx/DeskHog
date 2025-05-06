@@ -89,6 +89,32 @@
                  </ul>
             </div>
         </div>
+
+        <!-- Firmware Update Section -->
+        <h2>Firmware Update</h2>
+        <div class="config-section">
+            <p>Current Version: <span id="current-version">Checking...</span></p>
+            <p>Available Version: <span id="available-version">N/A</span></p>
+            <div class="button-container">
+                <button type="button" id="check-update-btn">Check for Updates</button>
+            </div>
+            <div id="update-available-section" style="display:none;">
+                <h4>Update Details:</h4>
+                <pre id="release-notes" class="release-notes-box"></pre>
+                <div class="button-container">
+                    <button type="button" id="install-update-btn">Install Update</button>
+                </div>
+            </div>
+            <div id="update-status-container" style="margin-top: 15px;">
+                <p id="update-status-text"></p>
+                <div class="progress" id="update-progress-container" style="display:none;">
+                    <div id="update-progress-bar" class="progress-bar" style="width: 0%;"></div>
+                </div>
+                <p id="update-error-message" class="error-message"></p>
+            </div>
+        </div>
+        <!-- End Firmware Update Section -->
+
     </div>
     
     <!-- Success Screen -->

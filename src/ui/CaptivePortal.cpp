@@ -1,22 +1,29 @@
 #include "CaptivePortal.h"
 #include <ArduinoJson.h>
+#include "OtaManager.h"
 
 CaptivePortal::CaptivePortal(ConfigManager& configManager, WiFiInterface& wifiInterface, EventQueue& eventQueue)
     : _server(80), _configManager(configManager), _wifiInterface(wifiInterface), _eventQueue(eventQueue), _lastScanTime(0) {
+    _otaManager = new OtaManager(CURRENT_FIRMWARE_VERSION, "PostHog", "DeskHog");
 }
 
 void CaptivePortal::begin() {
     // Set up server routes
-    _server.on("/", [this]() { handleRoot(); });
-    _server.on("/scan-networks", [this]() { handleScanNetworks(); });
-    _server.on("/save-wifi", [this]() { handleSaveWifi(); });
-    _server.on("/get-device-config", [this]() { handleGetDeviceConfig(); });
-    _server.on("/save-device-config", [this]() { handleSaveDeviceConfig(); });
-    _server.on("/get-insights", [this]() { handleGetInsights(); });
-    _server.on("/save-insight", [this]() { handleSaveInsight(); });
-    _server.on("/delete-insight", [this]() { handleDeleteInsight(); });
-    _server.on("/generate_204", [this]() { handleCaptivePortal(); }); // Android captive portal detection
-    _server.on("/fwlink", [this]() { handleCaptivePortal(); }); // Microsoft captive portal detection
+    _server.on("/", HTTP_GET, [this]() { handleRoot(); });
+    _server.on("/scan-networks", HTTP_GET, [this]() { handleScanNetworks(); });
+    _server.on("/save-wifi", HTTP_POST, [this]() { handleSaveWifi(); });
+    _server.on("/get-device-config", HTTP_GET, [this]() { handleGetDeviceConfig(); });
+    _server.on("/save-device-config", HTTP_POST, [this]() { handleSaveDeviceConfig(); });
+    _server.on("/get-insights", HTTP_GET, [this]() { handleGetInsights(); });
+    _server.on("/save-insight", HTTP_POST, [this]() { handleSaveInsight(); });
+    _server.on("/delete-insight", HTTP_POST, [this]() { handleDeleteInsight(); });
+    _server.on("/generate_204", HTTP_GET, [this]() { handleCaptivePortal(); }); // Android captive portal detection
+    _server.on("/fwlink", HTTP_GET, [this]() { handleCaptivePortal(); }); // Microsoft captive portal detection
+
+    // OTA Routes
+    _server.on("/check-update", HTTP_GET, [this]() { handleCheckUpdate(); });
+    _server.on("/start-update", HTTP_POST, [this]() { handleStartUpdate(); });
+    _server.on("/update-status", HTTP_GET, [this]() { handleUpdateStatus(); });
     
     // Handle all other routes as a captive portal
     _server.onNotFound([this]() { handle404(); });
@@ -271,4 +278,83 @@ String CaptivePortal::getNetworksJson() {
     String response;
     serializeJson(doc, response);
     return response;
+}
+
+// OTA Handler Implementations
+
+void CaptivePortal::handleCheckUpdate() {
+    if (!_otaManager) {
+        _server.send(500, "application/json", "{\"error\":\"OTA manager not initialized\"}");
+        return;
+    }
+
+    bool checkStarted = _otaManager->checkForUpdate();
+    // checkForUpdate is async. The client will then poll /update-status or we give an immediate status.
+    // For now, let's return the last known check result after attempting a new check.
+    // A more sophisticated approach might involve waiting for the check to complete or specific check IDs.
+    
+    // Give some time for the check to potentially start and update status
+    // This is a simplification; a robust solution might use a callback or polling on OtaManager status
+    // For now, we rely on getLastCheckResult() being updated by the async task soon.
+    // If checkStarted is false, it might be because a check is already in progress or WiFi is off.
+
+    UpdateInfo info = _otaManager->getLastCheckResult();
+    DynamicJsonDocument doc(512); // Adjusted size for UpdateInfo
+    doc["updateAvailable"] = info.updateAvailable;
+    doc["currentVersion"] = info.currentVersion;
+    doc["availableVersion"] = info.availableVersion;
+    doc["downloadUrl"] = info.downloadUrl; // May not be needed by client if it doesn't initiate download directly
+    doc["releaseNotes"] = info.releaseNotes;
+    doc["error"] = info.error;
+    
+    String response;
+    serializeJson(doc, response);
+    _server.send(200, "application/json", response);
+}
+
+void CaptivePortal::handleStartUpdate() {
+    if (!_otaManager) {
+        _server.send(500, "application/json", "{\"error\":\"OTA manager not initialized\"}");
+        return;
+    }
+
+    // The download URL could be passed from the client, or we use the one from the last check.
+    // For now, assume OtaManager uses its internally stored download URL from the last successful check.
+    String downloadUrl = _otaManager->getLastCheckResult().downloadUrl;
+    if (downloadUrl.isEmpty() && _otaManager->getLastCheckResult().updateAvailable) {
+         _server.send(400, "application/json", "{\"success\":false, \"message\":\"No download URL available from last check.\"}");
+        return;
+    }
+
+    bool success = _otaManager->beginUpdate(downloadUrl); // downloadUrl can be empty if OtaManager is expected to use its last one
+    
+    StaticJsonDocument<128> doc;
+    doc["success"] = success;
+    if (!success) {
+        doc["message"] = _otaManager->getStatus().message; // Provide a reason if start failed
+    }
+    
+    String response;
+    serializeJson(doc, response);
+    _server.send(200, "application/json", response);
+}
+
+void CaptivePortal::handleUpdateStatus() {
+    if (!_otaManager) {
+        _server.send(500, "application/json", "{\"error\":\"OTA manager not initialized\"}");
+        return;
+    }
+    
+    UpdateStatus status = _otaManager->getStatus();
+    DynamicJsonDocument doc(256); // Adjusted size for UpdateStatus
+    
+    // Convert enum class State to String or int for JSON
+    // For simplicity, sending as int for now. Client JS can map to strings.
+    doc["status"] = static_cast<int>(status.status);
+    doc["progress"] = status.progress;
+    doc["message"] = status.message;
+    
+    String response;
+    serializeJson(doc, response);
+    _server.send(200, "application/json", response);
 }
