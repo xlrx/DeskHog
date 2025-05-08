@@ -267,6 +267,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 let otaPollingIntervalId = null;
+let pollingForCheckResult = false; // Flag to differentiate polling purpose
 
 // Enum for OtaManager::UpdateStatus::State (mirror from C++)
 // This helps in making the JS code more readable when checking status.
@@ -297,46 +298,48 @@ function checkFirmwareUpdate() {
     const updateStatusTextEl = document.getElementById('update-status-text');
     const updateErrorEl = document.getElementById('update-error-message');
     const checkUpdateBtn = document.getElementById('check-update-btn');
+    const updateProgressContainer = document.getElementById('update-progress-container');
+    const updateProgressBar = document.getElementById('update-progress-bar');
 
-    if(updateStatusTextEl) updateStatusTextEl.textContent = 'Checking for updates...';
+    if(updateStatusTextEl) updateStatusTextEl.textContent = 'Initiating check...';
     if(updateErrorEl) updateErrorEl.textContent = '';
     if(updateAvailableSection) updateAvailableSection.style.display = 'none';
     if(installUpdateBtn) installUpdateBtn.disabled = true;
-    if(checkUpdateBtn) checkUpdateBtn.disabled = true;
+    if(checkUpdateBtn) checkUpdateBtn.disabled = true; // Disable while initiating/polling check
+    if(updateProgressContainer) updateProgressContainer.style.display = 'none';
+    if(updateProgressBar) updateProgressBar.style.width = '0%';
 
-    fetch('/check-update')
+    // Stop any previous polling
+    if (otaPollingIntervalId) {
+        clearInterval(otaPollingIntervalId);
+        otaPollingIntervalId = null;
+    }
+
+    fetch('/check-update') // This now only initiates the check
         .then(response => response.json())
         .then(data => {
-            if (currentVersionEl) currentVersionEl.textContent = data.currentVersion || 'N/A';
-            if (data.error && data.error.length > 0) {
-                console.error('Error checking for update:', data.error);
-                if(updateErrorEl) updateErrorEl.textContent = `Error: ${data.error}`;
-                if(updateStatusTextEl) updateStatusTextEl.textContent = 'Check failed.';
-                return;
-            }
+            if (currentVersionEl) currentVersionEl.textContent = data.current_firmware_version || 'N/A';
+            if (updateStatusTextEl) updateStatusTextEl.textContent = data.initial_status_message || 'Checking...';
 
-            if (data.updateAvailable) {
-                console.log('Update available:', data.availableVersion);
-                if (availableVersionEl) availableVersionEl.textContent = data.availableVersion;
-                if (releaseNotesEl) releaseNotesEl.textContent = data.releaseNotes || 'No release notes provided.';
-                if (updateAvailableSection) updateAvailableSection.style.display = 'block';
-                if (installUpdateBtn) installUpdateBtn.disabled = false;
-                if(updateStatusTextEl) updateStatusTextEl.textContent = 'Update available!';
+            if (data.check_initiated) {
+                console.log('Update check initiated. Polling for status...');
+                pollingForCheckResult = true; // Set flag
+                otaPollingIntervalId = setInterval(pollUpdateStatus, 2000); // Poll every 2 seconds
+                // checkUpdateBtn remains disabled while polling
             } else {
-                console.log('No update available or already up-to-date.');
-                if (availableVersionEl) availableVersionEl.textContent = 'N/A (Up to date)';
-                if(updateStatusTextEl) updateStatusTextEl.textContent = 'Your firmware is up to date.';
+                console.error('Failed to initiate update check:', data.initial_status_message);
+                if(updateErrorEl) updateErrorEl.textContent = `Error: ${data.initial_status_message || 'Could not start update check.'}`;
+                if(updateStatusTextEl) updateStatusTextEl.textContent = 'Check failed to start.';
+                if(checkUpdateBtn) checkUpdateBtn.disabled = false; // Re-enable if initiation failed
             }
         })
         .catch(error => {
-            console.error('Failed to fetch update status:', error);
+            console.error('Failed to communicate with device to check for updates:', error);
             if (currentVersionEl) currentVersionEl.textContent = 'Error';
             if (availableVersionEl) availableVersionEl.textContent = 'Error';
-            if(updateErrorEl) updateErrorEl.textContent = 'Failed to communicate with device to check for updates.';
-            if(updateStatusTextEl) updateStatusTextEl.textContent = 'Error checking updates.';
-        })
-        .finally(() => {
-            if(checkUpdateBtn) checkUpdateBtn.disabled = false;
+            if(updateErrorEl) updateErrorEl.textContent = 'Communication error during check initiation.';
+            if(updateStatusTextEl) updateStatusTextEl.textContent = 'Error initiating check.';
+            if(checkUpdateBtn) checkUpdateBtn.disabled = false; // Re-enable on communication error
         });
 }
 
@@ -356,11 +359,12 @@ function startFirmwareUpdate() {
     if (updateProgressContainer) updateProgressContainer.style.display = 'block';
     if (updateProgressBar) updateProgressBar.style.width = '0%';
 
-    // Stop any previous polling
+    // Stop any previous polling (e.g., if it was polling for check result)
     if (otaPollingIntervalId) {
         clearInterval(otaPollingIntervalId);
         otaPollingIntervalId = null;
     }
+    pollingForCheckResult = false; // Now polling for update progress
 
     fetch('/start-update', { method: 'POST' })
         .then(response => response.json())
@@ -390,6 +394,10 @@ function startFirmwareUpdate() {
 }
 
 function pollUpdateStatus() {
+    const currentVersionEl = document.getElementById('current-version');
+    const availableVersionEl = document.getElementById('available-version');
+    const releaseNotesEl = document.getElementById('release-notes');
+    const updateAvailableSection = document.getElementById('update-available-section');
     const updateStatusTextEl = document.getElementById('update-status-text');
     const updateErrorEl = document.getElementById('update-error-message');
     const updateProgressBar = document.getElementById('update-progress-bar');
@@ -400,47 +408,145 @@ function pollUpdateStatus() {
     fetch('/update-status')
         .then(response => response.json())
         .then(data => {
-            console.log('OTA Status:', data);
-            if (updateStatusTextEl) updateStatusTextEl.textContent = data.message || 'Fetching status...';
-            if (updateProgressBar) updateProgressBar.style.width = `${data.progress || 0}%`;
-            if (updateProgressContainer && updateProgressContainer.style.display === 'none' && data.progress > 0 && data.progress < 100) {
-                updateProgressContainer.style.display = 'block';
+            console.log('[DBG] pollUpdateStatus - Raw data from /update-status:', JSON.stringify(data)); // Log raw data
+            console.log('[DBG] pollUpdateStatus - pollingForCheckResult:', pollingForCheckResult);
+            console.log('[DBG] pollUpdateStatus - data.status_code:', data.status_code, '(OTA_STATUS_STATE.CHECKING_VERSION is', OTA_STATUS_STATE.CHECKING_VERSION + ')');
+            console.log('[DBG] pollUpdateStatus - data.is_update_available_info:', data.is_update_available_info);
+
+            // Always update current version display from polled data if available
+            if (currentVersionEl && data.current_firmware_version_info) {
+                 currentVersionEl.textContent = data.current_firmware_version_info;
             }
 
-            // Check if the update is complete or has errored
-            if (data.status === OTA_STATUS_STATE.SUCCESS) {
-                console.log('Update successful!');
-                if (updateStatusTextEl) updateStatusTextEl.textContent = data.message || 'Update successful! Device will reboot.';
-                if (updateProgressBar) updateProgressBar.style.width = '100%';
-                if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
-                // Don't re-enable buttons, device is rebooting.
-                alert('Firmware update successful! The device will now reboot with the new version. This page may become unresponsive.');
-            } else if (data.status >= OTA_STATUS_STATE.ERROR_WIFI) { // Any error state
-                console.error('Update failed:', data.message);
-                if (updateErrorEl) updateErrorEl.textContent = `Error: ${data.message || 'An unknown error occurred.'}`;
-                if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update failed.';
-                if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
-                if (installUpdateBtn) installUpdateBtn.disabled = false; // Re-enable buttons on failure
-                if (checkUpdateBtn) checkUpdateBtn.disabled = false;
-            } else if (data.status === OTA_STATUS_STATE.IDLE && otaPollingIntervalId !== null && data.message.includes("No update available")){
-                // This case could happen if a check completed while polling was active from a previous attempt
-                // and cleared the "update available" state. Or if an update was aborted and status reset.
-                // For now, just stop polling if we hit IDLE unexpectedly during an update.
-                console.warn("OTA process became IDLE unexpectedly during update polling.");
-                if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
-                if (installUpdateBtn) installUpdateBtn.disabled = false;
-                if (checkUpdateBtn) checkUpdateBtn.disabled = false;
-                 if (!updateErrorEl.textContent) { // don't overwrite a more specific error
-                    updateErrorEl.textContent = "Update process was interrupted or finished unexpectedly.";
+            if (updateStatusTextEl) updateStatusTextEl.textContent = data.status_message || 'Fetching status...';
+            if (updateErrorEl && data.error_message_info && data.error_message_info.length > 0) {
+                // Prioritize error from UpdateInfo if present
+                updateErrorEl.textContent = `Details: ${data.error_message_info}`;
+            } else if (updateErrorEl && data.status_code >= OTA_STATUS_STATE.ERROR_WIFI) {
+                // Otherwise, use status_message if it's an error state and no specific error_message_info
+                updateErrorEl.textContent = data.status_message;
+            } else if (updateErrorEl) {
+                updateErrorEl.textContent = ''; // Clear previous errors if not an error state
+            }
+
+            if (data.status_code >= OTA_STATUS_STATE.DOWNLOADING && data.status_code <= OTA_STATUS_STATE.WRITING) {
+                 if (updateProgressContainer) updateProgressContainer.style.display = 'block';
+                 if (updateProgressBar) updateProgressBar.style.width = `${data.progress || 0}%`;
+            } else if (data.status_code !== OTA_STATUS_STATE.SUCCESS) { // Don't hide progress bar immediately on success, wait for reboot message
+                 // Hide progress for non-active download/write states unless it's success
+                // if (updateProgressContainer) updateProgressContainer.style.display = 'none';
+            }
+
+            if (pollingForCheckResult) {
+                console.log('[DBG] pollUpdateStatus - Inside pollingForCheckResult block');
+                if (data.status_code === OTA_STATUS_STATE.CHECKING_VERSION && data.is_update_available_info) {
+                    console.log('[DBG] pollUpdateStatus - Update IS available condition MET.');
+                    console.log('Update available (polled):', data.available_firmware_version_info);
+                    if (availableVersionEl) availableVersionEl.textContent = data.available_firmware_version_info;
+                    if (releaseNotesEl) releaseNotesEl.textContent = data.release_notes_info || 'No release notes provided.';
+                    if (updateAvailableSection) updateAvailableSection.style.display = 'block';
+                    if (installUpdateBtn) installUpdateBtn.disabled = false;
+                    if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update available: ' + data.available_firmware_version_info;
+                    
+                    if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
+                    otaPollingIntervalId = null;
+                    pollingForCheckResult = false;
+                    if (checkUpdateBtn) checkUpdateBtn.disabled = false; // Re-enable check button
+
+                } else if (data.status_code === OTA_STATUS_STATE.IDLE || 
+                           data.status_code >= OTA_STATUS_STATE.ERROR_WIFI) {
+                    // This condition means the check process has definitively finished (either IDLE or an error state).
+                    // If it's IDLE, we trust the is_update_available_info from the last check result (which is part of data).
+                    console.log('[DBG] pollUpdateStatus - Check complete (IDLE or ERROR) condition MET.');
+                    
+                    if (data.status_code === OTA_STATUS_STATE.IDLE && data.is_update_available_info) {
+                         // This case should ideally be caught by the first IF block, but as a safeguard:
+                        console.log('[DBG] pollUpdateStatus - IDLE but update_available_info is true. Displaying update.');
+                        if (availableVersionEl) availableVersionEl.textContent = data.available_firmware_version_info;
+                        if (releaseNotesEl) releaseNotesEl.textContent = data.release_notes_info || 'No release notes provided.';
+                        if (updateAvailableSection) updateAvailableSection.style.display = 'block';
+                        if (installUpdateBtn) installUpdateBtn.disabled = false;
+                        if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update available: ' + data.available_firmware_version_info;
+                    } else {
+                        // No update found, or an error occurred during the check.
+                        console.log('Check complete (polled): No update or error. Status message:', data.status_message);
+                        if (availableVersionEl) availableVersionEl.textContent = 'N/A';
+                        if (updateAvailableSection) updateAvailableSection.style.display = 'none';
+                        if (installUpdateBtn) installUpdateBtn.disabled = true;
+
+                        if (data.status_code === OTA_STATUS_STATE.IDLE && !data.is_update_available_info && !(data.error_message_info && data.error_message_info.length > 0) && !(data.status_message && data.status_message.toLowerCase().includes("error"))) {
+                            updateStatusTextEl.textContent = data.status_message || 'Firmware is up to date.';
+                        } else if (data.status_code >= OTA_STATUS_STATE.ERROR_WIFI && updateStatusTextEl) {
+                            updateStatusTextEl.textContent = "Check failed."; // Error message is already in updateErrorEl
+                        } else {
+                            // Default for IDLE if no specific error message and no update
+                            updateStatusTextEl.textContent = data.status_message || 'No update available.';
+                        }
+                    }
+
+                    if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
+                    otaPollingIntervalId = null;
+                    pollingForCheckResult = false;
+                    if (checkUpdateBtn) checkUpdateBtn.disabled = false; // Re-enable check button
+                } else if (data.status_code === OTA_STATUS_STATE.CHECKING_VERSION) {
+                    // Still checking, and data.is_update_available_info was false (or this block wouldn't be reached).
+                    // Continue polling.
+                    console.log('[DBG] pollUpdateStatus - Still CHECKING_VERSION, update not yet confirmed. Continuing poll.');
+                    // updateStatusTextEl is already being updated with "Checking..." or similar.
+                    // checkUpdateBtn remains disabled.
+                } 
+                // Implicitly, if none of the above, something unexpected happened or state is mid-transition.
+                // The current logic will just continue polling, which is safe.
+
+            } else { // Polling for update IN PROGRESS (not for check result)
+                console.log('[DBG] pollUpdateStatus - Inside polling for UPDATE IN PROGRESS block.');
+                if (data.status_code === OTA_STATUS_STATE.SUCCESS) {
+                    console.log('[DBG] pollUpdateStatus - Update SUCCESS (during update progress) condition MET.');
+                    console.log('Update successful (polled)!');
+                    if (updateStatusTextEl) updateStatusTextEl.textContent = data.status_message || 'Update successful! Device will reboot.';
+                    if (updateProgressBar) updateProgressBar.style.width = '100%';
+                    if (updateProgressContainer) updateProgressContainer.style.display = 'block'; 
+                    if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
+                    otaPollingIntervalId = null;
+                    // Buttons remain disabled as device reboots.
+                    alert('Firmware update successful! The device will now reboot with the new version. This page may become unresponsive.');
+                } else if (data.status_code >= OTA_STATUS_STATE.ERROR_WIFI) { // Any error state during update
+                    console.log('[DBG] pollUpdateStatus - Update ERROR (during update progress) condition MET.');
+                    console.error('Update failed (polled):', data.status_message);
+                    // updateStatusTextEl and updateErrorEl handled by general logic above.
+                    if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update failed.';
+                    if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
+                    otaPollingIntervalId = null;
+                    if (installUpdateBtn) installUpdateBtn.disabled = false; 
+                    if (checkUpdateBtn) checkUpdateBtn.disabled = false;
+                } else if (data.status_code === OTA_STATUS_STATE.IDLE && otaPollingIntervalId !== null) {
+                    console.log('[DBG] pollUpdateStatus - Update process became IDLE UNEXPECTEDLY (during update progress) condition MET.');
+                    // Update process became IDLE unexpectedly.
+                    console.warn("OTA process became IDLE unexpectedly during update progress polling.");
+                    if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update process interrupted.';
+                     if (!updateErrorEl.textContent) { 
+                        updateErrorEl.textContent = "Update process finished unexpectedly.";
+                    }
+                    if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
+                    otaPollingIntervalId = null;
+                    if (installUpdateBtn) installUpdateBtn.disabled = false;
+                    if (checkUpdateBtn) checkUpdateBtn.disabled = false;
+                } else {
+                    console.log('[DBG] pollUpdateStatus - Update IN PROGRESS (continuing poll for update progress).');
                 }
             }
         })
         .catch(error => {
             console.error('Error polling update status:', error);
             if (updateErrorEl) updateErrorEl.textContent = 'Error fetching update status from device.';
-            // Potentially stop polling on comms error to avoid spamming
             if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
-            if (installUpdateBtn) installUpdateBtn.disabled = false;
+            otaPollingIntervalId = null;
+            pollingForCheckResult = false;
+            // Re-enable buttons on communication error
             if (checkUpdateBtn) checkUpdateBtn.disabled = false;
+            if (installUpdateBtn && !installUpdateBtn.disabled) { // Only if it was potentially active
+                 // No, keep it disabled unless an update was actually available before poll error.
+                 // Better to rely on next successful check to re-enable it.
+            }
         });
 }

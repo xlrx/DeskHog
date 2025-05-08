@@ -32,6 +32,7 @@
 #include "esp_heap_caps.h" // For PSRAM management
 #include "ui/CardController.h"
 #include "EventQueue.h"
+#include "esp_partition.h" // Include for partition functions
 
 // Display dimensions
 #define SCREEN_WIDTH 240
@@ -156,6 +157,27 @@ void setup() {
         while(1); // Stop here if PSRAM init fails
     }
 
+    // Add Partition Logging Here
+    Serial.println("--- Partition Table Info ---");
+    esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
+    if (it == NULL) {
+        Serial.println("Could not find partitions!");
+    } else {
+        while (it != NULL) {
+            const esp_partition_t *p = esp_partition_get(it);
+            if (p == NULL) {
+                // Added null check for safety, might occur if iterator is exhausted
+                it = esp_partition_next(it); // Make sure to advance iterator even if partition is null
+                continue;
+            }
+            Serial.printf("  Label: %-10s Type: 0x%02x Subtype: 0x%02x Offset: 0x%08x Size: 0x%08x (%d KB)\n",
+                          p->label, p->type, p->subtype, p->address, p->size, p->size / 1024);
+            it = esp_partition_next(it);
+        }
+        esp_partition_iterator_release(it); // Release the iterator!
+    }
+    Serial.println("--------------------------");
+
     InsightCard::initUIQueue();
 
 
@@ -168,9 +190,9 @@ void setup() {
     eventQueue = new EventQueue(20); // Create queue with capacity for 20 events
     eventQueue->begin(); // Start event processing
     
-    // Initialize NeoPixel controller
-    neoPixelController = new NeoPixelController();
-    neoPixelController->begin();
+    // // Initialize NeoPixel controller
+    // neoPixelController = new NeoPixelController();
+    // neoPixelController->begin();
     
     // Initialize config manager with event queue
     configManager = new ConfigManager(*eventQueue);
@@ -266,16 +288,16 @@ void setup() {
         1
     );
     
-    // Create NeoPixel task
-    xTaskCreatePinnedToCore(
-        neoPixelTaskFunction,
-        "neoPixelTask",
-        2048,
-        NULL,
-        1,
-        &neoPixelTask,
-        0
-    );
+    // // Create NeoPixel task
+    // xTaskCreatePinnedToCore(
+    //     neoPixelTaskFunction,
+    //     "neoPixelTask",
+    //     2048,
+    //     NULL,
+    //     1,
+    //     &neoPixelTask,
+    //     0
+    // );
     
     // Check if we have WiFi credentials and publish the appropriate event
     configManager->checkWiFiCredentialsAndPublish();

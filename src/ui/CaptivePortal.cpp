@@ -5,6 +5,7 @@
 CaptivePortal::CaptivePortal(ConfigManager& configManager, WiFiInterface& wifiInterface, EventQueue& eventQueue)
     : _server(80), _configManager(configManager), _wifiInterface(wifiInterface), _eventQueue(eventQueue), _lastScanTime(0) {
     _otaManager = new OtaManager(CURRENT_FIRMWARE_VERSION, "PostHog", "DeskHog");
+    _cachedNetworks = "{\"networks\":[]}"; // Initialize with empty valid JSON
 }
 
 void CaptivePortal::begin() {
@@ -22,17 +23,17 @@ void CaptivePortal::begin() {
 
     // OTA Routes
     _server.on("/check-update", HTTP_GET, [this]() { handleCheckUpdate(); });
+    _server.on("/check-update", HTTP_OPTIONS, [this]() { handleCorsPreflight(); });
     _server.on("/start-update", HTTP_POST, [this]() { handleStartUpdate(); });
+    _server.on("/start-update", HTTP_OPTIONS, [this]() { handleCorsPreflight(); });
     _server.on("/update-status", HTTP_GET, [this]() { handleUpdateStatus(); });
+    _server.on("/update-status", HTTP_OPTIONS, [this]() { handleCorsPreflight(); });
     
     // Handle all other routes as a captive portal
     _server.onNotFound([this]() { handle404(); });
     
     // Start server
     _server.begin();
-    
-    // Do initial WiFi scan
-    performWiFiScan();
     
     Serial.println("Captive portal started");
 }
@@ -280,81 +281,123 @@ String CaptivePortal::getNetworksJson() {
     return response;
 }
 
-// OTA Handler Implementations
+// Generic CORS preflight handler
+void CaptivePortal::handleCorsPreflight() {
+    Serial.println("CP DBG: handleCorsPreflight - Sending CORS preflight headers.");
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
+    _server.sendHeader("Access-Control-Max-Age", "10000"); // Cache preflight for 10000 seconds
+    _server.sendHeader("Access-Control-Allow-Methods", "POST,GET,OPTIONS");
+    _server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+    _server.send(204); // No Content
+}
 
 void CaptivePortal::handleCheckUpdate() {
+    Serial.println("CP DBG: handleCheckUpdate - Entered.");
     if (!_otaManager) {
         _server.send(500, "application/json", "{\"error\":\"OTA manager not initialized\"}");
         return;
     }
 
-    bool checkStarted = _otaManager->checkForUpdate();
-    // checkForUpdate is async. The client will then poll /update-status or we give an immediate status.
-    // For now, let's return the last known check result after attempting a new check.
-    // A more sophisticated approach might involve waiting for the check to complete or specific check IDs.
+    bool checkInitiated = _otaManager->checkForUpdate();
     
-    // Give some time for the check to potentially start and update status
-    // This is a simplification; a robust solution might use a callback or polling on OtaManager status
-    // For now, we rely on getLastCheckResult() being updated by the async task soon.
-    // If checkStarted is false, it might be because a check is already in progress or WiFi is off.
+    UpdateStatus currentStatus = _otaManager->getStatus();
+    // Get current version from OtaManager, not necessarily from last check result which might be old
+    String currentFirmware = _otaManager->getLastCheckResult().currentVersion; 
+    if (currentFirmware.isEmpty()) { // Fallback if not set yet in lastCheckResult
+        currentFirmware = CURRENT_FIRMWARE_VERSION;
+    }
 
-    UpdateInfo info = _otaManager->getLastCheckResult();
-    DynamicJsonDocument doc(512); // Adjusted size for UpdateInfo
-    doc["updateAvailable"] = info.updateAvailable;
-    doc["currentVersion"] = info.currentVersion;
-    doc["availableVersion"] = info.availableVersion;
-    doc["downloadUrl"] = info.downloadUrl; // May not be needed by client if it doesn't initiate download directly
-    doc["releaseNotes"] = info.releaseNotes;
-    doc["error"] = info.error;
-    
+    DynamicJsonDocument doc(256);
+    doc["check_initiated"] = checkInitiated;
+    doc["current_firmware_version"] = currentFirmware;
+    // Send the status code as an integer
+    doc["initial_status_code"] = static_cast<int>(currentStatus.status);
+    doc["initial_status_message"] = currentStatus.message;
+    if (!checkInitiated && currentStatus.status == UpdateStatus::State::IDLE) {
+        // If check couldn't be initiated (e.g. WiFi off, or already checking),
+        // and status is IDLE, use the last check error if available.
+        // This helps propagate "WiFi not connected" type errors immediately.
+        doc["initial_status_message"] = _otaManager->getLastCheckResult().error.isEmpty() ? currentStatus.message : _otaManager->getLastCheckResult().error;
+    }
+
+
     String response;
     serializeJson(doc, response);
+    Serial.printf("CP DBG: handleCheckUpdate - Sending response: %s\n", response.c_str());
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
     _server.send(200, "application/json", response);
 }
 
 void CaptivePortal::handleStartUpdate() {
+    Serial.println("CP DBG: handleStartUpdate - Entered.");
     if (!_otaManager) {
+        Serial.println("CP DBG: handleStartUpdate - OTA manager not initialized.");
         _server.send(500, "application/json", "{\"error\":\"OTA manager not initialized\"}");
         return;
     }
 
-    // The download URL could be passed from the client, or we use the one from the last check.
-    // For now, assume OtaManager uses its internally stored download URL from the last successful check.
     String downloadUrl = _otaManager->getLastCheckResult().downloadUrl;
+    Serial.printf("CP DBG: handleStartUpdate - URL from getLastCheckResult(): %s\n", downloadUrl.c_str());
+
     if (downloadUrl.isEmpty() && _otaManager->getLastCheckResult().updateAvailable) {
+         Serial.println("CP DBG: handleStartUpdate - No download URL available from last check, but update is available.");
          _server.send(400, "application/json", "{\"success\":false, \"message\":\"No download URL available from last check.\"}");
         return;
     }
+    // If no update is available according to last check, it doesn't make sense to proceed, even if a URL was somehow present.
+    // This prevents trying to "update" to the same version or if check failed.
+    if (!_otaManager->getLastCheckResult().updateAvailable) {
+        Serial.println("CP DBG: handleStartUpdate - getLastCheckResult() shows no update available. Aborting start.");
+        _server.send(400, "application/json", "{\"success\":false, \"message\":\"No update marked as available from the last check.\"}");
+        return;
+    }
 
-    bool success = _otaManager->beginUpdate(downloadUrl); // downloadUrl can be empty if OtaManager is expected to use its last one
+    Serial.println("CP DBG: handleStartUpdate - Calling _otaManager->beginUpdate().");
+    bool success = _otaManager->beginUpdate(downloadUrl); 
+    Serial.printf("CP DBG: handleStartUpdate - _otaManager->beginUpdate() returned: %s\n", success ? "true" : "false");
     
     StaticJsonDocument<128> doc;
     doc["success"] = success;
     if (!success) {
-        doc["message"] = _otaManager->getStatus().message; // Provide a reason if start failed
+        doc["message"] = _otaManager->getStatus().message; 
+        Serial.printf("CP DBG: handleStartUpdate - Update start failed. Message: %s\n", _otaManager->getStatus().message.c_str());
     }
     
     String response;
     serializeJson(doc, response);
+    Serial.printf("CP DBG: handleStartUpdate - Sending response: %s\n", response.c_str());
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
     _server.send(200, "application/json", response);
 }
 
 void CaptivePortal::handleUpdateStatus() {
+    Serial.println("CP DBG: handleUpdateStatus - Entered."); // Added DBG log
     if (!_otaManager) {
+        Serial.println("CP DBG: handleUpdateStatus - OTA manager not initialized."); // Added DBG log
+        _server.sendHeader("Access-Control-Allow-Origin", "*");
         _server.send(500, "application/json", "{\"error\":\"OTA manager not initialized\"}");
         return;
     }
     
     UpdateStatus status = _otaManager->getStatus();
-    DynamicJsonDocument doc(256); // Adjusted size for UpdateStatus
+    UpdateInfo info = _otaManager->getLastCheckResult(); // This will be fresh after a check task completes
     
-    // Convert enum class State to String or int for JSON
-    // For simplicity, sending as int for now. Client JS can map to strings.
-    doc["status"] = static_cast<int>(status.status);
+    DynamicJsonDocument doc(1024); // Increased size for combined info
+    
+    doc["status_code"] = static_cast<int>(status.status);
+    doc["status_message"] = status.message;
     doc["progress"] = status.progress;
-    doc["message"] = status.message;
+    
+    // Add fields from UpdateInfo
+    doc["current_firmware_version_info"] = info.currentVersion; // Renamed to avoid conflict
+    doc["available_firmware_version_info"] = info.availableVersion;
+    doc["is_update_available_info"] = info.updateAvailable;
+    doc["release_notes_info"] = info.releaseNotes;
+    doc["error_message_info"] = info.error; // Error specifically from the check process
     
     String response;
     serializeJson(doc, response);
+    // Serial.printf("CP DBG: handleUpdateStatus - Sending response: %s\n", response.c_str()); // Optional: can be very verbose
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
     _server.send(200, "application/json", response);
 }

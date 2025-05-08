@@ -142,4 +142,6 @@ private:
      * @brief Handle request for OTA update status.
      */
     void handleUpdateStatus();
+
+    void handleCorsPreflight(); // Added declaration for CORS preflight handler
 };

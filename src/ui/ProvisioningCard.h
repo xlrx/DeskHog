@@ -178,4 +178,5 @@ private:
     lv_obj_t* _statusLabel;       ///< WiFi status text
     lv_obj_t* _ipLabel;           ///< IP address text
     lv_obj_t* _signalLabel;       ///< Signal strength text
+    lv_obj_t* _versionLabel;      ///< Firmware version text
 };

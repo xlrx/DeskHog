@@ -4,7 +4,7 @@
 ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterface, uint16_t width, uint16_t height)
     : _parent(parent), _wifiInterface(wifiInterface), _width(width), _height(height),
     _card(nullptr), _qrScreen(nullptr), _statusScreen(nullptr),
-    _qrCode(nullptr), _statusLabel(nullptr), _ipLabel(nullptr), _signalLabel(nullptr) {
+    _qrCode(nullptr), _statusLabel(nullptr), _ipLabel(nullptr), _signalLabel(nullptr), _versionLabel(nullptr) {
     
     createCard();
     createQRScreen();
@@ -133,11 +133,13 @@ void ProvisioningCard::createStatusScreen() {
     createTableRow(table, 0, "WiFi", &_statusLabel, Style::labelColor());
     createTableRow(table, 1, "IP", &_ipLabel, Style::labelColor());
     createTableRow(table, 2, "Signal", &_signalLabel, Style::labelColor());
+    createTableRow(table, 3, "Version", &_versionLabel, Style::labelColor());
     
     // Set initial values
     lv_label_set_text(_statusLabel, "Disconnected");
     lv_label_set_text(_ipLabel, "");
     lv_label_set_text(_signalLabel, "0%");
+    lv_label_set_text(_versionLabel, CURRENT_FIRMWARE_VERSION);
 }
 
 void ProvisioningCard::createTableRow(lv_obj_t* table, uint16_t row, const char* title, 

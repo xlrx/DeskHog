@@ -4,6 +4,23 @@
 #include <Update.h>         // Required for OTA flashing
 #include <HTTPClient.h>     // Required for making HTTP requests
 #include <ArduinoJson.h>    // Required for parsing GitHub API response
+#include "esp_heap_caps.h"   // For heap_caps_malloc_extmem_enable
+
+// NTP Configuration
+const char* NTP_SERVER = "pool.ntp.org";
+const long  GMT_OFFSET_SEC = 0;      // Configure for your timezone
+const int   DAYLIGHT_OFFSET_SEC = 0; // Configure if DST applies
+
+// mbedTLS debug callback function
+#if CORE_DEBUG_LEVEL >= ARDUHAL_LOG_LEVEL_VERBOSE
+static void mbedtls_debug_print(void *ctx, int level,
+                                const char *file, int line,
+                                const char *str)
+{
+    ((void) level); // Unused parameter
+    Serial.printf("mbedtls: %s:%04d: %s", file, line, str);
+}
+#endif
 
 // Define the current version (replace with actual versioning mechanism later)
 // This should come from a central place, maybe a build flag or version.h
@@ -21,6 +38,7 @@ OtaManager::OtaManager(const String& currentVersion, const String& repoOwner, co
       _repoName(repoName),
       _checkTaskHandle(NULL),
       _updateTaskHandle(NULL) { // Initialize task handles
+    heap_caps_malloc_extmem_enable(4096); // Prefer PSRAM for allocations > 4KB
     _currentStatus.status = UpdateStatus::State::IDLE;
     _currentStatus.message = "Idle";
     _currentStatus.progress = 0;
@@ -32,6 +50,18 @@ void OtaManager::_checkUpdateTaskRunner(void* pvParameters) {
     OtaManager* self = static_cast<OtaManager*>(pvParameters);
     UpdateInfo resultInfo;
     resultInfo.currentVersion = self->_currentVersion;
+
+    // Ensure time is synchronized before proceeding
+    if (!self->_ensureTimeSynced()) {
+        Serial.println("OTA Task Error: Time synchronization failed. Aborting update check task.");
+        // Status might have been CHECKING_VERSION, change to IDLE with error
+        self->_setUpdateStatus(UpdateStatus::State::IDLE, "Time sync failed", 0);
+        resultInfo.error = "Time sync failed";
+        self->_lastCheckResult = resultInfo; // Store the result with error
+        self->_checkTaskHandle = NULL;      // Clear the task handle
+        vTaskDelete(NULL);                // Task deletes itself
+        return;
+    }
 
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("OTA Task Error: WiFi not connected at task start.");
@@ -66,6 +96,33 @@ void OtaManager::_checkUpdateTaskRunner(void* pvParameters) {
     vTaskDelete(NULL); // Task deletes itself
 }
 
+// Private helper to ensure time is synchronized via NTP
+bool OtaManager::_ensureTimeSynced() {
+    if (_timeSynced) {
+        Serial.println("OTA Info: Time is already synchronized.");
+        return true;
+    }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("OTA Error: WiFi not connected. Cannot sync time.");
+        return false;
+    }
+
+    Serial.println("OTA Info: Configuring time from NTP server...");
+    configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo, 10000)) { // Wait up to 10 seconds for time sync
+        Serial.println("OTA Error: Failed to obtain time from NTP server.");
+        _timeSynced = false;
+        return false;
+    }
+    Serial.println("OTA Info: Time synchronized successfully.");
+    Serial.print("Current time: ");
+    Serial.println(asctime(&timeinfo));
+    _timeSynced = true;
+    return true;
+}
+
 // Initiate non-blocking check for updates
 bool OtaManager::checkForUpdate() {
     if (_checkTaskHandle != NULL) {
@@ -87,7 +144,7 @@ bool OtaManager::checkForUpdate() {
 
     _setUpdateStatus(UpdateStatus::State::CHECKING_VERSION, "Checking for updates...", 0);
     // Clear previous error on a new check attempt that starts successfully
-    _lastCheckResult = UpdateInfo(); 
+    _lastCheckResult = UpdateInfo();
     _lastCheckResult.currentVersion = _currentVersion;
 
     BaseType_t taskCreated = xTaskCreatePinnedToCore(
@@ -115,10 +172,13 @@ bool OtaManager::checkForUpdate() {
 String OtaManager::_performHttpsRequest(const char* url, const char* rootCa) {
     WiFiClientSecure client;
     HTTPClient https;
-
+    
     Serial.printf("OTA: Connecting to %s\n", url);
     client.setCACert(rootCa);
     client.setTimeout(10000); // 10 second timeout
+
+    // Enable automatic redirect following
+    https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); // Or HTTPC_FORCE_FOLLOW_REDIRECTS or true for older cores
 
     if (https.begin(client, url)) {
         https.addHeader("User-Agent", "ESP32-OTA-Client"); // GitHub requires User-Agent
@@ -221,13 +281,15 @@ UpdateInfo OtaManager::_parseGithubApiResponse(const String& jsonPayload) {
 
 // Begin update (placeholder implementation)
 bool OtaManager::beginUpdate(const String& downloadUrl) {
+    Serial.println("OTA DBG: beginUpdate - Entered function.");
+
     if (_checkTaskHandle != NULL){
         Serial.println("OTA Error: Cannot start update, a check task is still running.");
         _setUpdateStatus(UpdateStatus::State::IDLE, "Previous check task active",0);
         return false;
     }
     if (_updateTaskHandle != NULL) {
-        Serial.println("OTA Error: Update already in progress.");
+        Serial.println("OTA DBG: beginUpdate - Update already in progress (_updateTaskHandle not NULL).");
         // Optionally, could reflect this in status, but IDLE or current status is fine.
         // _setUpdateStatus(UpdateStatus::State::DOWNLOADING, "Update already in progress", _currentStatus.progress);
         return false; // Update task already running
@@ -236,7 +298,7 @@ bool OtaManager::beginUpdate(const String& downloadUrl) {
     // If an update check just completed and found an update, _currentStatus.status would be CHECKING_VERSION
     // We allow starting an update if IDLE or if a check has just confirmed an update is available.
     if (_currentStatus.status != UpdateStatus::State::IDLE && _currentStatus.status != UpdateStatus::State::CHECKING_VERSION) {
-        Serial.printf("OTA Error: System not in a state to start update (current state: %d).\n", (int)_currentStatus.status);
+        Serial.printf("OTA DBG: beginUpdate - System not in a state to start update (current state: %d).\n", (int)_currentStatus.status);
         return false;
     }
 
@@ -244,7 +306,7 @@ bool OtaManager::beginUpdate(const String& downloadUrl) {
     if (urlToUse.isEmpty()) {
         if (_lastCheckResult.updateAvailable && !_lastCheckResult.downloadUrl.isEmpty()) {
             urlToUse = _lastCheckResult.downloadUrl;
-            Serial.println("OTA Info: Using download URL from last successful check.");
+            Serial.println("OTA DBG: beginUpdate - Using download URL from last successful check.");
         } else {
             Serial.println("OTA Error: No download URL provided and no valid URL from last check.");
             _setUpdateStatus(UpdateStatus::State::IDLE, "Missing download URL", 0);
@@ -253,27 +315,24 @@ bool OtaManager::beginUpdate(const String& downloadUrl) {
     }
 
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("OTA Error: WiFi not connected. Cannot start update task.");
+        Serial.println("OTA DBG: beginUpdate - WiFi not connected. Cannot start update task.");
         _setUpdateStatus(UpdateStatus::State::ERROR_WIFI, "WiFi not connected for update", 0);
-        // Quickly transition to IDLE if WiFi is off
         _setUpdateStatus(UpdateStatus::State::IDLE, "Update failed: WiFi off", 0);
         return false;
     }
 
-    Serial.printf("OTA Info: Preparing to start update from %s\n", urlToUse.c_str());
+    Serial.println("OTA DBG: beginUpdate - About to call _ensureTimeSynced().");
+    if (!_ensureTimeSynced()) {
+        Serial.println("OTA DBG: beginUpdate - Time synchronization failed. Aborting update.");
+        _setUpdateStatus(UpdateStatus::State::IDLE, "Time sync failed for update", 0);
+        return false;
+    }
+    Serial.println("OTA DBG: beginUpdate - Time synchronized successfully.");
+
+    Serial.printf("OTA DBG: beginUpdate - Preparing to start update from %s\n", urlToUse.c_str());
     _setUpdateStatus(UpdateStatus::State::DOWNLOADING, "Update process initiated...", 0);
 
-    // Pass the download URL to the task via a structure or ensure the task can retrieve it.
-    // For simplicity here, we'll rely on the task using _lastCheckResult or a stored URL if appropriate,
-    // but ideally, it should be passed more directly if beginUpdate can be called with arbitrary URLs.
-    // For now, _updateTaskRunner will be designed to use _lastCheckResult.downloadUrl as primary
-    // or the one set if we enhance this to pass data to the task.
-
-    // Store the URL for the task if it's not already implicitly available
-    // For now, we assume the task will pick up _lastCheckResult.downloadUrl or that it's set.
-    // This is a bit of a simplification; a more robust way is to pass parameters to the task.
-    // However, our current _lastCheckResult should hold the URL if a check preceded this call.
-
+    Serial.println("OTA DBG: beginUpdate - About to call xTaskCreatePinnedToCore for _updateTaskRunner.");
     BaseType_t taskCreated = xTaskCreatePinnedToCore(
         _updateTaskRunner,       // Function to implement the task
         "OtaUpdateTask",         // Name of the task
@@ -285,13 +344,13 @@ bool OtaManager::beginUpdate(const String& downloadUrl) {
     );
 
     if (taskCreated != pdPASS) {
-        Serial.println("OTA Error: Failed to create update task.");
+        Serial.printf("OTA DBG: beginUpdate - Failed to create update task. pdPASS = %d, taskCreated = %d\n", pdPASS, taskCreated);
         _setUpdateStatus(UpdateStatus::State::IDLE, "Failed to start update task", 0);
         _updateTaskHandle = NULL;
         return false;
     }
 
-    Serial.println("OTA Info: Update task started.");
+    Serial.println("OTA DBG: beginUpdate - Update task created successfully.");
     return true;
 }
 
@@ -350,6 +409,9 @@ void OtaManager::_updateTaskRunner(void* pvParameters) {
     HTTPClient https;
     client.setCACert(self->_githubApiRootCa); // Use the same root CA
     client.setTimeout(15000); // Increased timeout for firmware download
+
+    // Enable automatic redirect following
+    https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); // Or HTTPC_FORCE_FOLLOW_REDIRECTS or true for older cores
 
     Serial.printf("OTA Task: Connecting to %s for firmware download\n", downloadUrl.c_str());
 
