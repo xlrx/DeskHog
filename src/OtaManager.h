@@ -2,11 +2,16 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h> // For potential JSON parsing within the manager
+#include <HTTPClient.h>     // Required for making HTTP requests
+#include "esp_heap_caps.h"   // For heap_caps_malloc_extmem_enable
 
 // FreeRTOS for task management
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "time.h" // Added for NTP
+
+// Add these includes for FreeRTOS mutex
+#include <freertos/semphr.h>
 
 // Forward declarations if needed, e.g., if using WiFiClientSecure pointer
 // class WiFiClientSecure;
@@ -37,7 +42,9 @@ struct UpdateStatus {
         ERROR_UPDATE_WRITE,
         ERROR_UPDATE_END,
         ERROR_NO_ASSET,
-        ERROR_NO_SPACE
+        ERROR_NO_SPACE,
+        MUTEX_BUSY,      // New state: OTA manager mutex was contended
+        ERROR_INTERNAL   // New state: Internal error (e.g. mutex not initialized)
     };
 
     State status = State::IDLE;
@@ -91,19 +98,7 @@ private:
     String _currentVersion;
     String _repoOwner;
     String _repoName;
-    UpdateStatus _currentStatus;
-    UpdateInfo _lastCheckResult; // Cache the result of the last check
-    TaskHandle_t _checkTaskHandle = NULL; // Handle for the update check task
-    TaskHandle_t _updateTaskHandle = NULL; // Handle for the firmware update task
-    bool _timeSynced = false; // Flag to track if time has been synced
-
-    // Placeholder for the name of the asset to download (e.g., "firmware.bin")
-    // Needs to be set based on project convention
-    const char* _firmwareAssetName = "firmware.bin";
-
-    // Combined Root CAs for api.github.com and objects.githubusercontent.com
-    // 1. USERTrust ECC Certification Authority (primarily for api.github.com)
-    // 2. USERTrust RSA Certification Authority (primarily for objects.githubusercontent.com)
+    String _firmwareAssetName = "firmware.bin"; // Default asset name
     const char* _githubApiRootCa = \
 "-----BEGIN CERTIFICATE-----\n" \
 "MIICjzCCAhWgAwIBAgIQXIuZxVqUxdJxVt7NiYDMJjAKBggqhkjOPQQDAzCBiDEL\n" \
@@ -156,7 +151,15 @@ private:
 "jjxDah2nGN59PRbxYvnKkKj9\n" \
 "-----END CERTIFICATE-----\n";
 
-    // Task function
+    UpdateStatus _currentStatus;
+    UpdateInfo _lastCheckResult;
+    TaskHandle_t _checkTaskHandle;
+    TaskHandle_t _updateTaskHandle;
+    bool _timeSynced = false;
+
+    SemaphoreHandle_t _dataMutex; // Mutex for _currentStatus and _lastCheckResult
+
+    // Static task runners
     static void _checkUpdateTaskRunner(void* pvParameters);
     static void _updateTaskRunner(void* pvParameters);
 

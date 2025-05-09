@@ -33,6 +33,7 @@
 #include "ui/CardController.h"
 #include "EventQueue.h"
 #include "esp_partition.h" // Include for partition functions
+#include "OtaManager.h"
 
 // Display dimensions
 #define SCREEN_WIDTH 240
@@ -61,6 +62,7 @@ CardController* cardController; // Replace individual card objects with controll
 PostHogClient* posthogClient;
 EventQueue* eventQueue; // Add global EventQueue
 NeoPixelController* neoPixelController;  // Renamed from neoPixelManager
+OtaManager* otaManager;
 
 // Task handles
 TaskHandle_t wifiTask;
@@ -85,11 +87,9 @@ void wifiTaskFunction(void* parameter) {
 // Captive portal task that handles web server requests
 void portalTaskFunction(void* parameter) {
     while (1) {
-        // Process portal requests regardless of mode
-        captivePortal->process();
-        
+        captivePortal->processAsyncOperations(); // Process pending portal actions
         // Delay to prevent hogging CPU
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(100)); // Check for operations every 100ms
     }
 }
 
@@ -229,8 +229,11 @@ void setup() {
     // Initialize with display interface directly
     cardController->initialize(displayInterface);
     
+    // Initialize OtaManager
+    otaManager = new OtaManager(CURRENT_FIRMWARE_VERSION, "PostHog", "DeskHog");
+    
     // Initialize captive portal
-    captivePortal = new CaptivePortal(*configManager, *wifiInterface, *eventQueue);
+    captivePortal = new CaptivePortal(*configManager, *wifiInterface, *eventQueue, *otaManager);
     captivePortal->begin();
     
     // Create task for WiFi operations
@@ -248,18 +251,18 @@ void setup() {
     xTaskCreatePinnedToCore(
         portalTaskFunction,
         "portalTask",
-        4096,
+        8192,
         NULL,
         1,
         &portalTask,
-        0
+        1
     );
     
     // Create task for insight processing
     xTaskCreatePinnedToCore(
         insightTaskFunction,
         "insightTask",
-        81920,
+        8192,
         NULL,
         1,
         &insightTask,

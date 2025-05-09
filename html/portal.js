@@ -7,8 +7,13 @@ function showScreen(screenId) {
     
     // Update page title
     let title = "DeskHog Configuration";
-    if (screenId === 'success-screen') title = "Configuration Saved";
-    else if (screenId === 'error-screen') title = "Configuration Error";
+    if (screenId === 'success-screen') {
+        title = "Configuration Saved";
+        startCountdown(); // Start countdown only if success screen is explicitly shown by an action result
+        // The actual redirect/countdown might be better handled based on specific messages from /api/status
+    } else if (screenId === 'error-screen') {
+        title = "Configuration Error";
+    }
     document.getElementById('page-title').textContent = title;
     
     // Start countdown if success screen
@@ -23,20 +28,26 @@ function saveWifiConfig() {
     const form = document.getElementById('wifi-form');
     const formData = new FormData(form);
     
-    fetch('/save-wifi', {
+    fetch('/api/actions/save-wifi', { // New endpoint
         method: 'POST',
         body: formData
     })
     .then(response => response.json())
     .then(data => {
-        if (data.success) {
-            showScreen('success-screen');
+        if (data.status === 'initiated') {
+            // Optionally show a general "Processing..." message
+            // Actual success/error will be handled by pollApiStatus
+            console.log("Save WiFi initiated.");
+            // Consider a small toast message here: "Saving WiFi..."
         } else {
-            showScreen('error-screen');
+            // Handle "busy" or other errors from the initiation request itself
+            showScreen('error-screen'); 
+            document.getElementById('error-message-text').textContent = data.message || "Failed to initiate WiFi save.";
         }
     })
     .catch(() => {
         showScreen('error-screen');
+        document.getElementById('error-message-text').textContent = "Communication error trying to save WiFi.";
     });
     
     return false; // Prevent default form submission
@@ -47,20 +58,23 @@ function saveDeviceConfig() {
     const form = document.getElementById('device-form');
     const formData = new FormData(form);
     
-    fetch('/save-device-config', {
+    fetch('/api/actions/save-device-config', { // New endpoint
         method: 'POST',
         body: formData
     })
     .then(response => response.json())
     .then(data => {
-        if (data.success) {
-            showScreen('success-screen');
+        if (data.status === 'initiated') {
+            console.log("Save device config initiated.");
+            // showScreen('success-screen'); // No longer show success immediately
         } else {
             showScreen('error-screen');
+            document.getElementById('error-message-text').textContent = data.message || "Failed to initiate device config save.";
         }
     })
     .catch(() => {
         showScreen('error-screen');
+        document.getElementById('error-message-text').textContent = "Communication error saving device config.";
     });
     
     return false;
@@ -77,21 +91,24 @@ function addInsight() {
     const form = document.getElementById('insight-form');
     const formData = new FormData(form);
     
-    fetch('/save-insight', {
+    fetch('/api/actions/save-insight', { // New endpoint
         method: 'POST',
         body: formData
     })
     .then(response => response.json())
     .then(data => {
-        if (data.success) {
-            form.reset();
-            loadInsights();
+        if (data.status === 'initiated') {
+            console.log("Add insight initiated.");
+            form.reset(); // Reset form on initiation, actual list update via poll
+            // loadInsights(); // No longer call directly
         } else {
             showScreen('error-screen');
+            document.getElementById('error-message-text').textContent = data.message || "Failed to initiate save insight.";
         }
     })
     .catch(() => {
         showScreen('error-screen');
+        document.getElementById('error-message-text').textContent = "Communication error saving insight.";
     });
     
     return false;
@@ -103,171 +120,157 @@ function deleteInsight(id) {
         return;
     }
     
-    fetch('/delete-insight', {
+    // For POST with form data (if backend expects it for delete)
+    const formData = new FormData();
+    formData.append('id', id);
+
+    fetch('/api/actions/delete-insight', { // New endpoint
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ id: id })
+        // headers: { 'Content-Type': 'application/json', }, // Keep if backend handles JSON body for this
+        // body: JSON.stringify({ id: id })
+        body: formData // Assuming backend (CaptivePortal.cpp requestAction) now expects form data for delete param
     })
     .then(response => response.json())
     .then(data => {
-        if (data.success) {
-            loadInsights();
+        if (data.status === 'initiated') {
+            console.log("Delete insight initiated.");
+            // loadInsights(); // No longer call directly
         } else {
             showScreen('error-screen');
+            document.getElementById('error-message-text').textContent = data.message || "Failed to initiate delete insight.";
         }
     })
     .catch(() => {
         showScreen('error-screen');
+        document.getElementById('error-message-text').textContent = "Communication error deleting insight.";
     });
 }
 
-// Load insights list
-function loadInsights() {
-    fetch('/get-insights')
-    .then(response => response.json())
-    .then(data => {
-        const container = document.getElementById('insights-list');
-        container.innerHTML = '';
-        
-        if (data.insights.length === 0) {
-            container.innerHTML = '<p>No insights configured</p>';
-            return;
-        }
-        
-        const list = document.createElement('ul');
-        list.className = 'insights-list';
-        
-        data.insights.forEach(insight => {
-            const item = document.createElement('li');
-            item.className = 'insight-item';
-            item.innerHTML = `
-                <button onclick="deleteInsight('${insight.id}')" class="button danger">Delete ${insight.title}</button>
-            `;
-            list.appendChild(item);
-        });
-        
-        container.appendChild(list);
-    })
-    .catch(error => {
-        console.error('Error loading insights:', error);
-    });
-}
-
-// Refresh network list
-function refreshNetworks() {
-    fetch('/scan-networks')
-    .then(response => response.json())
-    .then(data => {
-        const select = document.getElementById('ssid');
-        select.innerHTML = '<option value="">Select a network</option>';
-        
-        if (!data.networks || data.networks.length === 0) {
-            select.innerHTML += '<option disabled>No networks found</option>';
-            return;
-        }
-        
-        data.networks.forEach(network => {
-            const option = document.createElement('option');
-            option.value = network.ssid;
-            
-            let label = network.ssid;
-            
-            // Add signal strength indicator
-            if (network.rssi >= -50) {
-                label += ' (Excellent)';
-            } else if (network.rssi >= -60) {
-                label += ' (Good)';
-            } else if (network.rssi >= -70) {
-                label += ' (Fair)';
-            } else {
-                label += ' (Poor)';
-            }
-            
-            // Add lock icon for encrypted networks
-            if (network.encrypted) {
-                label += ' 🔒';
-            }
-            
-            option.textContent = label;
-            select.appendChild(option);
-        });
-    })
-    .catch(error => {
-        console.error('Error refreshing networks:', error);
-        const select = document.getElementById('ssid');
-        select.innerHTML = '<option value="">Error loading networks</option>';
-    });
-}
-
-// Start countdown on success screen
-function startCountdown() {
-    let seconds = 10;
-    const countdownEl = document.getElementById('countdown');
+// Load insights list - UI update part will be in pollApiStatus
+function _updateInsightsListUI(insights) { // Renamed to indicate it's a UI updater
+    const container = document.getElementById('insights-list');
+    container.innerHTML = '';
     
-    const interval = setInterval(() => {
-        seconds--;
-        countdownEl.textContent = seconds;
-        
-        if (seconds <= 0) {
-            clearInterval(interval);
-            window.location.href = '/';
-        }
-    }, 1000);
+    if (!insights || insights.length === 0) {
+        container.innerHTML = '<p>No insights configured</p>';
+        return;
+    }
+    
+    const list = document.createElement('ul');
+    list.className = 'insights-list';
+    
+    insights.forEach(insight => {
+        const item = document.createElement('li');
+        item.className = 'insight-item';
+        item.innerHTML = `
+            <button onclick="deleteInsight('${insight.id}')" class="button danger">Delete ${insight.title}</button>
+        `;
+        list.appendChild(item);
+    });
+    
+    container.appendChild(list);
 }
 
-// Load current configuration
-function loadCurrentConfig() {
-    fetch('/get-device-config')
-    .then(response => response.json())
-    .then(data => {
-        if (data.teamId !== undefined) {
-            document.getElementById('teamId').value = data.teamId;
+// Refresh network list - UI update part will be in pollApiStatus
+function _updateNetworksListUI(networks) { // Renamed
+    const select = document.getElementById('ssid');
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">Select a network</option>';
+    
+    if (!networks || networks.length === 0) {
+        select.innerHTML += '<option disabled>No networks found</option>';
+        return;
+    }
+    
+    networks.forEach(network => {
+        const option = document.createElement('option');
+        option.value = network.ssid;
+        
+        let label = network.ssid;
+        if (network.rssi >= -50) label += ' (Excellent)';
+        else if (network.rssi >= -60) label += ' (Good)';
+        else if (network.rssi >= -70) label += ' (Fair)';
+        else label += ' (Poor)';
+        if (network.encrypted) label += ' 🔒';
+        
+        option.textContent = label;
+        if (network.ssid === currentVal) {
+            option.selected = true;
         }
-        if (data.apiKey) {
-            document.getElementById('apiKey').value = data.apiKey;
-        }
-    })
-    .catch(error => {
-        console.error('Error loading device config:', error);
+        select.appendChild(option);
     });
+}
+
+function requestScanNetworks() {
+    fetch('/api/actions/start-wifi-scan', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'initiated') {
+                console.log("WiFi scan initiated.");
+                // Optionally show "Scanning..." text near the dropdown
+                document.getElementById('ssid').innerHTML = '<option>Scanning...</option>';
+            } else {
+                console.error("Failed to initiate WiFi scan: ", data.message);
+                 document.getElementById('ssid').innerHTML = '<option>Scan failed to start.</option>';
+            }
+        })
+        .catch(error => {
+            console.error('Error requesting network scan:', error);
+            document.getElementById('ssid').innerHTML = '<option value="">Error starting scan</option>';
+        });
+}
+
+// Load current configuration - UI update part will be in pollApiStatus
+function _updateDeviceConfigUI(config) { // Renamed
+    if (config.team_id !== undefined) {
+        document.getElementById('teamId').value = config.team_id;
+    }
+    // The API key from /api/status should be the display version (e.g., ********1234)
+    if (config.api_key_display !== undefined) { 
+        document.getElementById('apiKey').value = config.api_key_display;
+    }
 }
 
 // Initialize page
 document.addEventListener('DOMContentLoaded', function() {
     // Check if we need to show a specific screen based on URL hash
+    // This might be less relevant if all feedback comes via /api/status poll
     const hash = window.location.hash.substr(1);
     if (hash && ['config-screen', 'success-screen', 'error-screen'].includes(hash)) {
         showScreen(hash);
     }
     
-    // Load current configuration
-    loadCurrentConfig();
-    
-    // Load insights list
-    loadInsights();
-
-    // Populate the networks list
-    refreshNetworks();
+    // // Load current configuration - Now handled by pollApiStatus
+    // loadCurrentConfig();
+    // // Load insights list - Now handled by pollApiStatus
+    // loadInsights();
+    // // Populate the networks list - Now handled by pollApiStatus initial call & requestScanNetworks
+    // refreshNetworks(); 
 
     // OTA Update functionality
     const checkUpdateBtn = document.getElementById('check-update-btn');
     const installUpdateBtn = document.getElementById('install-update-btn');
 
     if (checkUpdateBtn) {
-        checkUpdateBtn.addEventListener('click', checkFirmwareUpdate);
+        checkUpdateBtn.addEventListener('click', requestCheckFirmwareUpdate); // Changed to request check
     }
     if (installUpdateBtn) {
-        installUpdateBtn.addEventListener('click', startFirmwareUpdate);
+        installUpdateBtn.addEventListener('click', requestStartFirmwareUpdate); // Changed to request start
     }
 
-    // Initial check for firmware version on page load
-    checkFirmwareUpdate(); 
+    // Initial call to pollApiStatus to populate UI, then set interval
+    pollApiStatus();
+    setInterval(pollApiStatus, 5000); // Poll every 5 seconds
+
+    // Add event listener to refresh networks button if it exists
+    const refreshBtn = document.getElementById('refresh-networks-btn'); // Assuming a button with this ID
+    if(refreshBtn) {
+        refreshBtn.addEventListener('click', requestScanNetworks);
+    }
 });
 
-let otaPollingIntervalId = null;
-let pollingForCheckResult = false; // Flag to differentiate polling purpose
+// Removed: let otaPollingIntervalId = null;
+// Removed: let pollingForCheckResult = false;
 
 // Enum for OtaManager::UpdateStatus::State (mirror from C++)
 // This helps in making the JS code more readable when checking status.
@@ -288,265 +291,247 @@ const OTA_STATUS_STATE = {
     ERROR_NO_SPACE: 13
 };
 
-function checkFirmwareUpdate() {
-    console.log("Checking for firmware updates...");
-    const currentVersionEl = document.getElementById('current-version');
-    const availableVersionEl = document.getElementById('available-version');
-    const releaseNotesEl = document.getElementById('release-notes');
-    const updateAvailableSection = document.getElementById('update-available-section');
-    const installUpdateBtn = document.getElementById('install-update-btn');
-    const updateStatusTextEl = document.getElementById('update-status-text');
-    const updateErrorEl = document.getElementById('update-error-message');
+function requestCheckFirmwareUpdate() {
+    console.log("Requesting firmware update check...");
     const checkUpdateBtn = document.getElementById('check-update-btn');
-    const updateProgressContainer = document.getElementById('update-progress-container');
-    const updateProgressBar = document.getElementById('update-progress-bar');
+    if(checkUpdateBtn) checkUpdateBtn.disabled = true;
+    // UI updates for "checking..." will be handled by pollApiStatus based on action_in_progress
 
-    if(updateStatusTextEl) updateStatusTextEl.textContent = 'Initiating check...';
-    if(updateErrorEl) updateErrorEl.textContent = '';
-    if(updateAvailableSection) updateAvailableSection.style.display = 'none';
+    fetch('/api/actions/check-ota-update', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'initiated') {
+                console.log('Firmware check initiated.');
+                // pollApiStatus will pick up the change and reflect status
+            } else {
+                console.error('Failed to initiate firmware check:', data.message);
+                if(checkUpdateBtn) checkUpdateBtn.disabled = false;
+                // Update UI to show initiation error - pollApiStatus might also do this via last_action_status
+                const updateStatusTextEl = document.getElementById('update-status-text');
+                if(updateStatusTextEl) updateStatusTextEl.textContent = `Error: ${data.message || 'Could not start check.'}`;
+            }
+        })
+        .catch(error => {
+            console.error('Error requesting firmware check:', error);
+            if(checkUpdateBtn) checkUpdateBtn.disabled = false;
+            const updateStatusTextEl = document.getElementById('update-status-text');
+            if(updateStatusTextEl) updateStatusTextEl.textContent = 'Communication error during check request.';
+        });
+}
+
+function requestStartFirmwareUpdate() {
+    console.log("Requesting firmware update start...");
+    const installUpdateBtn = document.getElementById('install-update-btn');
+    const checkUpdateBtn = document.getElementById('check-update-btn');
     if(installUpdateBtn) installUpdateBtn.disabled = true;
-    if(checkUpdateBtn) checkUpdateBtn.disabled = true; // Disable while initiating/polling check
-    if(updateProgressContainer) updateProgressContainer.style.display = 'none';
-    if(updateProgressBar) updateProgressBar.style.width = '0%';
+    if(checkUpdateBtn) checkUpdateBtn.disabled = true;
 
-    // Stop any previous polling
-    if (otaPollingIntervalId) {
-        clearInterval(otaPollingIntervalId);
-        otaPollingIntervalId = null;
-    }
-
-    fetch('/check-update') // This now only initiates the check
+    fetch('/api/actions/start-ota-update', { method: 'POST' })
         .then(response => response.json())
         .then(data => {
-            if (currentVersionEl) currentVersionEl.textContent = data.current_firmware_version || 'N/A';
-            if (updateStatusTextEl) updateStatusTextEl.textContent = data.initial_status_message || 'Checking...';
-
-            if (data.check_initiated) {
-                console.log('Update check initiated. Polling for status...');
-                pollingForCheckResult = true; // Set flag
-                otaPollingIntervalId = setInterval(pollUpdateStatus, 2000); // Poll every 2 seconds
-                // checkUpdateBtn remains disabled while polling
+            if (data.status === 'initiated') {
+                console.log('Firmware update process initiated.');
             } else {
-                console.error('Failed to initiate update check:', data.initial_status_message);
-                if(updateErrorEl) updateErrorEl.textContent = `Error: ${data.initial_status_message || 'Could not start update check.'}`;
-                if(updateStatusTextEl) updateStatusTextEl.textContent = 'Check failed to start.';
-                if(checkUpdateBtn) checkUpdateBtn.disabled = false; // Re-enable if initiation failed
+                console.error('Failed to initiate firmware update:', data.message);
+                if(installUpdateBtn) installUpdateBtn.disabled = false;
+                if(checkUpdateBtn) checkUpdateBtn.disabled = false;
+                const updateStatusTextEl = document.getElementById('update-status-text');
+                if(updateStatusTextEl) updateStatusTextEl.textContent = `Error: ${data.message || 'Could not start update.'}`;
             }
         })
         .catch(error => {
-            console.error('Failed to communicate with device to check for updates:', error);
-            if (currentVersionEl) currentVersionEl.textContent = 'Error';
-            if (availableVersionEl) availableVersionEl.textContent = 'Error';
-            if(updateErrorEl) updateErrorEl.textContent = 'Communication error during check initiation.';
-            if(updateStatusTextEl) updateStatusTextEl.textContent = 'Error initiating check.';
-            if(checkUpdateBtn) checkUpdateBtn.disabled = false; // Re-enable on communication error
+            console.error('Error requesting firmware update start:', error);
+            if(installUpdateBtn) installUpdateBtn.disabled = false;
+            if(checkUpdateBtn) checkUpdateBtn.disabled = false;
+            const updateStatusTextEl = document.getElementById('update-status-text');
+            if(updateStatusTextEl) updateStatusTextEl.textContent = 'Communication error during update request.';
         });
 }
 
-function startFirmwareUpdate() {
-    console.log("Starting firmware update...");
-    const installUpdateBtn = document.getElementById('install-update-btn');
-    const checkUpdateBtn = document.getElementById('check-update-btn');
-    const updateStatusTextEl = document.getElementById('update-status-text');
-    const updateErrorEl = document.getElementById('update-error-message');
-    const updateProgressContainer = document.getElementById('update-progress-container');
-    const updateProgressBar = document.getElementById('update-progress-bar');
+// Main function to poll /api/status and update UI
+let lastProcessedAction = null; // To track last action for one-time messages like success/error screens
+let lastProcessedActionMessage = "";
 
-    if (installUpdateBtn) installUpdateBtn.disabled = true;
-    if (checkUpdateBtn) checkUpdateBtn.disabled = true; // Disable check button during update
-    if (updateErrorEl) updateErrorEl.textContent = '';
-    if (updateStatusTextEl) updateStatusTextEl.textContent = 'Initiating update...';
-    if (updateProgressContainer) updateProgressContainer.style.display = 'block';
-    if (updateProgressBar) updateProgressBar.style.width = '0%';
-
-    // Stop any previous polling (e.g., if it was polling for check result)
-    if (otaPollingIntervalId) {
-        clearInterval(otaPollingIntervalId);
-        otaPollingIntervalId = null;
-    }
-    pollingForCheckResult = false; // Now polling for update progress
-
-    fetch('/start-update', { method: 'POST' })
+function pollApiStatus() {
+    fetch('/api/status')
         .then(response => response.json())
         .then(data => {
-            if (data.success) {
-                console.log('Update process started successfully.');
-                if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update in progress...';
-                // Start polling for status
-                otaPollingIntervalId = setInterval(pollUpdateStatus, 2000); // Poll every 2 seconds
-            } else {
-                console.error('Failed to start update process:', data.message);
-                if (updateErrorEl) updateErrorEl.textContent = `Error: ${data.message || 'Could not start update.'}`;
-                if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update failed to start.';
-                if (installUpdateBtn) installUpdateBtn.disabled = false; // Re-enable if start failed
-                if (checkUpdateBtn) checkUpdateBtn.disabled = false;
-                if (updateProgressContainer) updateProgressContainer.style.display = 'none';
-            }
-        })
-        .catch(error => {
-            console.error('Error starting firmware update:', error);
-            if (updateErrorEl) updateErrorEl.textContent = 'Communication error when trying to start the update.';
-            if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update start error.';
-            if (installUpdateBtn) installUpdateBtn.disabled = false;
-            if (checkUpdateBtn) checkUpdateBtn.disabled = false;
-            if (updateProgressContainer) updateProgressContainer.style.display = 'none';
-        });
-}
+            // console.log('[API_STATUS]', data);
 
-function pollUpdateStatus() {
-    const currentVersionEl = document.getElementById('current-version');
-    const availableVersionEl = document.getElementById('available-version');
-    const releaseNotesEl = document.getElementById('release-notes');
-    const updateAvailableSection = document.getElementById('update-available-section');
-    const updateStatusTextEl = document.getElementById('update-status-text');
-    const updateErrorEl = document.getElementById('update-error-message');
-    const updateProgressBar = document.getElementById('update-progress-bar');
-    const updateProgressContainer = document.getElementById('update-progress-container');
-    const installUpdateBtn = document.getElementById('install-update-btn');
-    const checkUpdateBtn = document.getElementById('check-update-btn');
-
-    fetch('/update-status')
-        .then(response => response.json())
-        .then(data => {
-            console.log('[DBG] pollUpdateStatus - Raw data from /update-status:', JSON.stringify(data)); // Log raw data
-            console.log('[DBG] pollUpdateStatus - pollingForCheckResult:', pollingForCheckResult);
-            console.log('[DBG] pollUpdateStatus - data.status_code:', data.status_code, '(OTA_STATUS_STATE.CHECKING_VERSION is', OTA_STATUS_STATE.CHECKING_VERSION + ')');
-            console.log('[DBG] pollUpdateStatus - data.is_update_available_info:', data.is_update_available_info);
-
-            // Always update current version display from polled data if available
-            if (currentVersionEl && data.current_firmware_version_info) {
-                 currentVersionEl.textContent = data.current_firmware_version_info;
-            }
-
-            if (updateStatusTextEl) updateStatusTextEl.textContent = data.status_message || 'Fetching status...';
-            if (updateErrorEl && data.error_message_info && data.error_message_info.length > 0) {
-                // Prioritize error from UpdateInfo if present
-                updateErrorEl.textContent = `Details: ${data.error_message_info}`;
-            } else if (updateErrorEl && data.status_code >= OTA_STATUS_STATE.ERROR_WIFI) {
-                // Otherwise, use status_message if it's an error state and no specific error_message_info
-                updateErrorEl.textContent = data.status_message;
-            } else if (updateErrorEl) {
-                updateErrorEl.textContent = ''; // Clear previous errors if not an error state
-            }
-
-            if (data.status_code >= OTA_STATUS_STATE.DOWNLOADING && data.status_code <= OTA_STATUS_STATE.WRITING) {
-                 if (updateProgressContainer) updateProgressContainer.style.display = 'block';
-                 if (updateProgressBar) updateProgressBar.style.width = `${data.progress || 0}%`;
-            } else if (data.status_code !== OTA_STATUS_STATE.SUCCESS) { // Don't hide progress bar immediately on success, wait for reboot message
-                 // Hide progress for non-active download/write states unless it's success
-                // if (updateProgressContainer) updateProgressContainer.style.display = 'none';
-            }
-
-            if (pollingForCheckResult) {
-                console.log('[DBG] pollUpdateStatus - Inside pollingForCheckResult block');
-                if (data.status_code === OTA_STATUS_STATE.CHECKING_VERSION && data.is_update_available_info) {
-                    console.log('[DBG] pollUpdateStatus - Update IS available condition MET.');
-                    console.log('Update available (polled):', data.available_firmware_version_info);
-                    if (availableVersionEl) availableVersionEl.textContent = data.available_firmware_version_info;
-                    if (releaseNotesEl) releaseNotesEl.textContent = data.release_notes_info || 'No release notes provided.';
-                    if (updateAvailableSection) updateAvailableSection.style.display = 'block';
-                    if (installUpdateBtn) installUpdateBtn.disabled = false;
-                    if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update available: ' + data.available_firmware_version_info;
-                    
-                    if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
-                    otaPollingIntervalId = null;
-                    pollingForCheckResult = false;
-                    if (checkUpdateBtn) checkUpdateBtn.disabled = false; // Re-enable check button
-
-                } else if (data.status_code === OTA_STATUS_STATE.IDLE || 
-                           data.status_code >= OTA_STATUS_STATE.ERROR_WIFI) {
-                    // This condition means the check process has definitively finished (either IDLE or an error state).
-                    // If it's IDLE, we trust the is_update_available_info from the last check result (which is part of data).
-                    console.log('[DBG] pollUpdateStatus - Check complete (IDLE or ERROR) condition MET.');
-                    
-                    if (data.status_code === OTA_STATUS_STATE.IDLE && data.is_update_available_info) {
-                         // This case should ideally be caught by the first IF block, but as a safeguard:
-                        console.log('[DBG] pollUpdateStatus - IDLE but update_available_info is true. Displaying update.');
-                        if (availableVersionEl) availableVersionEl.textContent = data.available_firmware_version_info;
-                        if (releaseNotesEl) releaseNotesEl.textContent = data.release_notes_info || 'No release notes provided.';
-                        if (updateAvailableSection) updateAvailableSection.style.display = 'block';
-                        if (installUpdateBtn) installUpdateBtn.disabled = false;
-                        if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update available: ' + data.available_firmware_version_info;
+            // 1. Update Portal Action Status (generic messages, loading indicators)
+            const portalStatus = data.portal;
+            if (portalStatus) {
+                const actionInProgressEl = document.getElementById('action-in-progress-message'); // Assume such an element exists for global status
+                if (actionInProgressEl) {
+                    if (portalStatus.action_in_progress && portalStatus.action_in_progress !== 'NONE') {
+                        actionInProgressEl.textContent = `Processing: ${portalStatus.action_in_progress}...`;
+                        actionInProgressEl.style.display = 'block';
                     } else {
-                        // No update found, or an error occurred during the check.
-                        console.log('Check complete (polled): No update or error. Status message:', data.status_message);
-                        if (availableVersionEl) availableVersionEl.textContent = 'N/A';
-                        if (updateAvailableSection) updateAvailableSection.style.display = 'none';
-                        if (installUpdateBtn) installUpdateBtn.disabled = true;
+                        actionInProgressEl.style.display = 'none';
+                    }
+                }
 
-                        if (data.status_code === OTA_STATUS_STATE.IDLE && !data.is_update_available_info && !(data.error_message_info && data.error_message_info.length > 0) && !(data.status_message && data.status_message.toLowerCase().includes("error"))) {
-                            updateStatusTextEl.textContent = data.status_message || 'Firmware is up to date.';
-                        } else if (data.status_code >= OTA_STATUS_STATE.ERROR_WIFI && updateStatusTextEl) {
-                            updateStatusTextEl.textContent = "Check failed."; // Error message is already in updateErrorEl
-                        } else {
-                            // Default for IDLE if no specific error message and no update
-                            updateStatusTextEl.textContent = data.status_message || 'No update available.';
+                // Handle completion of an action (e.g., show success/error screen once)
+                if (portalStatus.last_action_completed && portalStatus.last_action_completed !== 'NONE') {
+                    const completedActionKey = portalStatus.last_action_completed + '-' + portalStatus.last_action_message; // Simple key for uniqueness
+                    if (lastProcessedAction !== completedActionKey) {
+                        console.log(`Action completed: ${portalStatus.last_action_completed}, Status: ${portalStatus.last_action_status}, Msg: ${portalStatus.last_action_message}`);
+                        if (portalStatus.last_action_status === 'SUCCESS') {
+                            // Show success screen for specific actions if desired
+                            if (['SAVE_WIFI', 'SAVE_DEVICE_CONFIG', 'SAVE_INSIGHT'].includes(portalStatus.last_action_completed)) {
+                                showScreen('success-screen'); 
+                            } else {
+                                // Or a toast message for other successes
+                                // e.g., showToast(portalStatus.last_action_message, 'success');
+                            }
+                        } else if (portalStatus.last_action_status === 'ERROR') {
+                            showScreen('error-screen');
+                            const errorMsgEl = document.getElementById('error-message-text');
+                            if (errorMsgEl) errorMsgEl.textContent = portalStatus.last_action_message || "An unknown error occurred.";
                         }
+                        lastProcessedAction = completedActionKey;
+                        lastProcessedActionMessage = portalStatus.last_action_message;
+                        
+                        // Clear the message after a short delay or user interaction if it's a transient message not on success/error screen
+                        // setTimeout(() => { if(lastProcessedAction === completedActionKey) lastProcessedAction = null; }, 10000);
                     }
-
-                    if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
-                    otaPollingIntervalId = null;
-                    pollingForCheckResult = false;
-                    if (checkUpdateBtn) checkUpdateBtn.disabled = false; // Re-enable check button
-                } else if (data.status_code === OTA_STATUS_STATE.CHECKING_VERSION) {
-                    // Still checking, and data.is_update_available_info was false (or this block wouldn't be reached).
-                    // Continue polling.
-                    console.log('[DBG] pollUpdateStatus - Still CHECKING_VERSION, update not yet confirmed. Continuing poll.');
-                    // updateStatusTextEl is already being updated with "Checking..." or similar.
-                    // checkUpdateBtn remains disabled.
-                } 
-                // Implicitly, if none of the above, something unexpected happened or state is mid-transition.
-                // The current logic will just continue polling, which is safe.
-
-            } else { // Polling for update IN PROGRESS (not for check result)
-                console.log('[DBG] pollUpdateStatus - Inside polling for UPDATE IN PROGRESS block.');
-                if (data.status_code === OTA_STATUS_STATE.SUCCESS) {
-                    console.log('[DBG] pollUpdateStatus - Update SUCCESS (during update progress) condition MET.');
-                    console.log('Update successful (polled)!');
-                    if (updateStatusTextEl) updateStatusTextEl.textContent = data.status_message || 'Update successful! Device will reboot.';
-                    if (updateProgressBar) updateProgressBar.style.width = '100%';
-                    if (updateProgressContainer) updateProgressContainer.style.display = 'block'; 
-                    if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
-                    otaPollingIntervalId = null;
-                    // Buttons remain disabled as device reboots.
-                    alert('Firmware update successful! The device will now reboot with the new version. This page may become unresponsive.');
-                } else if (data.status_code >= OTA_STATUS_STATE.ERROR_WIFI) { // Any error state during update
-                    console.log('[DBG] pollUpdateStatus - Update ERROR (during update progress) condition MET.');
-                    console.error('Update failed (polled):', data.status_message);
-                    // updateStatusTextEl and updateErrorEl handled by general logic above.
-                    if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update failed.';
-                    if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
-                    otaPollingIntervalId = null;
-                    if (installUpdateBtn) installUpdateBtn.disabled = false; 
-                    if (checkUpdateBtn) checkUpdateBtn.disabled = false;
-                } else if (data.status_code === OTA_STATUS_STATE.IDLE && otaPollingIntervalId !== null) {
-                    console.log('[DBG] pollUpdateStatus - Update process became IDLE UNEXPECTEDLY (during update progress) condition MET.');
-                    // Update process became IDLE unexpectedly.
-                    console.warn("OTA process became IDLE unexpectedly during update progress polling.");
-                    if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update process interrupted.';
-                     if (!updateErrorEl.textContent) { 
-                        updateErrorEl.textContent = "Update process finished unexpectedly.";
-                    }
-                    if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
-                    otaPollingIntervalId = null;
-                    if (installUpdateBtn) installUpdateBtn.disabled = false;
-                    if (checkUpdateBtn) checkUpdateBtn.disabled = false;
-                } else {
-                    console.log('[DBG] pollUpdateStatus - Update IN PROGRESS (continuing poll for update progress).');
                 }
             }
+
+            // 2. Update WiFi Info
+            if (data.wifi) {
+                _updateNetworksListUI(data.wifi.networks);
+                const wifiStatusEl = document.getElementById('wifi-connection-status'); // Assume element exists
+                if (wifiStatusEl) {
+                    wifiStatusEl.textContent = data.wifi.is_connected ? `Connected to ${data.wifi.connected_ssid} (${data.wifi.ip_address})` : "Not Connected";
+                }
+            }
+
+            // 3. Update Device Config Info
+            if (data.device_config) {
+                _updateDeviceConfigUI(data.device_config);
+            }
+
+            // 4. Update Insights List
+            if (data.insights) {
+                _updateInsightsListUI(data.insights);
+            }
+
+            // 5. Update OTA Firmware Info & UI State
+            if (data.ota) {
+                updateOtaUI(data.ota, data.portal);
+            }
+
         })
         .catch(error => {
-            console.error('Error polling update status:', error);
-            if (updateErrorEl) updateErrorEl.textContent = 'Error fetching update status from device.';
-            if (otaPollingIntervalId) clearInterval(otaPollingIntervalId);
-            otaPollingIntervalId = null;
-            pollingForCheckResult = false;
-            // Re-enable buttons on communication error
-            if (checkUpdateBtn) checkUpdateBtn.disabled = false;
-            if (installUpdateBtn && !installUpdateBtn.disabled) { // Only if it was potentially active
-                 // No, keep it disabled unless an update was actually available before poll error.
-                 // Better to rely on next successful check to re-enable it.
+            console.error('Error polling /api/status:', error);
+            // Display a global error message, e.g., "Lost connection to device"
+            const actionInProgressEl = document.getElementById('action-in-progress-message');
+            if(actionInProgressEl) {
+                actionInProgressEl.textContent = 'Error fetching status from device. Check connection.';
+                actionInProgressEl.style.display = 'block';
             }
         });
 }
+
+// Helper function to update OTA UI based on status from /api/status
+function updateOtaUI(otaData, portalData) {
+    const currentVersionEl = document.getElementById('current-version');
+    const availableVersionEl = document.getElementById('available-version');
+    const releaseNotesEl = document.getElementById('release-notes');
+    const updateAvailableSection = document.getElementById('update-available-section');
+    const installUpdateBtn = document.getElementById('install-update-btn');
+    const updateStatusTextEl = document.getElementById('update-status-text');
+    const updateErrorEl = document.getElementById('update-error-message');
+    const checkUpdateBtn = document.getElementById('check-update-btn');
+    const updateProgressContainer = document.getElementById('update-progress-container');
+    const updateProgressBar = document.getElementById('update-progress-bar');
+
+    // New: Display portal's OTA action message first if present
+    let portalOtaMessageDisplayed = false;
+    if (portalData && portalData.portal_ota_action_message) {
+        if (updateStatusTextEl) updateStatusTextEl.textContent = portalData.portal_ota_action_message;
+        portalOtaMessageDisplayed = true;
+        // Disable buttons if portal is actively processing an OTA request
+        if (portalData.action_in_progress === 'CHECK_OTA_UPDATE' || portalData.action_in_progress === 'START_OTA_UPDATE') {
+            if (checkUpdateBtn) checkUpdateBtn.disabled = true;
+            if (installUpdateBtn) installUpdateBtn.disabled = true;
+        } else {
+            // If portal_ota_action_message indicates completion of portal dispatch, re-enable based on OtaManager status below
+            // This 'else' means portal's direct involvement is done, buttons will be governed by otaData
+        }
+    }
+
+    // Update displayed versions and notes - always try to update these from otaData
+    if (currentVersionEl) currentVersionEl.textContent = otaData.current_firmware_version || 'N/A';
+    if (availableVersionEl) availableVersionEl.textContent = otaData.update_available ? otaData.available_version : 'N/A';
+    if (releaseNotesEl) releaseNotesEl.textContent = otaData.update_available ? (otaData.release_notes || 'No release notes.') : '';
+
+    // Show/hide update available section and control install button based on otaData
+    if (updateAvailableSection) updateAvailableSection.style.display = otaData.update_available ? 'block' : 'none';
+    
+    // Enable/disable install button: only if an update is available AND portal is not busy with an OTA action AND OtaManager is not busy
+    if (installUpdateBtn) {
+        installUpdateBtn.disabled = !otaData.update_available || 
+                                  (portalData && (portalData.action_in_progress === 'START_OTA_UPDATE' || portalData.action_in_progress === 'CHECK_OTA_UPDATE')) ||
+                                  otaData.status_code === OTA_STATUS_STATE.DOWNLOADING || 
+                                  otaData.status_code === OTA_STATUS_STATE.WRITING;
+    }
+    
+    // Enable/disable check update button: only if portal is not busy with an OTA action AND OtaManager is not busy
+    if (checkUpdateBtn) {
+        checkUpdateBtn.disabled = (portalData && (portalData.action_in_progress === 'CHECK_OTA_UPDATE' || portalData.action_in_progress === 'START_OTA_UPDATE')) ||
+                                otaData.status_code === OTA_STATUS_STATE.CHECKING_VERSION || 
+                                otaData.status_code === OTA_STATUS_STATE.DOWNLOADING || 
+                                otaData.status_code === OTA_STATUS_STATE.WRITING;
+    }
+
+    // Update OtaManager status messages and progress bar, only if portal message wasn't primary
+    if (!portalOtaMessageDisplayed || (portalData && portalData.portal_ota_action_message && portalData.portal_ota_action_message.includes("Successfully dispatched"))) {
+        if (updateStatusTextEl) {
+            // If portal message indicates successful dispatch, prefer OtaManager's message if available
+            // otherwise, if no portal message, use OtaManager's message.
+            let displayMessage = otaData.status_message || 'Idle';
+            if (portalOtaMessageDisplayed && otaData.status_message && otaData.status_message !== "Idle") {
+                // Prepend a note that this is OtaManager status if portal also had a successful dispatch message
+                // updateStatusTextEl.textContent = "OtaManager: " + displayMessage;
+                updateStatusTextEl.textContent = displayMessage; // Keep it simple, just show OtaManager status
+            } else if (!portalOtaMessageDisplayed) {
+                 updateStatusTextEl.textContent = displayMessage;
+            }
+            // If portalOtaMessageDisplayed was true but it was NOT a "Successfully dispatched" message (e.g. "pending execution"),
+            // then the portal's message has already been set and we don't overwrite it here.
+        }
+    }
+    
+    if (updateErrorEl) {
+        updateErrorEl.textContent = otaData.error_message || '';
+    }
+
+    if (otaData.status_code === OTA_STATUS_STATE.DOWNLOADING || otaData.status_code === OTA_STATUS_STATE.WRITING) {
+        if (updateProgressContainer) updateProgressContainer.style.display = 'block';
+        if (updateProgressBar) updateProgressBar.style.width = `${otaData.progress || 0}%`;
+        // Buttons should already be disabled by the conditions above
+    } else {
+        // Hide progress bar unless successfully completed (then it might show 100% briefly)
+        if (otaData.status_code !== OTA_STATUS_STATE.SUCCESS && updateProgressContainer) {
+             // updateProgressContainer.style.display = 'none'; // Keep visible if there's a status message to show
+        }
+    }
+    
+    if (otaData.status_code === OTA_STATUS_STATE.SUCCESS) {
+        if (updateStatusTextEl) updateStatusTextEl.textContent = otaData.status_message || 'Update successful! Device will reboot.';
+        if (updateProgressBar) updateProgressBar.style.width = '100%';
+        if (updateProgressContainer) updateProgressContainer.style.display = 'block';
+        if (installUpdateBtn) installUpdateBtn.disabled = true;
+        if (checkUpdateBtn) checkUpdateBtn.disabled = true;
+    }
+}
+
+// Removed old pollUpdateStatus function as its logic is merged into pollApiStatus and updateOtaUI
+/*
+function pollUpdateStatus() {
+    const currentVersionEl = document.getElementById('current-version');
+// ... (old function content removed)
+}
+*/

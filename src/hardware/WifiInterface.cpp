@@ -279,3 +279,65 @@ void WiFiInterface::onWiFiEvent(WiFiEvent_t event) {
             break;
     }
 }
+
+// New method implementations for network scanning
+void WiFiInterface::scanNetworks() {
+    Serial.println("WiFiInterface: Starting WiFi scan...");
+    // WiFi.scanNetworks will return the number of networks found, or -1 for failure, -2 if scan is already in progress.
+    // Using a blocking scan here.
+    // The true parameter for show_hidden is often useful.
+    _lastScanResultCount = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true);
+    
+    if (_lastScanResultCount == WIFI_SCAN_FAILED) { // WIFI_SCAN_FAILED is typically -1
+        Serial.println("WiFiInterface: Scan failed to start or failed during execution.");
+    } else if (_lastScanResultCount == WIFI_SCAN_RUNNING) { // WIFI_SCAN_RUNNING is typically -2
+        Serial.println("WiFiInterface: Scan already in progress (should not happen with blocking scan, but good to check).");
+        // If this happens with a blocking scan, it's unexpected. You might not want to overwrite _lastScanResultCount.
+    } else if (_lastScanResultCount == 0) {
+        Serial.println("WiFiInterface: Scan complete. No networks found.");
+    } else {
+        Serial.printf("WiFiInterface: Scan complete. %d networks found.\n", _lastScanResultCount);
+    }
+}
+
+std::vector<WiFiInterface::NetworkInfo> WiFiInterface::getScannedNetworks() const {
+    std::vector<WiFiInterface::NetworkInfo> networks;
+    if (_lastScanResultCount <= 0) { // No networks found or scan hasn't run/failed
+        Serial.println("WiFiInterface::getScannedNetworks: No scan results to return.");
+        return networks; // Return empty vector
+    }
+
+    networks.reserve(_lastScanResultCount); // Pre-allocate memory for efficiency
+
+    for (int16_t i = 0; i < _lastScanResultCount; ++i) {
+        WiFiInterface::NetworkInfo net; // Explicitly scope NetworkInfo
+        net.ssid = WiFi.SSID(i);
+        net.rssi = WiFi.RSSI(i);
+        net.encryptionType = WiFi.encryptionType(i); // This is wifi_auth_mode_t
+        // Example of how you might get other info if added to struct:
+        // net.channel = WiFi.channel(i);
+        // net.isHidden = WiFi.isHidden(i); // Note: isHidden() might not be standard on all ESP WiFi libraries
+        networks.push_back(net);
+    }
+    // It's often good practice to delete the scan results to free memory if they are not needed again soon.
+    // However, if another part of the UI might refresh the list without an immediate rescan, you might not delete.
+    // WiFi.scanDelete(); 
+    // If you do delete, you should probably reset _lastScanResultCount:
+    // const_cast<WiFiInterface*>(this)->_lastScanResultCount = 0; // Reset if scan results are deleted.
+
+    return networks;
+}
+
+// Implementation for getCurrentSsid
+String WiFiInterface::getCurrentSsid() const {
+    if (_state == WiFiState::CONNECTED) {
+        return WiFi.SSID(); // WiFi.SSID() returns the SSID of the current network connection
+    }
+    return String(); // Return empty string if not connected
+}
+
+// Implementation for isConnected
+bool WiFiInterface::isConnected() const {
+    // Rely on the internal _state which is updated by WiFi events
+    return _state == WiFiState::CONNECTED;
+}
