@@ -737,7 +737,7 @@ void OtaManager::_updateTaskRunner(void* pvParameters) {
 
             Serial.printf("OtaManager: [_updateTaskRunner] Attempting Update.begin(totalSize: %d, command: U_FLASH, label: \\\"ota_1\\\")\\n", totalSize);
             // Explicitly target the "ota_1" partition label. U_FLASH (0) is for application partitions.
-            bool update_begin_success = Update.begin(totalSize, U_FLASH, -1, LOW, "ota_1"); 
+            bool update_begin_success = Update.begin(totalSize, U_FLASH);  
             Serial.printf("OtaManager: [_updateTaskRunner] Update.begin(\\\"ota_1\\\") result: %s\\n", update_begin_success ? "SUCCESS" : "FAILED");
             
             if (!update_begin_success) {
