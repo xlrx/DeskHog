@@ -29,75 +29,70 @@ static void mbedtls_debug_print(void *ctx, int level,
 #endif */
 
 #define OTA_TASK_STACK_SIZE 10240 // Stack size for OTA tasks (HTTPS + JSON can be heavy)
-#define OTA_TASK_PRIORITY 2     // Priority for OTA tasks
+#define OTA_TASK_PRIORITY 1     // Priority for OTA tasks - LOWERED FOR TESTING
 
 // Constructor
 OtaManager::OtaManager(const String& currentVersion, const String& repoOwner, const String& repoName)
     : _currentVersion(currentVersion),
       _repoOwner(repoOwner),
       _repoName(repoName),
+      _firmwareAssetName("firmware.bin"), // Default firmware asset name
       _checkTaskHandle(NULL),
-      _updateTaskHandle(NULL) { // Initialize task handles
-    heap_caps_malloc_extmem_enable(4096); // Prefer PSRAM for allocations > 4KB
+      _updateTaskHandle(NULL),
+      _timeSynced(false) { // Initialize timeSynced
+    heap_caps_malloc_extmem_enable(4096); 
     _currentStatus.status = UpdateStatus::State::IDLE;
     _currentStatus.message = "Idle";
     _currentStatus.progress = 0;
-    _lastCheckResult.currentVersion = _currentVersion; // Initialize last check result
+    _lastCheckResult.currentVersion = _currentVersion;
+
+    _dataMutex = xSemaphoreCreateMutex();
+    if (_dataMutex == NULL) {
+        Serial.println("OTA Error: Failed to create data mutex!");
+    }
 }
 
 // Static task runner for checking updates
 void OtaManager::_checkUpdateTaskRunner(void* pvParameters) {
     OtaManager* self = static_cast<OtaManager*>(pvParameters);
-    UpdateInfo resultInfo;
-    resultInfo.currentVersion = self->_currentVersion;
+    
+    Serial.println("OTA DBG: _checkUpdateTaskRunner - Entered (EXTREMELY MINIMAL - IMMEDIATE EXIT TEST).");
 
-    // Ensure time is synchronized before proceeding
-    if (!self->_ensureTimeSynced()) {
-        Serial.println("OTA Task Error: Time synchronization failed. Aborting update check task.");
-        // Status might have been CHECKING_VERSION, change to IDLE with error
-        self->_setUpdateStatus(UpdateStatus::State::IDLE, "Time sync failed", 0);
-        resultInfo.error = "Time sync failed";
-        self->_lastCheckResult = resultInfo; // Store the result with error
-        self->_checkTaskHandle = NULL;      // Clear the task handle
-        vTaskDelete(NULL);                // Task deletes itself
-        return;
-    }
+    // Immediately set status to something simple and clear handle
+    // Minimal mutex usage, just to update status and handle
+    xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
+    self->_currentStatus.status = UpdateStatus::State::IDLE;
+    self->_currentStatus.message = "OTA Check Task Ran (Minimal Exit Test)";
+    self->_currentStatus.progress = 100;
+    self->_checkTaskHandle = NULL; 
+    xSemaphoreGive(self->_dataMutex);
+    
+    Serial.printf("OTA Status: [%d] %s (%d%%)\n", (int)UpdateStatus::State::IDLE, "OTA Check Task Ran (Minimal Exit Test)", 100);
 
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("OTA Task Error: WiFi not connected at task start.");
-        self->_setUpdateStatus(UpdateStatus::State::ERROR_WIFI, "WiFi not connected", 0);
-        resultInfo.error = "WiFi not connected";
-    } else {
-        // Construct GitHub API URL
-        String apiUrl = "https://api.github.com/repos/";
-        apiUrl += self->_repoOwner;
-        apiUrl += "/";
-        apiUrl += self->_repoName;
-        apiUrl += "/releases/latest";
+    vTaskDelete(NULL); // Task deletes itself immediately
 
-        String jsonPayload = self->_performHttpsRequest(apiUrl.c_str(), self->_githubApiRootCa);
-        resultInfo = self->_parseGithubApiResponse(jsonPayload);
-    }
-
-    self->_lastCheckResult = resultInfo; // Store the result
-
-    // Update final status based on task outcome
-    if (!resultInfo.error.isEmpty()) {
-        self->_setUpdateStatus(UpdateStatus::State::IDLE, "Check failed: " + resultInfo.error, 0);
-    } else if (!resultInfo.updateAvailable) {
-        self->_setUpdateStatus(UpdateStatus::State::IDLE, "No update available", 0);
-    } else {
-        // If update is available, status remains CHECKING_VERSION to indicate readiness
-        // It will be cleared by beginUpdate or a subsequent check.
-        self->_setUpdateStatus(UpdateStatus::State::CHECKING_VERSION, "Update available: " + resultInfo.availableVersion, 0);
-    }
-
-    self->_checkTaskHandle = NULL; // Clear the task handle
-    vTaskDelete(NULL); // Task deletes itself
+    // ALL PREVIOUS LOGIC BYPASSED:
+    // UpdateInfo resultInfoLocal; 
+    // resultInfoLocal.currentVersion = self->_currentVersion;
+    // Serial.println("OTA DBG: _checkUpdateTaskRunner - Entered (BYPASSING _ensureTimeSynced, Simulating network/JSON work).");
+    // if (!self->_ensureTimeSynced()) { ... }
+    // Serial.println("OTA DBG: _checkUpdateTaskRunner - Simulating 3-second delay for HTTPS/JSON (NO TIME SYNC CALLED)...");
+    // vTaskDelay(pdMS_TO_TICKS(3000)); // Simulate work
+    // if (WiFi.status() != WL_CONNECTED) { ... } else { ... }
+    // xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
+    // self->_lastCheckResult = resultInfoLocal; 
+    // ... (status update logic based on resultInfoLocal) ...
+    // xSemaphoreGive(self->_dataMutex);
+    // Serial.printf("OTA Status: [%d] %s (%d%%)\n", (int)stateToLog, messageToLog.c_str(), progressToLog);
+    // self->_checkTaskHandle = NULL; 
+    // vTaskDelete(NULL); 
 }
 
 // Private helper to ensure time is synchronized via NTP
 bool OtaManager::_ensureTimeSynced() {
+    // Accessing _timeSynced, assuming it's only written by this function or constructor, 
+    // so direct read is okay if called sequentially within a task.
+    // If other tasks could modify _timeSynced, it would need protection.
     if (_timeSynced) {
         Serial.println("OTA Info: Time is already synchronized.");
         return true;
@@ -111,56 +106,72 @@ bool OtaManager::_ensureTimeSynced() {
     Serial.println("OTA Info: Configuring time from NTP server...");
     configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
     struct tm timeinfo;
-    if (!getLocalTime(&timeinfo, 10000)) { // Wait up to 10 seconds for time sync
+    if (!getLocalTime(&timeinfo, 10000)) { 
         Serial.println("OTA Error: Failed to obtain time from NTP server.");
-        _timeSynced = false;
+        // No need to set _timeSynced = false here, as it's already false.
         return false;
     }
     Serial.println("OTA Info: Time synchronized successfully.");
     Serial.print("Current time: ");
     Serial.println(asctime(&timeinfo));
-    _timeSynced = true;
+    _timeSynced = true; // Set only on success
     return true;
 }
 
 // Initiate non-blocking check for updates
 bool OtaManager::checkForUpdate() {
+    xSemaphoreTake(_dataMutex, portMAX_DELAY);
     if (_checkTaskHandle != NULL) {
+        xSemaphoreGive(_dataMutex);
         Serial.println("OTA Info: Update check already in progress.");
-        // Optionally, could update status to reflect it's already checking
-        // _setUpdateStatus(UpdateStatus::State::CHECKING_VERSION, "Check already in progress...", _currentStatus.progress);
-        return false; // Indicate task not launched because one is active
+        return false; 
     }
+    // Current status check is implicitly handled by _checkTaskHandle being NULL
+    xSemaphoreGive(_dataMutex);
+
 
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("OTA Error: WiFi not connected. Cannot start update check task.");
-        _setUpdateStatus(UpdateStatus::State::ERROR_WIFI, "WiFi not connected", 0);
-        _lastCheckResult.error = "WiFi not connected";
+        // Set status directly here as task won't run
+        _setUpdateStatus(UpdateStatus::State::ERROR_WIFI, "WiFi not connected for check", 0);
+        
+        xSemaphoreTake(_dataMutex, portMAX_DELAY);
+        _lastCheckResult = UpdateInfo();
+        _lastCheckResult.currentVersion = _currentVersion;
+        _lastCheckResult.error = "WiFi not connected for check";
         _lastCheckResult.updateAvailable = false;
-        // Quickly transition to IDLE if WiFi is off, so UI doesn't get stuck on "Checking..."
-        _setUpdateStatus(UpdateStatus::State::IDLE, "Check failed: WiFi off", 0);
+        xSemaphoreGive(_dataMutex);
+        
+        // Transition to IDLE after setting error, so UI doesn't get stuck on "Checking..."
+        // _setUpdateStatus(UpdateStatus::State::IDLE, "Check failed: WiFi off", 0); // _setUpdateStatus logs
         return false;
     }
 
+    // Set status before creating task
     _setUpdateStatus(UpdateStatus::State::CHECKING_VERSION, "Checking for updates...", 0);
-    // Clear previous error on a new check attempt that starts successfully
-    _lastCheckResult = UpdateInfo();
+    
+    xSemaphoreTake(_dataMutex, portMAX_DELAY);
+    _lastCheckResult = UpdateInfo(); // Clear previous results
     _lastCheckResult.currentVersion = _currentVersion;
+    xSemaphoreGive(_dataMutex);
 
     BaseType_t taskCreated = xTaskCreatePinnedToCore(
-        _checkUpdateTaskRunner,    // Function to implement the task
-        "OtaCheckTask",          // Name of the task
-        OTA_TASK_STACK_SIZE,     // Stack size in words
-        this,                    // Task input parameter (OtaManager instance)
-        OTA_TASK_PRIORITY,       // Priority of the task
-        &_checkTaskHandle,       // Task handle
-        APP_CPU_NUM              // Pin to application core (core 1 for ESP32)
+        _checkUpdateTaskRunner,    
+        "OtaCheckTask",          
+        OTA_TASK_STACK_SIZE,     
+        this,                    
+        OTA_TASK_PRIORITY,       
+        &_checkTaskHandle,       
+        APP_CPU_NUM              
     );
 
     if (taskCreated != pdPASS) {
         Serial.println("OTA Error: Failed to create update check task.");
         _setUpdateStatus(UpdateStatus::State::IDLE, "Failed to start check task", 0);
-        _checkTaskHandle = NULL;
+        // Ensure _checkTaskHandle is NULL if creation failed (though it should be assigned by xTaskCreate)
+        xSemaphoreTake(_dataMutex, portMAX_DELAY);
+        _checkTaskHandle = NULL; 
+        xSemaphoreGive(_dataMutex);
         return false;
     }
 
@@ -172,144 +183,154 @@ bool OtaManager::checkForUpdate() {
 String OtaManager::_performHttpsRequest(const char* url, const char* rootCa) {
     WiFiClientSecure client;
     HTTPClient https;
+    String payload = ""; // Initialize payload
     
     Serial.printf("OTA: Connecting to %s\n", url);
     client.setCACert(rootCa);
-    client.setTimeout(10000); // 10 second timeout
+    client.setTimeout(10000); 
 
-    // Enable automatic redirect following
-    https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); // Or HTTPC_FORCE_FOLLOW_REDIRECTS or true for older cores
+    https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
     if (https.begin(client, url)) {
-        https.addHeader("User-Agent", "ESP32-OTA-Client"); // GitHub requires User-Agent
+        https.addHeader("User-Agent", "ESP32-OTA-Client"); 
         int httpCode = https.GET();
 
         if (httpCode > 0) {
             Serial.printf("OTA: HTTP GET successful, code: %d\n", httpCode);
             if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
-                String payload = https.getString();
-                https.end();
-                return payload;
+                payload = https.getString();
             } else {
                  Serial.printf("OTA Error: HTTP GET failed, code: %d\n", httpCode);
-                // Include HTTP code in error message if possible
-                 _setUpdateStatus(UpdateStatus::State::ERROR_HTTP_CHECK, "HTTP Error: " + String(httpCode), 0);
+                 // _setUpdateStatus is called by the task runner based on error in UpdateInfo
             }
         } else {
             Serial.printf("OTA Error: HTTP GET failed, error: %s\n", https.errorToString(httpCode).c_str());
-            _setUpdateStatus(UpdateStatus::State::ERROR_HTTP_CHECK, "Connection failed", 0);
+            // _setUpdateStatus called by task runner
         }
-        https.end();
+        https.end(); // Ensure end() is called if begin() was successful
     } else {
         Serial.printf("OTA Error: Unable to connect to %s\n", url);
-         _setUpdateStatus(UpdateStatus::State::ERROR_HTTP_CHECK, "Connection failed", 0);
+        // _setUpdateStatus called by task runner
     }
 
-    return ""; // Return empty string on error
+    return payload; 
 }
 
 // Helper function to parse GitHub API response
 UpdateInfo OtaManager::_parseGithubApiResponse(const String& jsonPayload) {
-    UpdateInfo info;
-    info.currentVersion = _currentVersion;
+    UpdateInfo info; // Local copy
+    xSemaphoreTake(_dataMutex, portMAX_DELAY);
+    info.currentVersion = _currentVersion; // Get current version under mutex
+    xSemaphoreGive(_dataMutex);
+
 
     if (jsonPayload.isEmpty()) {
-        info.error = _currentStatus.message; // Use status message set by _performHttpsRequest
+        // If payload is empty, an error likely occurred in _performHttpsRequest.
+        // The status message from that error will be more informative.
+        // We rely on the task runner to have called _setUpdateStatus for HTTP errors.
+        // So, here, just set the error field in info.
+        info.error = "HTTP request failed or returned empty payload"; 
+        // _setUpdateStatus(UpdateStatus::State::ERROR_HTTP_CHECK, info.error, 0); // Avoid calling from here, let task runner handle final status.
         return info;
     }
 
-    // Increased JSON document size - GitHub API response can be large
-    // Adjust based on actual response size observed during testing
-    DynamicJsonDocument doc(8192);
+    DynamicJsonDocument doc(8192); 
     DeserializationError error = deserializeJson(doc, jsonPayload);
 
     if (error) {
         Serial.printf("OTA Error: deserializeJson() failed: %s\n", error.c_str());
         info.error = "JSON parsing failed";
-        _setUpdateStatus(UpdateStatus::State::ERROR_JSON, info.error, 0);
+        // _setUpdateStatus(UpdateStatus::State::ERROR_JSON, info.error, 0); // Let task runner set final status.
         return info;
     }
 
-    // Extract required fields
     const char* tagName = doc["tag_name"];
     const char* releaseNotes = doc["body"];
     JsonArray assets = doc["assets"].as<JsonArray>();
 
     if (!tagName) {
         info.error = "Tag name not found in response";
-        _setUpdateStatus(UpdateStatus::State::ERROR_JSON, info.error, 0);
+        // _setUpdateStatus(UpdateStatus::State::ERROR_JSON, info.error, 0);
         return info;
     }
 
     info.availableVersion = String(tagName);
     info.releaseNotes = releaseNotes ? String(releaseNotes) : "";
 
-    // Find the correct asset
     String downloadUrl = "";
+    // Access _firmwareAssetName safely under mutex if it could change. Assuming it's fixed after construction.
+    // String firmwareAssetNameToFind = _firmwareAssetName; 
     for (JsonObject asset : assets) {
         const char* assetName = asset["name"];
-        if (assetName && strcmp(assetName, _firmwareAssetName) == 0) {
-            const char* url = asset["browser_download_url"];
-            if (url) {
-                downloadUrl = String(url);
+        if (assetName && strcmp(assetName, _firmwareAssetName.c_str()) == 0) {
+            const char* url_val = asset["browser_download_url"]; // Renamed to avoid conflict with outer 'url'
+            if (url_val) {
+                downloadUrl = String(url_val);
                 break;
             }
         }
     }
 
     if (downloadUrl.isEmpty()) {
-        info.error = "Firmware asset '" + String(_firmwareAssetName) + "' not found in release";
-        _setUpdateStatus(UpdateStatus::State::ERROR_NO_ASSET, info.error, 0);
+        info.error = "Firmware asset '" + _firmwareAssetName + "' not found in release";
+        // _setUpdateStatus(UpdateStatus::State::ERROR_NO_ASSET, info.error, 0);
         return info;
     }
 
     info.downloadUrl = downloadUrl;
 
-    // Compare versions (simple string comparison, assumes 'vX.Y.Z' format or similar)
-    // TODO: Implement more robust semantic version comparison if needed
     if (info.availableVersion != info.currentVersion) {
         Serial.printf("OTA: Update available. Current: %s, Available: %s\n", info.currentVersion.c_str(), info.availableVersion.c_str());
         info.updateAvailable = true;
     } else {
         Serial.println("OTA: No update available (versions match)." );
         info.updateAvailable = false;
-         _setUpdateStatus(UpdateStatus::State::IDLE, "No update available", 0);
+        // If no update, the task runner will set status to IDLE.
+        // _setUpdateStatus(UpdateStatus::State::IDLE, "No update available", 0); 
     }
 
     return info;
 }
 
-// Begin update (placeholder implementation)
-bool OtaManager::beginUpdate(const String& downloadUrl) {
+// Begin update
+bool OtaManager::beginUpdate(const String& downloadUrl_param) {
     Serial.println("OTA DBG: beginUpdate - Entered function.");
 
+    xSemaphoreTake(_dataMutex, portMAX_DELAY);
     if (_checkTaskHandle != NULL){
+        xSemaphoreGive(_dataMutex);
         Serial.println("OTA Error: Cannot start update, a check task is still running.");
-        _setUpdateStatus(UpdateStatus::State::IDLE, "Previous check task active",0);
+        _setUpdateStatus(UpdateStatus::State::IDLE, "Previous check task active",0); // Ensure status is IDLE if blocked
         return false;
     }
     if (_updateTaskHandle != NULL) {
+        xSemaphoreGive(_dataMutex);
         Serial.println("OTA DBG: beginUpdate - Update already in progress (_updateTaskHandle not NULL).");
-        // Optionally, could reflect this in status, but IDLE or current status is fine.
-        // _setUpdateStatus(UpdateStatus::State::DOWNLOADING, "Update already in progress", _currentStatus.progress);
-        return false; // Update task already running
+        return false; 
     }
 
-    // If an update check just completed and found an update, _currentStatus.status would be CHECKING_VERSION
-    // We allow starting an update if IDLE or if a check has just confirmed an update is available.
-    if (_currentStatus.status != UpdateStatus::State::IDLE && _currentStatus.status != UpdateStatus::State::CHECKING_VERSION) {
-        Serial.printf("OTA DBG: beginUpdate - System not in a state to start update (current state: %d).\n", (int)_currentStatus.status);
+    UpdateStatus::State current_state_local = _currentStatus.status;
+    String last_check_download_url = _lastCheckResult.downloadUrl;
+    bool last_check_update_available = _lastCheckResult.updateAvailable;
+    xSemaphoreGive(_dataMutex);
+
+
+    if (current_state_local != UpdateStatus::State::IDLE && current_state_local != UpdateStatus::State::CHECKING_VERSION) {
+        Serial.printf("OTA DBG: beginUpdate - System not in a state to start update (current state: %d).\n", (int)current_state_local);
+        // If in an error state from a previous check, allow starting if user insists.
+        // But if it's DOWNLOADING/WRITING etc., then disallow.
+        // For now, this check is fine.
         return false;
     }
 
-    String urlToUse = downloadUrl;
+    String urlToUse = downloadUrl_param;
     if (urlToUse.isEmpty()) {
-        if (_lastCheckResult.updateAvailable && !_lastCheckResult.downloadUrl.isEmpty()) {
-            urlToUse = _lastCheckResult.downloadUrl;
+        if (last_check_update_available && !last_check_download_url.isEmpty()) {
+            urlToUse = last_check_download_url;
             Serial.println("OTA DBG: beginUpdate - Using download URL from last successful check.");
         } else {
             Serial.println("OTA Error: No download URL provided and no valid URL from last check.");
-            _setUpdateStatus(UpdateStatus::State::IDLE, "Missing download URL", 0);
+            _setUpdateStatus(UpdateStatus::State::IDLE, "Missing download URL for update", 0);
             return false;
         }
     }
@@ -317,36 +338,43 @@ bool OtaManager::beginUpdate(const String& downloadUrl) {
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("OTA DBG: beginUpdate - WiFi not connected. Cannot start update task.");
         _setUpdateStatus(UpdateStatus::State::ERROR_WIFI, "WiFi not connected for update", 0);
-        _setUpdateStatus(UpdateStatus::State::IDLE, "Update failed: WiFi off", 0);
+        // _setUpdateStatus(UpdateStatus::State::IDLE, "Update failed: WiFi off", 0); // Let error state persist
         return false;
     }
+    
+    // Store the URL to be used by the task, under mutex
+    xSemaphoreTake(_dataMutex, portMAX_DELAY);
+    _lastCheckResult.downloadUrl = urlToUse; // Ensure the task uses this specific URL
+    xSemaphoreGive(_dataMutex);
+
 
     Serial.println("OTA DBG: beginUpdate - About to call _ensureTimeSynced().");
     if (!_ensureTimeSynced()) {
         Serial.println("OTA DBG: beginUpdate - Time synchronization failed. Aborting update.");
-        _setUpdateStatus(UpdateStatus::State::IDLE, "Time sync failed for update", 0);
+        _setUpdateStatus(UpdateStatus::State::IDLE, "Time sync failed for update", 0); // Revert to IDLE
         return false;
     }
     Serial.println("OTA DBG: beginUpdate - Time synchronized successfully.");
 
     Serial.printf("OTA DBG: beginUpdate - Preparing to start update from %s\n", urlToUse.c_str());
     _setUpdateStatus(UpdateStatus::State::DOWNLOADING, "Update process initiated...", 0);
-
-    Serial.println("OTA DBG: beginUpdate - About to call xTaskCreatePinnedToCore for _updateTaskRunner.");
+    
     BaseType_t taskCreated = xTaskCreatePinnedToCore(
-        _updateTaskRunner,       // Function to implement the task
-        "OtaUpdateTask",         // Name of the task
-        OTA_TASK_STACK_SIZE,     // Stack size in words (ensure this is sufficient for HTTPS + Update lib)
-        this,                    // Task input parameter (OtaManager instance)
-        OTA_TASK_PRIORITY,       // Priority of the task
-        &_updateTaskHandle,      // Task handle
-        APP_CPU_NUM              // Pin to application core (core 1 for ESP32)
+        _updateTaskRunner,       
+        "OtaUpdateTask",         
+        OTA_TASK_STACK_SIZE,     
+        this,                    
+        OTA_TASK_PRIORITY,       
+        &_updateTaskHandle,      
+        APP_CPU_NUM              
     );
 
     if (taskCreated != pdPASS) {
         Serial.printf("OTA DBG: beginUpdate - Failed to create update task. pdPASS = %d, taskCreated = %d\n", pdPASS, taskCreated);
         _setUpdateStatus(UpdateStatus::State::IDLE, "Failed to start update task", 0);
+        xSemaphoreTake(_dataMutex, portMAX_DELAY);
         _updateTaskHandle = NULL;
+        xSemaphoreGive(_dataMutex);
         return false;
     }
 
@@ -356,14 +384,20 @@ bool OtaManager::beginUpdate(const String& downloadUrl) {
 
 // Get status
 UpdateStatus OtaManager::getStatus() {
-    // In a real async implementation, this would return the latest status
-    // updated by the background task.
-    return _currentStatus;
+    UpdateStatus tempStatus;
+    xSemaphoreTake(_dataMutex, portMAX_DELAY);
+    tempStatus = _currentStatus; 
+    xSemaphoreGive(_dataMutex);
+    return tempStatus;
 }
 
 // Get last check result
 UpdateInfo OtaManager::getLastCheckResult() {
-    return _lastCheckResult;
+    UpdateInfo tempInfo;
+    xSemaphoreTake(_dataMutex, portMAX_DELAY);
+    tempInfo = _lastCheckResult; 
+    xSemaphoreGive(_dataMutex);
+    return tempInfo;
 }
 
 // Process loop (can be removed if tasks handle all async work)
@@ -372,33 +406,61 @@ void OtaManager::process() {
 }
 
 // Private helper to set status and log
-// Make sure this is declared in the header as well
 void OtaManager::_setUpdateStatus(UpdateStatus::State state, const String& message, int progress) {
+    xSemaphoreTake(_dataMutex, portMAX_DELAY);
     _currentStatus.status = state;
     _currentStatus.message = message;
-    if (progress >= 0) {
+    if (progress >= 0) { // Allow progress to be set to -1 to indicate no change
         _currentStatus.progress = progress;
     }
-    Serial.printf("OTA Status: [%d] %s (%d%%)\n", (int)state, message.c_str(), _currentStatus.progress);
+    // Capture values for logging before releasing mutex
+    UpdateStatus::State stateToLog = _currentStatus.status;
+    String messageToLog = _currentStatus.message;       
+    int progressToLog = _currentStatus.progress;
+    xSemaphoreGive(_dataMutex);
+
+    Serial.printf("OTA Status: [%d] %s (%d%%)\n", (int)stateToLog, messageToLog.c_str(), progressToLog);
 }
 
 // Static task runner for performing the update
 void OtaManager::_updateTaskRunner(void* pvParameters) {
     OtaManager* self = static_cast<OtaManager*>(pvParameters);
-    String downloadUrl = self->_lastCheckResult.downloadUrl; // Assuming this is set by a prior check
+    String downloadUrl_local; 
 
-    if (downloadUrl.isEmpty()) {
+    xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
+    downloadUrl_local = self->_lastCheckResult.downloadUrl; 
+    xSemaphoreGive(self->_dataMutex);
+
+    if (downloadUrl_local.isEmpty()) {
         Serial.println("OTA Task Error: Download URL is empty in _updateTaskRunner.");
         self->_setUpdateStatus(UpdateStatus::State::ERROR_HTTP_DOWNLOAD, "Internal error: Missing URL for update task", 0);
+        xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
         self->_updateTaskHandle = NULL;
+        xSemaphoreGive(self->_dataMutex);
         vTaskDelete(NULL);
         return;
     }
 
+    // Ensure time is synchronized (already done in beginUpdate, but good for robustness if task is somehow restarted)
+    // Serial.println("OTA Task: Ensuring time is synchronized for update task...");
+    // if (!self->_ensureTimeSynced()) {
+    //     Serial.println("OTA Task Error: Time synchronization failed in update task. Aborting.");
+    //     self->_setUpdateStatus(UpdateStatus::State::IDLE, "Time sync failed in update task", 0);
+    //     xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
+    //     self->_updateTaskHandle = NULL;      
+    //     xSemaphoreGive(self->_dataMutex);
+    //     vTaskDelete(NULL);                
+    //     return;
+    // }
+    // Serial.println("OTA Task: Time synchronized for update task.");
+
+
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("OTA Task Error: WiFi disconnected before download could start.");
-        self->_setUpdateStatus(UpdateStatus::State::ERROR_WIFI, "WiFi disconnected", 0);
+        self->_setUpdateStatus(UpdateStatus::State::ERROR_WIFI, "WiFi disconnected during update", 0);
+        xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
         self->_updateTaskHandle = NULL;
+        xSemaphoreGive(self->_dataMutex);
         vTaskDelete(NULL);
         return;
     }
@@ -407,18 +469,20 @@ void OtaManager::_updateTaskRunner(void* pvParameters) {
 
     WiFiClientSecure client;
     HTTPClient https;
-    client.setCACert(self->_githubApiRootCa); // Use the same root CA
-    client.setTimeout(15000); // Increased timeout for firmware download
+    // Access _githubApiRootCa safely. Assuming it's const and fixed after construction.
+    client.setCACert(self->_githubApiRootCa); 
+    client.setTimeout(15000); 
 
-    // Enable automatic redirect following
-    https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); // Or HTTPC_FORCE_FOLLOW_REDIRECTS or true for older cores
+    https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
-    Serial.printf("OTA Task: Connecting to %s for firmware download\n", downloadUrl.c_str());
+    Serial.printf("OTA Task: Connecting to %s for firmware download\n", downloadUrl_local.c_str());
 
-    if (!https.begin(client, downloadUrl)) {
-        Serial.printf("OTA Task Error: Unable to connect to %s\n", downloadUrl.c_str());
+    if (!https.begin(client, downloadUrl_local.c_str())) { 
+        Serial.printf("OTA Task Error: Unable to connect to %s\n", downloadUrl_local.c_str());
         self->_setUpdateStatus(UpdateStatus::State::ERROR_HTTP_DOWNLOAD, "Connection failed for download", 0);
+        xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
         self->_updateTaskHandle = NULL;
+        xSemaphoreGive(self->_dataMutex);
         vTaskDelete(NULL);
         return;
     }
@@ -427,12 +491,14 @@ void OtaManager::_updateTaskRunner(void* pvParameters) {
     int httpCode = https.GET();
 
     if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
-        int totalLength = https.getSize(); // Total size of the firmware
+        int totalLength = https.getSize(); 
         if (totalLength <= 0) {
             Serial.println("OTA Task Error: Content length header missing or invalid.");
             self->_setUpdateStatus(UpdateStatus::State::ERROR_HTTP_DOWNLOAD, "Invalid content length", 0);
             https.end();
+            xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
             self->_updateTaskHandle = NULL;
+            xSemaphoreGive(self->_dataMutex);
             vTaskDelete(NULL);
             return;
         }
@@ -443,7 +509,9 @@ void OtaManager::_updateTaskRunner(void* pvParameters) {
             Serial.printf("OTA Task Error: Not enough space to begin OTA. Error: %u\n", Update.getError());
             self->_setUpdateStatus(UpdateStatus::State::ERROR_NO_SPACE, "Not enough space: " + String(Update.getError()), 0);
             https.end();
+            xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
             self->_updateTaskHandle = NULL;
+            xSemaphoreGive(self->_dataMutex);
             vTaskDelete(NULL);
             return;
         }
@@ -461,29 +529,31 @@ void OtaManager::_updateTaskRunner(void* pvParameters) {
                     Serial.printf("OTA Task Error: Update.write failed. Error: %u\n", Update.getError());
                     self->_setUpdateStatus(UpdateStatus::State::ERROR_UPDATE_WRITE, "Write error: " + String(Update.getError()), (written * 100) / totalLength);
                     https.end();
-                    Update.abort(); // Abort the update
+                    Update.abort(); 
+                    xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
                     self->_updateTaskHandle = NULL;
+                    xSemaphoreGive(self->_dataMutex);
                     vTaskDelete(NULL);
                     return;
                 }
                 written += len;
                 int progress = (written * 100) / totalLength;
-                // Update progress not too frequently to avoid flooding logs/slowing down
+                
                 if (millis() - lastProgressUpdate > 1000 || progress == 100) { 
                     self->_setUpdateStatus(UpdateStatus::State::WRITING, "Flashing firmware...", progress);
                     lastProgressUpdate = millis();
                 }
-            } else if(len < 0) { // stream error
+            } else if(len < 0) { 
                  Serial.println("OTA Task Error: Stream read error during download.");
                  self->_setUpdateStatus(UpdateStatus::State::ERROR_HTTP_DOWNLOAD, "Stream read error", (written * 100) / totalLength);
                  https.end();
                  Update.abort();
+                 xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
                  self->_updateTaskHandle = NULL;
+                 xSemaphoreGive(self->_dataMutex);
                  vTaskDelete(NULL);
                  return;
             }
-            // Add a small delay to allow other tasks to run, esp. if stream is slow
-            // vTaskDelay(pdMS_TO_TICKS(1)); // Commented out: Update.write is blocking; stream->readBytes has internal timeouts
         }
 
         if (written != totalLength) {
@@ -491,19 +561,21 @@ void OtaManager::_updateTaskRunner(void* pvParameters) {
             self->_setUpdateStatus(UpdateStatus::State::ERROR_HTTP_DOWNLOAD, "Download incomplete", (written * 100) / totalLength);
             https.end();
             Update.abort();
+            xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
             self->_updateTaskHandle = NULL;
+            xSemaphoreGive(self->_dataMutex);
             vTaskDelete(NULL);
             return;
         }
 
         self->_setUpdateStatus(UpdateStatus::State::WRITING, "Finalizing update...", 100);
-        if (!Update.end(true)) { // true to set the boot partition to the new one
+        if (!Update.end(true)) { 
             Serial.printf("OTA Task Error: Update.end failed. Error: %u\n", Update.getError());
             self->_setUpdateStatus(UpdateStatus::State::ERROR_UPDATE_END, "Commit error: " + String(Update.getError()), 100);
         } else {
             Serial.println("OTA Task: Update successful! Rebooting...");
             self->_setUpdateStatus(UpdateStatus::State::SUCCESS, "Update complete! Rebooting...", 100);
-            ESP.restart(); // Reboot ESP
+            ESP.restart(); 
         }
 
     } else {
@@ -512,9 +584,9 @@ void OtaManager::_updateTaskRunner(void* pvParameters) {
     }
 
     https.end();
-    self->_updateTaskHandle = NULL; // Clear the task handle
-    vTaskDelete(NULL); // Task deletes itself
+    xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
+    self->_updateTaskHandle = NULL; 
+    xSemaphoreGive(self->_dataMutex);
+    vTaskDelete(NULL); 
 }
 
-// --- TODO: Implement these ---
-// void OtaManager::_performUpdate(String url) { ... } // The function for the background task 
