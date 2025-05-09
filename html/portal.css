@@ -149,7 +149,7 @@ footer {
     margin: 20px 0;
 }
 .progress {
-    height: 4px;
+    height: 6px;
     background-color: #e9ecef;
     border-radius: 2px;
     margin: 20px 0;
@@ -157,7 +157,7 @@ footer {
 }
 .progress-bar {
     height: 100%;
-    background-color: #0066cc;
+    background-color: #cc7000;
     width: 0%;
     transition: width 10s linear;
 }
