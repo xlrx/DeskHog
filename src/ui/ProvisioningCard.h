@@ -180,4 +180,5 @@ private:
     lv_obj_t* _ipLabel;           ///< IP address text
     lv_obj_t* _signalLabel;       ///< Signal strength text
     lv_obj_t* _versionLabel;      ///< Firmware version text
+    lv_obj_t* _topLeftVersionLabel; ///< Firmware version text (on card top-left)
 };

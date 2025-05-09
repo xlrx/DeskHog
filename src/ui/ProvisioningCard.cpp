@@ -4,7 +4,8 @@
 ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterface, uint16_t width, uint16_t height)
     : _parent(parent), _wifiInterface(wifiInterface), _width(width), _height(height),
     _card(nullptr), _qrScreen(nullptr), _statusScreen(nullptr),
-    _qrCode(nullptr), _ssidLabel(nullptr), _statusLabel(nullptr), _ipLabel(nullptr), _signalLabel(nullptr), _versionLabel(nullptr) {
+    _qrCode(nullptr), _ssidLabel(nullptr), _statusLabel(nullptr), _ipLabel(nullptr), _signalLabel(nullptr), _versionLabel(nullptr),
+    _topLeftVersionLabel(nullptr) {
     
     createCard();
     createQRScreen();
@@ -39,6 +40,14 @@ void ProvisioningCard::createCard() {
     // Position screens at 0,0 relative to card
     lv_obj_set_pos(_qrScreen, 0, 0);
     lv_obj_set_pos(_statusScreen, 0, 0);
+
+    // Create and configure the top-left version label
+    _topLeftVersionLabel = lv_label_create(_card);
+    lv_obj_set_style_text_font(_topLeftVersionLabel, Style::labelFont(), 0);
+    lv_obj_set_style_text_color(_topLeftVersionLabel, Style::labelColor(), 0);
+    lv_label_set_text(_topLeftVersionLabel, CURRENT_FIRMWARE_VERSION);
+    lv_obj_align(_topLeftVersionLabel, LV_ALIGN_TOP_LEFT, 5, 5); // 5px padding from top-left
+    lv_obj_move_foreground(_topLeftVersionLabel); // Ensure it's on top
 }
 
 void ProvisioningCard::updateConnectionStatus(const String& status) {
