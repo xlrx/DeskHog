@@ -304,8 +304,32 @@ void CaptivePortal::handleDeleteInsight(AsyncWebServerRequest *request) {
 }
 
 void CaptivePortal::handleCaptivePortal(AsyncWebServerRequest *request) {
-    // Redirect to the root page, which is the setup UI
-    request->redirect("/");
+    if (_wifiInterface.isConnected()) { // Check if ESP32 STA is connected to an upstream WiFi
+        String url = request->url();
+        Serial.printf("CaptivePortal: WiFi connected, handling OS detection URL: %s\n", url.c_str());
+
+        if (url.indexOf("generate_204") != -1) {
+            request->send(204); // HTTP 204 No Content for Android/Chrome detection
+        } else if (url.indexOf("hotspot-detect.html") != -1) {
+            // Apple expects a page containing "Success"
+            request->send(200, "text/html", "<!DOCTYPE HTML><HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>");
+        } else if (url.indexOf("connecttest.txt") != -1) {
+            // Microsoft NCSI connecttest.txt
+            request->send(200, "text/plain", "Microsoft Connect Test");
+        } else if (url.indexOf("ncsi.txt") != -1) {
+            // Microsoft NCSI ncsi.txt - often expects specific content or just a 200/204
+            request->send(200, "text/plain", "Microsoft NCSI"); // Or send(204)
+        } else {
+            // For other unhandled but common captive portal detection URLs (like fwlink, mobile/status.php)
+            // a generic success response might work.
+            Serial.printf("CaptivePortal: Unhandled OS detection URL while WiFi connected: %s. Sending generic 204.\n", url.c_str());
+            request->send(204); 
+        }
+    } else {
+        // WiFi STA not connected, ESP32 is in 'portal setup' mode. Redirect to the portal UI.
+        Serial.printf("CaptivePortal: WiFi not connected, redirecting OS detection URL %s to / (portal UI)\n", request->url().c_str());
+        request->redirect("/");
+    }
 }
 
 void CaptivePortal::handle404(AsyncWebServerRequest *request) {

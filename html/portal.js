@@ -1,5 +1,5 @@
 function showScreen(screenId) {
-    const screens = ['config-screen', 'success-screen'];
+    const screens = ['config-screen'];
     screens.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
@@ -8,16 +8,7 @@ function showScreen(screenId) {
     if (screenToShow) screenToShow.classList.remove('hidden');
     
     let title = "DeskHog Configuration";
-    if (screenId === 'success-screen') {
-        title = "Configuration Saved";
-        startCountdown();
-    }
     document.getElementById('page-title').textContent = title;
-    
-    if (screenId === 'success-screen') {
-        startCountdown();
-        document.getElementById('progress-bar').style.width = '100%';
-    }
 }
 
 // Handle WiFi form submission
@@ -162,25 +153,23 @@ function addInsight() {
     })
     .then(response => response.json())
     .then(data => {
-        if (data && data.status === 'queued') { // Check for data and data.status, and expect 'queued' for success
+        if (data && data.status === 'queued') {
             console.log("Add insight action successfully queued.", data.message);
-            form.reset(); // Reset form on successful queueing
+            form.reset();
             
             if (globalActionStatusEl) {
-                globalActionStatusEl.textContent = data.message || "Insight submission initiated. List will update shortly."; // Use message from server if available
-                globalActionStatusEl.className = 'status-message info'; // Style as info
+                globalActionStatusEl.textContent = data.message || "Insight submission initiated. List will update shortly.";
+                globalActionStatusEl.className = 'status-message info';
                 globalActionStatusEl.style.display = 'block';
                 setTimeout(() => {
-                    // Clear only if the message is still the one we set
                     if (globalActionStatusEl.textContent === (data.message || "Insight submission initiated. List will update shortly.")) {
                         globalActionStatusEl.style.display = 'none';
                         globalActionStatusEl.textContent = '';
                         globalActionStatusEl.className = 'status-message';
                     }
-                }, 5000); // Hide after 5 seconds
+                }, 5000);
             }
         } else {
-            // Handle actual initiation errors (e.g., queue_full, or unexpected response format)
             const errorMessage = (data && data.message) ? data.message : "Failed to initiate save insight due to an unexpected server response.";
             console.error("Failed to initiate save insight:", errorMessage);
             if (globalActionStatusEl) {
@@ -193,7 +182,7 @@ function addInsight() {
                          globalActionStatusEl.textContent = '';
                          globalActionStatusEl.className = 'status-message';
                     }
-                }, 7000); // Hide after 7 seconds
+                }, 7000);
             }
         }
     })
@@ -209,7 +198,7 @@ function addInsight() {
                     globalActionStatusEl.textContent = '';
                     globalActionStatusEl.className = 'status-message';
                 }
-            }, 7000); // Hide after 7 seconds
+            }, 7000);
         }
     });
     
@@ -280,7 +269,7 @@ function deleteInsight(id) {
 }
 
 // Load insights list - UI update part will be in pollApiStatus
-function _updateInsightsListUI(insights) { // Renamed to indicate it's a UI updater
+function _updateInsightsListUI(insights) {
     const container = document.getElementById('insights-list');
     container.innerHTML = '';
     
@@ -305,7 +294,7 @@ function _updateInsightsListUI(insights) { // Renamed to indicate it's a UI upda
 }
 
 // Refresh network list - UI update part will be in pollApiStatus
-function _updateNetworksListUI(networks) { // Renamed
+function _updateNetworksListUI(networks) {
     const select = document.getElementById('ssid');
     const currentVal = select.value;
     select.innerHTML = '<option value="">Select a network</option>';
@@ -340,7 +329,6 @@ function requestScanNetworks() {
         .then(data => {
             if (data.status === 'initiated') {
                 console.log("WiFi scan initiated.");
-                // Optionally show "Scanning..." text near the dropdown
                 document.getElementById('ssid').innerHTML = '<option>Scanning...</option>';
             } else {
                 console.error("Failed to initiate WiFi scan: ", data.message);
@@ -354,28 +342,24 @@ function requestScanNetworks() {
 }
 
 // Main function to poll /api/status and update UI
-let lastProcessedAction = null; // To track last action for one-time messages like success/error screens
+let lastProcessedAction = null;
 let lastProcessedActionMessage = "";
-let initialDeviceConfigLoaded = false; // Flag to track initial device config load
+let initialDeviceConfigLoaded = false;
 
 function pollApiStatus() {
     fetch('/api/status')
         .then(response => response.json())
         .then(data => {
-            // console.log('[API_STATUS]', data);
-
             const portalStatus = data.portal;
             const globalActionStatusEl = document.getElementById('global-action-status');
 
             if (portalStatus && globalActionStatusEl) {
-                // Handle action in progress
                 if (portalStatus.action_in_progress && portalStatus.action_in_progress !== 'NONE') {
                     globalActionStatusEl.textContent = `Processing: ${portalStatus.action_in_progress.replace(/_/g, ' ').toLowerCase()}...`;
                     globalActionStatusEl.className = 'status-message info'; 
                     globalActionStatusEl.style.display = 'block';
                     lastProcessedAction = null; 
                 }
-                // Handle completed action
                 else if (portalStatus.last_action_completed && portalStatus.last_action_completed !== 'NONE') {
                     const completedActionKey = portalStatus.last_action_completed + '-' + (portalStatus.last_action_status || 'UNKNOWN') + '-' + (portalStatus.last_action_message || 'NO_MSG');
 
@@ -386,7 +370,14 @@ function pollApiStatus() {
                             let successMsg = portalStatus.last_action_message || `${portalStatus.last_action_completed.replace(/_/g, ' ')} successful.`;
                             if (!portalStatus.last_action_message) {
                                 switch (portalStatus.last_action_completed) {
-                                    case 'SAVE_WIFI': successMsg = 'WiFi configuration saved. Device will attempt to connect.'; break;
+                                    case 'SAVE_WIFI': 
+                                        successMsg = 'WiFi configuration saved. Device will attempt to connect.'; 
+                                        if (data.wifi && data.wifi.is_connected) {
+                                            successMsg += ` Connected to ${data.wifi.connected_ssid}.`;
+                                        } else if (data.wifi) {
+                                            successMsg += ' Checking connection...';
+                                        }
+                                        break;
                                     case 'SAVE_DEVICE_CONFIG': successMsg = 'Device configuration saved.'; break;
                                     case 'SAVE_INSIGHT': successMsg = 'New insight saved.'; break;
                                     case 'DELETE_INSIGHT': successMsg = 'Insight deleted.'; break;
@@ -395,14 +386,6 @@ function pollApiStatus() {
                             globalActionStatusEl.textContent = successMsg;
                             globalActionStatusEl.className = 'status-message success';
                             globalActionStatusEl.style.display = 'block';
-
-                            // If specific success screens are desired for *other* actions (not general config), they could be added here.
-                            // For now, all successes use the global status bar or success-screen for major events (like WiFi save leading to redirect)
-                            if (['SAVE_WIFI'].includes(portalStatus.last_action_completed)) {
-                                // For actions like SAVE_WIFI that might redirect, keep showScreen for success
-                                // but ensure it's the actual 'config-saved-and-redirecting' screen if that's the flow
-                                showScreen('success-screen'); // Kept for WiFi save, as it has a countdown/redirect
-                            }
 
                             setTimeout(() => {
                                 if (globalActionStatusEl.textContent === successMsg && !globalActionStatusEl.className.includes('info')) { 
@@ -413,8 +396,6 @@ function pollApiStatus() {
                             }, 7000); 
 
                         } else if (portalStatus.last_action_status === 'ERROR') {
-                            // No longer call showScreen('error-screen');
-                            // Use globalActionStatusEl for errors
                             const errorMsgText = portalStatus.last_action_message || "An unknown error occurred with " + portalStatus.last_action_completed + ".";
                             console.error("Action failed:", errorMsgText);
                             if (globalActionStatusEl) {
@@ -434,20 +415,9 @@ function pollApiStatus() {
                     }
                 } else {
                     if (globalActionStatusEl.className.includes('info') && globalActionStatusEl.textContent.startsWith('Processing:')) {
-                        // If it was showing 'Processing...' and now there's no action_in_progress and no last_action_completed,
-                        // it implies the processing message should be cleared if it wasn't already handled by a success/error path.
-                        // This can happen if an action completes but doesn't immediately set last_action_completed or if an action was cancelled.
-                        // However, most completed actions should flow through the 'last_action_completed' block.
-                        // Let's be cautious and only clear if it's still showing a generic 'Processing...' and not a specific success/error.
-                        // The success/error timeouts should handle clearing their specific messages.
-                    } else if (globalActionStatusEl.style.display !== 'none' && !globalActionStatusEl.className.includes('success') && !globalActionStatusEl.className.includes('error')){
-                        // Generic clear for info messages not handled by specific timeouts
-                        // globalActionStatusEl.style.display = 'none';
-                        // globalActionStatusEl.textContent = '';
-                        // globalActionStatusEl.className = 'status-message';
-                    }
+                    } 
                 }
-            } else if (globalActionStatusEl && portalStatus === null) { // data.portal is null
+            } else if (globalActionStatusEl && portalStatus === null) { 
                  if (globalActionStatusEl.style.display !== 'none' && !globalActionStatusEl.className.includes('success') && !globalActionStatusEl.className.includes('error')){
                     globalActionStatusEl.style.display = 'none';
                     globalActionStatusEl.textContent = '';
@@ -458,9 +428,15 @@ function pollApiStatus() {
             // 2. Update WiFi Info
             if (data.wifi) {
                 _updateNetworksListUI(data.wifi.networks);
-                const wifiStatusEl = document.getElementById('wifi-connection-status'); // Assume element exists
+                const wifiStatusEl = document.getElementById('wifi-connection-status');
                 if (wifiStatusEl) {
-                    wifiStatusEl.textContent = data.wifi.is_connected ? `Connected to ${data.wifi.connected_ssid} (${data.wifi.ip_address})` : "Not Connected";
+                    if (data.wifi.is_connected) {
+                        wifiStatusEl.textContent = `Connected to ${data.wifi.connected_ssid} (${data.wifi.ip_address})`;
+                    } else if (portalStatus && portalStatus.action_in_progress === 'SAVE_WIFI') {
+                        wifiStatusEl.textContent = "Attempting to connect...";
+                    } else {
+                        wifiStatusEl.textContent = "Not Connected";
+                    }
                 }
             }
 
@@ -482,24 +458,21 @@ function pollApiStatus() {
         })
         .catch(error => {
             console.error('Error polling /api/status:', error);
-            // Display a global error message, e.g., "Lost connection to device"
-            const actionInProgressEl = document.getElementById('action-in-progress-message');
-            if(actionInProgressEl) {
-                actionInProgressEl.textContent = 'Error fetching status from device. Check connection.';
-                actionInProgressEl.style.display = 'block';
+            const globalActionStatusEl = document.getElementById('global-action-status');
+            if(globalActionStatusEl) {
+                globalActionStatusEl.textContent = 'Lost connection to device. Please check and refresh.';
+                globalActionStatusEl.className = 'status-message error';
+                globalActionStatusEl.style.display = 'block';
             }
         });
 }
 
 // Load current configuration - UI update part will be in pollApiStatus
-function _updateDeviceConfigUI(config) { // Renamed
+function _updateDeviceConfigUI(config) {
     if (!initialDeviceConfigLoaded) {
         if (config.team_id !== undefined) {
             document.getElementById('teamId').value = config.team_id;
         }
-        // The API key from /api/status should be the display version (e.g., ********1234)
-        // We only set it if it's the first load, otherwise user input might be overwritten.
-        // The actual API key is sent on form submission, not from this display value.
         if (config.api_key_display !== undefined) { 
             document.getElementById('apiKey').value = config.api_key_display;
         }
@@ -509,44 +482,31 @@ function _updateDeviceConfigUI(config) { // Renamed
 
 // Initialize page
 document.addEventListener('DOMContentLoaded', function() {
-    // Check if we need to show a specific screen based on URL hash
-    // This might be less relevant if all feedback comes via /api/status poll
     const hash = window.location.hash.substr(1);
-    if (hash && ['config-screen', 'success-screen'].includes(hash)) {
+    if (hash && ['config-screen'].includes(hash)) {
         showScreen(hash);
+    } else {
+        showScreen('config-screen');
     }
-    
-    // // Load current configuration - Now handled by pollApiStatus
-    // loadCurrentConfig();
-    // // Load insights list - Now handled by pollApiStatus
-    // loadInsights();
-    // // Populate the networks list - Now handled by pollApiStatus initial call & requestScanNetworks
-    // refreshNetworks(); 
 
-    // OTA Update functionality
     const checkUpdateBtn = document.getElementById('check-update-btn');
     const installUpdateBtn = document.getElementById('install-update-btn');
 
     if (checkUpdateBtn) {
-        checkUpdateBtn.addEventListener('click', requestCheckFirmwareUpdate); // Changed to request check
+        checkUpdateBtn.addEventListener('click', requestCheckFirmwareUpdate);
     }
     if (installUpdateBtn) {
-        installUpdateBtn.addEventListener('click', requestStartFirmwareUpdate); // Changed to request start
+        installUpdateBtn.addEventListener('click', requestStartFirmwareUpdate);
     }
 
-    // Initial call to pollApiStatus to populate UI, then set interval
     pollApiStatus();
-    setInterval(pollApiStatus, 5000); // Poll every 5 seconds
+    setInterval(pollApiStatus, 5000);
 
-    // Add event listener to refresh networks button if it exists
-    const refreshBtn = document.getElementById('refresh-networks-btn'); // Assuming a button with this ID
+    const refreshBtn = document.getElementById('refresh-networks-btn');
     if(refreshBtn) {
         refreshBtn.addEventListener('click', requestScanNetworks);
     }
 });
-
-// Removed: let otaPollingIntervalId = null;
-// Removed: let pollingForCheckResult = false;
 
 // Enum for OtaManager::UpdateStatus::State (mirror from C++)
 // This helps in making the JS code more readable when checking status.
@@ -571,18 +531,15 @@ function requestCheckFirmwareUpdate() {
     console.log("Requesting firmware update check...");
     const checkUpdateBtn = document.getElementById('check-update-btn');
     if(checkUpdateBtn) checkUpdateBtn.disabled = true;
-    // UI updates for "checking..." will be handled by pollApiStatus based on action_in_progress
 
     fetch('/api/actions/check-ota-update', { method: 'POST' })
         .then(response => response.json())
         .then(data => {
             if (data.status === 'initiated') {
                 console.log('Firmware check initiated.');
-                // pollApiStatus will pick up the change and reflect status
             } else {
                 console.error('Failed to initiate firmware check:', data.message);
                 if(checkUpdateBtn) checkUpdateBtn.disabled = false;
-                // Update UI to show initiation error - pollApiStatus might also do this via last_action_status
                 const updateStatusTextEl = document.getElementById('update-status-text');
                 if(updateStatusTextEl) updateStatusTextEl.textContent = `Error: ${data.message || 'Could not start check.'}`;
             }
@@ -638,41 +595,33 @@ function updateOtaUI(otaData, portalData) {
     const updateProgressContainer = document.getElementById('update-progress-container');
     const updateProgressBar = document.getElementById('update-progress-bar');
 
-    // New: Display portal's OTA action message first if present
     let portalOtaMessageDisplayed = false;
     if (portalData && portalData.portal_ota_action_message) {
         if (updateStatusTextEl) updateStatusTextEl.textContent = portalData.portal_ota_action_message;
         portalOtaMessageDisplayed = true;
-        // Disable buttons if portal is actively processing an OTA request
         if (portalData.action_in_progress === 'CHECK_OTA_UPDATE' || portalData.action_in_progress === 'START_OTA_UPDATE') {
             if (checkUpdateBtn) checkUpdateBtn.disabled = true;
             if (installUpdateBtn) installUpdateBtn.disabled = true;
         } else {
-            // If portal_ota_action_message indicates completion of portal dispatch, re-enable based on OtaManager status below
-            // This 'else' means portal's direct involvement is done, buttons will be governed by otaData
         }
     }
 
-    // Update displayed versions and notes - always try to update these from otaData
     if (currentVersionEl) currentVersionEl.textContent = otaData.current_firmware_version || 'N/A';
     
-    // Handle visibility and content of available version
     if (availableVersionContainerEl && availableVersionEl) {
         if (otaData.update_available && otaData.available_version && otaData.available_version !== 'N/A') {
             availableVersionEl.textContent = otaData.available_version;
-            availableVersionContainerEl.style.display = ''; // Show the container (default P display is block)
+            availableVersionContainerEl.style.display = '';
         } else {
-            availableVersionEl.textContent = 'N/A'; // Set to N/A for consistency if hidden
-            availableVersionContainerEl.style.display = 'none'; // Hide the container
+            availableVersionEl.textContent = 'N/A';
+            availableVersionContainerEl.style.display = 'none';
         }
     }
 
     if (releaseNotesEl) releaseNotesEl.textContent = otaData.update_available ? (otaData.release_notes || 'No release notes.') : '';
 
-    // Show/hide update available section and control install button based on otaData
     if (updateAvailableSection) updateAvailableSection.style.display = otaData.update_available ? 'block' : 'none';
     
-    // Enable/disable install button: only if an update is available AND portal is not busy with an OTA action AND OtaManager is not busy
     if (installUpdateBtn) {
         installUpdateBtn.disabled = !otaData.update_available || 
                                   (portalData && (portalData.action_in_progress === 'START_OTA_UPDATE' || portalData.action_in_progress === 'CHECK_OTA_UPDATE')) ||
@@ -680,7 +629,6 @@ function updateOtaUI(otaData, portalData) {
                                   otaData.status_code === OTA_STATUS_STATE.WRITING;
     }
     
-    // Enable/disable check update button: only if portal is not busy with an OTA action AND OtaManager is not busy
     if (checkUpdateBtn) {
         checkUpdateBtn.disabled = (portalData && (portalData.action_in_progress === 'CHECK_OTA_UPDATE' || portalData.action_in_progress === 'START_OTA_UPDATE')) ||
                                 otaData.status_code === OTA_STATUS_STATE.CHECKING_VERSION || 
@@ -688,21 +636,14 @@ function updateOtaUI(otaData, portalData) {
                                 otaData.status_code === OTA_STATUS_STATE.WRITING;
     }
 
-    // Update OtaManager status messages and progress bar, only if portal message wasn't primary
     if (!portalOtaMessageDisplayed || (portalData && portalData.portal_ota_action_message && portalData.portal_ota_action_message.includes("Successfully dispatched"))) {
         if (updateStatusTextEl) {
-            // If portal message indicates successful dispatch, prefer OtaManager's message if available
-            // otherwise, if no portal message, use OtaManager's message.
             let displayMessage = otaData.status_message || 'Idle';
             if (portalOtaMessageDisplayed && otaData.status_message && otaData.status_message !== "Idle") {
-                // Prepend a note that this is OtaManager status if portal also had a successful dispatch message
-                // updateStatusTextEl.textContent = "OtaManager: " + displayMessage;
-                updateStatusTextEl.textContent = displayMessage; // Keep it simple, just show OtaManager status
+                updateStatusTextEl.textContent = displayMessage;
             } else if (!portalOtaMessageDisplayed) {
                  updateStatusTextEl.textContent = displayMessage;
             }
-            // If portalOtaMessageDisplayed was true but it was NOT a "Successfully dispatched" message (e.g. "pending execution"),
-            // then the portal's message has already been set and we don't overwrite it here.
         }
     }
     
@@ -713,11 +654,8 @@ function updateOtaUI(otaData, portalData) {
     if (otaData.status_code === OTA_STATUS_STATE.DOWNLOADING || otaData.status_code === OTA_STATUS_STATE.WRITING) {
         if (updateProgressContainer) updateProgressContainer.style.display = 'block';
         if (updateProgressBar) updateProgressBar.style.width = `${otaData.progress || 0}%`;
-        // Buttons should already be disabled by the conditions above
     } else {
-        // Hide progress bar unless successfully completed (then it might show 100% briefly)
         if (otaData.status_code !== OTA_STATUS_STATE.SUCCESS && updateProgressContainer) {
-             // updateProgressContainer.style.display = 'none'; // Keep visible if there's a status message to show
         }
     }
     
@@ -729,11 +667,3 @@ function updateOtaUI(otaData, portalData) {
         if (checkUpdateBtn) checkUpdateBtn.disabled = true;
     }
 }
-
-// Removed old pollUpdateStatus function as its logic is merged into pollApiStatus and updateOtaUI
-/*
-function pollUpdateStatus() {
-    const currentVersionEl = document.getElementById('current-version');
-// ... (old function content removed)
-}
-*/

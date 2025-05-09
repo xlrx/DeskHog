@@ -128,6 +128,9 @@ private:
     // Variable to store the number of networks found by the last scan
     int16_t _lastScanResultCount = -1; 
     
+    // Flag to indicate we are connecting after portal submission
+    bool _attemptingNewConnectionAfterPortal = false;
+    
     // WiFi event handlers
     static void onWiFiEvent(WiFiEvent_t event);
     static WiFiInterface* _instance;
