@@ -287,6 +287,13 @@ void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
         Serial.printf("[FUNNEL-DEBUG] Funnel container exists: %s\n", containerExists ? "YES" : "NO");
     }
     
+    // ADDED: Critical section for line graph rendering
+    if (insightType == InsightParser::InsightType::LINE_GRAPH) {
+        // Check if we have a chart container already
+        bool chartExists = isValidObject(_chart);
+        Serial.printf("[CHART-DEBUG] Line graph container exists: %s\n", chartExists ? "YES" : "NO");
+    }
+    
     // Rebuild UI if type has changed
     if (insightType != _current_type) {
         Serial.printf("[FUNNEL-DEBUG] Type changed from %d to %d, rebuilding UI\n", 
@@ -310,7 +317,26 @@ void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
                 
                 Serial.println("[FUNNEL-DEBUG] Funnel elements created on UI thread");
             });
+        }
+        // ADDED: Do the same immediate creation for line graphs
+        else if (insightType == InsightParser::InsightType::LINE_GRAPH) {
+            Serial.println("[CHART-DEBUG] Creating line graph elements IMMEDIATELY");
+            dispatchToUI([this]() {
+                clearCardContent();
+                createLineGraphElements();
+                
+                // Force immediate refresh
+                lv_obj_invalidate(_content_container);
+                lv_display_t* disp = lv_display_get_default();
+                if (disp) {
+                    lv_refr_now(disp);
+                }
+                
+                Serial.println("[CHART-DEBUG] Line graph elements created on UI thread");
+            });
             
+            // Wait briefly for UI update to complete
+            delay(10);
         }
         else {
             dispatchToUI([this, insightType]() {
@@ -320,9 +346,18 @@ void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
                     case InsightParser::InsightType::NUMERIC_CARD:
                         createNumericElements();
                         break;
-                    case InsightParser::InsightType::LINE_GRAPH:
+                    case InsightParser::InsightType::LINE_GRAPH: {
                         createLineGraphElements();
+                        // Force immediate refresh after creating line graph elements
+                        if (isValidObject(_content_container)) {
+                            lv_obj_invalidate(_content_container);
+                        }
+                        lv_display_t* disp_create = lv_display_get_default();
+                        if (disp_create) {
+                            lv_refr_now(disp_create);
+                        }
                         break;
+                    }
                     case InsightParser::InsightType::FUNNEL:
                         Serial.println("[FUNNEL-DEBUG] Creating funnel elements via normal flow");
                         createFunnelElements();
@@ -342,8 +377,30 @@ void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
             break;
             
         case InsightParser::InsightType::LINE_GRAPH: {
+            // Always verify chart exists before updating
+            if (!isValidObject(_chart)) {
+                Serial.println("[CHART-DEBUG] CRITICAL ERROR: Chart object missing before update!");
+                
+                // Try to recreate the chart
+                dispatchToUI([this]() {
+                    Serial.println("[CHART-DEBUG] Emergency creating line graph elements");
+                    createLineGraphElements();
+                    
+                    // Force immediate refresh
+                    lv_obj_invalidate(_content_container);
+                    lv_display_t* disp = lv_display_get_default();
+                    if (disp) {
+                        lv_refr_now(disp);
+                    }
+                });
+                
+                // Wait for UI update
+                delay(20);
+            }
+            
             size_t pointCount = parser->getSeriesPointCount();
             if (pointCount > 0) {
+                Serial.printf("[CHART-DEBUG] Processing %d data points\n", pointCount);
                 std::unique_ptr<double[]> values(new double[pointCount]);
                 if (parser->getSeriesYValues(values.get())) {
                     updateLineGraphDisplay(titleBuffer, values.get(), pointCount);
@@ -416,11 +473,23 @@ void InsightCard::createLineGraphElements() {
     _chart = lv_chart_create(_content_container);
     if (!_chart) return;
     
-    lv_obj_set_size(_chart, GRAPH_WIDTH, GRAPH_HEIGHT);
+    // Calculate width based on container instead of fixed value
+    lv_coord_t container_width = lv_obj_get_width(_content_container);
+    lv_coord_t container_height = lv_obj_get_height(_content_container);
+    
+    lv_obj_set_size(_chart, container_width, container_height);
     lv_obj_center(_chart);
     lv_chart_set_type(_chart, LV_CHART_TYPE_LINE);
-    lv_obj_set_style_bg_color(_chart, lv_color_hex(0x1A1A1A), 0); // Dark grey background
-    lv_obj_set_style_border_width(_chart, 0, 0); // Match other elements
+    
+    // Explicitly disable scrolling
+    lv_obj_clear_flag(_chart, LV_OBJ_FLAG_SCROLLABLE);
+    
+    // Update background to 2% white (very dark gray)
+    lv_obj_set_style_bg_color(_chart, lv_color_hex(0x050505), 0);
+    lv_obj_set_style_border_width(_chart, 0, 0);
+    
+    // Set grid line color to 10% white
+    lv_obj_set_style_line_color(_chart, lv_color_hex(0x1A1A1A), LV_PART_MAIN);
     
     _series = lv_chart_add_series(_chart, lv_color_hex(0x2980b9), LV_CHART_AXIS_PRIMARY_Y);
     if (!_series) {
@@ -534,7 +603,12 @@ void InsightCard::updateNumericDisplay(const String& title, double value) {
 }
 
 void InsightCard::updateLineGraphDisplay(const String& title, double* values, size_t pointCount) {
-    if (!_chart || !_series) return;
+    Serial.printf("[CHART-DEBUG] updateLineGraphDisplay called with %zu points\n", pointCount);
+    
+    if (!_chart || !_series) {
+        Serial.println("[CHART-DEBUG] ERROR: Chart or series is null in updateLineGraphDisplay");
+        return;
+    }
 
     // Find max value for scaling
     double maxVal = 0;
@@ -547,25 +621,48 @@ void InsightCard::updateLineGraphDisplay(const String& title, double* values, si
     
     // Scale factor to keep values under 1000
     double scaleFactor = maxVal > 1000 ? 1000.0 / maxVal : 1.0;
+    
+    // Make a copy of values array with shared_ptr (copyable)
+    std::shared_ptr<double[]> valuesCopy(new double[pointCount]);
+    memcpy(valuesCopy.get(), values, pointCount * sizeof(double));
+    
+    // Mark timestamp for debugging
+    unsigned long startTime = millis();
+    Serial.printf("[CHART-DEBUG] Line graph update requested at %lu ms\n", startTime);
 
-    dispatchToUI([this, title = String(title), values, pointCount, maxVal, scaleFactor]() {
-        if (!isValidObject(_chart)) return;
+    // Use direct UI dispatch for line charts with highest priority
+    UICallback* callback = new UICallback([this, title = String(title), 
+                                         valuesCopy, 
+                                         pointCount, maxVal, scaleFactor, 
+                                         requestTime = startTime]() {
+        Serial.printf("[CHART-DEBUG] Line graph update executing in UI thread at %lu ms (delay: %lu ms)\n", 
+                     millis(), millis() - requestTime);
+        
+        if (!isValidObject(_chart)) {
+            Serial.println("[CHART-DEBUG] CRITICAL ERROR: Chart object invalid when executing update!");
+            return;
+        }
         
         if (isValidObject(_title_label)) {
             lv_label_set_text(_title_label, title.c_str());
         }
         
-        // Limit to 20 points max for performance
-        const size_t displayPoints = pointCount;
+        Serial.printf("[CHART-DEBUG] Setting chart with %zu points\n", pointCount);
         
         // Update chart
-        lv_chart_set_point_count(_chart, displayPoints);
+        lv_chart_set_point_count(_chart, pointCount);
         lv_chart_set_all_value(_chart, _series, 0);
         
-        // Add points
-        for (size_t i = 0; i < displayPoints; i++) {
-            int16_t y_val = static_cast<int16_t>(values[i] * scaleFactor);
-            lv_chart_set_value_by_id(_chart, _series, i, y_val);
+        // Add points - use a safe approach 
+        for (size_t i = 0; i < pointCount; i++) {
+            // Ensure value is valid and in range
+            double value = valuesCopy[i];
+            int16_t y_val = static_cast<int16_t>(value * scaleFactor);
+            
+            // Extra check to avoid any potential crashes or memory corruption
+            if (i < pointCount) {
+                lv_chart_set_value_by_id(_chart, _series, i, y_val);
+            }
         }
         
         // Set range
@@ -573,7 +670,27 @@ void InsightCard::updateLineGraphDisplay(const String& title, double* values, si
                           static_cast<int32_t>(maxVal * scaleFactor * 1.1));
         
         lv_chart_refresh(_chart);
+
+        Serial.println("[CHART-DEBUG] Chart refreshed, forcing redraw");
+        
+        // Ensure the chart area is marked dirty and force global refresh
+        lv_obj_invalidate(_chart);
+        lv_display_t* disp_update = lv_display_get_default();
+        if (disp_update) {
+            lv_refr_now(disp_update);
+        }
+        
+        Serial.printf("[CHART-DEBUG] Line graph update completed at %lu ms (total time: %lu ms)\n", 
+                    millis(), millis() - requestTime);
     });
+    
+    // Always try to send chart updates to front of queue
+    if (xQueueSendToFront(uiQueue, &callback, pdMS_TO_TICKS(100)) != pdTRUE) {
+        Serial.println("[CHART-DEBUG] ERROR: Could not queue line graph update!");
+        delete callback;
+    } else {
+        Serial.println("[CHART-DEBUG] Line graph update successfully queued at front");
+    }
 }
 
 void InsightCard::updateFunnelDisplay(const String& title, InsightParser& parser) {
