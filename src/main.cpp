@@ -141,7 +141,7 @@ void neoPixelTaskFunction(void* parameter) {
 }
 
 void setup() {
-    Serial.begin(115200);
+    Serial.begin(115200); // Keep Serial.begin() as it initializes the port
     delay(100);  // Give serial port time to initialize
     Serial.println("Starting up...");
 
@@ -190,9 +190,9 @@ void setup() {
     eventQueue = new EventQueue(20); // Create queue with capacity for 20 events
     eventQueue->begin(); // Start event processing
     
-    // // Initialize NeoPixel controller
-    // neoPixelController = new NeoPixelController();
-    // neoPixelController->begin();
+    // Initialize NeoPixel controller
+    neoPixelController = new NeoPixelController();
+    neoPixelController->begin();
     
     // Initialize config manager with event queue
     configManager = new ConfigManager(*eventQueue);
@@ -291,16 +291,16 @@ void setup() {
         1
     );
     
-    // // Create NeoPixel task
-    // xTaskCreatePinnedToCore(
-    //     neoPixelTaskFunction,
-    //     "neoPixelTask",
-    //     2048,
-    //     NULL,
-    //     1,
-    //     &neoPixelTask,
-    //     0
-    // );
+    // Create NeoPixel task
+    xTaskCreatePinnedToCore(
+        neoPixelTaskFunction,
+        "neoPixelTask",
+        2048,
+        NULL,
+        1,
+        &neoPixelTask,
+        0
+    );
     
     // Check if we have WiFi credentials and publish the appropriate event
     configManager->checkWiFiCredentialsAndPublish();
