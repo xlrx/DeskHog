@@ -2,7 +2,6 @@
 
 #include "lvgl.h"
 #include "fonts/fonts.h"
-
 class Style {
 private:
     static const lv_font_t* _label_font;
@@ -23,22 +22,22 @@ public:
     // Font getters
     static const lv_font_t* labelFont() {
         initFonts();
-        return _label_font ? _label_font : &lv_font_montserrat_14;
+        return _label_font;
     }
 
     static const lv_font_t* valueFont() {
         initFonts();
-        return _value_font ? _value_font : &lv_font_montserrat_18;
+        return _value_font;
     }
 
     static const lv_font_t* largeValueFont() {
         initFonts();
-        return _large_value_font ? _large_value_font : &lv_font_montserrat_36;
+        return _large_value_font;
     }
     
     static const lv_font_t* loudNoisesFont() {
         initFonts();
-        return _loud_noises_font ? _loud_noises_font : &lv_font_montserrat_18;
+        return _loud_noises_font;
     }
 
     // Text colors

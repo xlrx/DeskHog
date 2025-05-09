@@ -168,13 +168,13 @@
     #define LV_DRAW_SW_SUPPORT_RGB565       1 // Keep enabled for LV_COLOR_DEPTH 16
     #define LV_DRAW_SW_SUPPORT_RGB565A8     1 // Default
     #define LV_DRAW_SW_SUPPORT_RGB888       1 // Default
-    #define LV_DRAW_SW_SUPPORT_XRGB8888     1 // Default
-    #define LV_DRAW_SW_SUPPORT_ARGB8888     1 // Default
-    #define LV_DRAW_SW_SUPPORT_ARGB8888_PREMULTIPLIED 1 // Default
-    #define LV_DRAW_SW_SUPPORT_L8           1 // Default
-    #define LV_DRAW_SW_SUPPORT_AL88         1 // Default
-    #define LV_DRAW_SW_SUPPORT_A8           1 // Default
-    #define LV_DRAW_SW_SUPPORT_I1           1 // Default
+    #define LV_DRAW_SW_SUPPORT_XRGB8888     0 // Default
+    #define LV_DRAW_SW_SUPPORT_ARGB8888     0 // Default
+    #define LV_DRAW_SW_SUPPORT_ARGB8888_PREMULTIPLIED 0 // Default
+    #define LV_DRAW_SW_SUPPORT_L8           0 // Default
+    #define LV_DRAW_SW_SUPPORT_AL88         0 // Default
+    #define LV_DRAW_SW_SUPPORT_A8           0 // Default
+    #define LV_DRAW_SW_SUPPORT_I1           0 // Default
 
     #define LV_DRAW_SW_I1_LUM_THRESHOLD 127 // Default
 
@@ -346,9 +346,9 @@
 #define LV_FONT_MONTSERRAT_8  0 // Migrated from old config (was 0)
 #define LV_FONT_MONTSERRAT_10 0 // Migrated from old config (was 0)
 #define LV_FONT_MONTSERRAT_12 0 // Migrated from old config (was 0)
-#define LV_FONT_MONTSERRAT_14 1 // Migrated from old config (was 1)
-#define LV_FONT_MONTSERRAT_16 1 // Migrated from old config (was 1)
-#define LV_FONT_MONTSERRAT_18 1 // Migrated from old config (was 1)
+#define LV_FONT_MONTSERRAT_14 1 // ENABLE Montserrat 14 data
+#define LV_FONT_MONTSERRAT_16 0 // Migrated from old config (was 1)
+#define LV_FONT_MONTSERRAT_18 0 // Migrated from old config (was 1)
 #define LV_FONT_MONTSERRAT_20 0 // Migrated from old config (was 0)
 #define LV_FONT_MONTSERRAT_22 0 // Migrated from old config (was 0)
 #define LV_FONT_MONTSERRAT_24 0 // Migrated from old config (was 0)
@@ -357,7 +357,7 @@
 #define LV_FONT_MONTSERRAT_30 0 // Migrated from old config (was 0)
 #define LV_FONT_MONTSERRAT_32 0 // Migrated from old config (was 0)
 #define LV_FONT_MONTSERRAT_34 0 // Migrated from old config (was 0)
-#define LV_FONT_MONTSERRAT_36 1 // Migrated from old config (was 1)
+#define LV_FONT_MONTSERRAT_36 0 // Migrated from old config (was 1)
 #define LV_FONT_MONTSERRAT_38 0 // Migrated from old config (was 0)
 #define LV_FONT_MONTSERRAT_40 0 // Migrated from old config (was 0)
 #define LV_FONT_MONTSERRAT_42 0 // Migrated from old config (was 0)
@@ -373,9 +373,9 @@
 #define LV_FONT_UNSCII_8  0 // Migrated from old config (was 0)
 #define LV_FONT_UNSCII_16 0 // Migrated from old config (was 0)
 
-#define LV_FONT_CUSTOM_DECLARE // Migrated from old config (was empty)
+#define LV_FONT_CUSTOM_DECLARE // Ensure this is an empty define, and any previous #include "fonts/fonts.h" is removed
 
-#define LV_FONT_DEFAULT &lv_font_montserrat_18 // Migrated from old config (was 18)
+#define LV_FONT_DEFAULT &lv_font_montserrat_14 // Set default to enabled Montserrat 14
 
 #define LV_FONT_FMT_TXT_LARGE 0 // Migrated from old config (was 0)
 
@@ -458,7 +458,7 @@
 #define LV_USE_SCALE      0 // Default (new widget, disable unless needed)
 #define LV_USE_SLIDER     0 // Migrated from old config (was 0)
 
-#define LV_USE_SPAN       1 // Migrated from old config (was 1)
+#define LV_USE_SPAN       0 // Migrated from old config (was 1)
 #if LV_USE_SPAN
     #define LV_SPAN_SNIPPET_STACK_SIZE 64 // Migrated from old config (was 64)
 #endif
@@ -489,8 +489,8 @@
     #define LV_THEME_DEFAULT_TRANSITION_TIME 80 // Migrated from old config (was 80)
 #endif /*LV_USE_THEME_DEFAULT*/
 
-#define LV_USE_THEME_SIMPLE 1 // Migrated from old config (was THEME_BASIC 1)
-#define LV_USE_THEME_MONO 1   // Migrated from old config (was 1)
+#define LV_USE_THEME_SIMPLE 0 // Migrated from old config (was THEME_BASIC 1)
+#define LV_USE_THEME_MONO 0   // Migrated from old config (was 1)
 
 /*==================
  * LAYOUTS
@@ -600,7 +600,7 @@
 /*==================
 * EXAMPLES
 *==================*/
-#define LV_BUILD_EXAMPLES 1 // Migrated from old config (was 1)
+#define LV_BUILD_EXAMPLES 0 // Migrated from old config (was 1)
 
 /*===================
  * DEMO USAGE

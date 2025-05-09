@@ -12,12 +12,7 @@ const lv_img_dsc_t* walking_sprites[] = {
     &sprite_Normal_Walking_03,
     &sprite_Normal_Walking_04,
     &sprite_Normal_Walking_05,
-    &sprite_Normal_Walking_06,
-    &sprite_Normal_Walking_07,
-    &sprite_Normal_Walking_08,
-    &sprite_Normal_Walking_09,
-    &sprite_Normal_Walking_10,
-    &sprite_Normal_Walking_11,
+    &sprite_Normal_Walking_06
 };
 
 // Number of sprites in the walking animation
