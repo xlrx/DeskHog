@@ -267,10 +267,9 @@ void CaptivePortal::handleGetInsights(AsyncWebServerRequest *request) {
 
 void CaptivePortal::handleSaveInsight(AsyncWebServerRequest *request) {
     bool success = false;
-    if (request->hasParam("insightId", true) && request->hasParam("insightTitle", true)) {
+    if (request->hasParam("insightId", true)) {
         String id = request->getParam("insightId", true)->value();
-        String title = request->getParam("insightTitle", true)->value(); // Assuming title is directly provided
-        if (_configManager.saveInsight(id, title)) {
+        if (_configManager.saveInsight(id, "")) {
             _eventQueue.publishEvent(EventType::INSIGHT_ADDED, id); // Corrected publish call
             success = true;
         }
@@ -483,17 +482,16 @@ void CaptivePortal::processAsyncOperations() {
             }
             case PortalAction::SAVE_INSIGHT: {
                 String id = current_queued_action.param1;     // Use from QueuedAction
-                String title = current_queued_action.param2;  // Use from QueuedAction
-                 if (!id.isEmpty() && !title.isEmpty()) {
-                    if (_configManager.saveInsight(id, title)) {
+                if (!id.isEmpty()) {
+                    if (_configManager.saveInsight(id, "")) {
                         _eventQueue.publishEvent(EventType::INSIGHT_ADDED, id);
                         currentActionSuccess = true;
-                        currentActionMessage = "Insight '" + title + "' saved.";
+                        currentActionMessage = "Insight '" + id + "' saved.";
                     } else {
                         currentActionMessage = "Failed to save insight.";
                     }
                 } else {
-                    currentActionMessage = "Insight ID and Title cannot be empty.";
+                    currentActionMessage = "Insight ID cannot be empty.";
                 }
                 // _pending_param1 = ""; _pending_param2 = ""; // Not needed now
                 break;
@@ -634,10 +632,12 @@ void CaptivePortal::handleApiStatus(AsyncWebServerRequest *request) {
     std::vector<String> insightIds = _configManager.getAllInsightIds();
     for (const String& id : insightIds) {
         String title = _configManager.getInsight(id);
+        JsonObject insightObj = insightsArray.createNestedObject();
+        insightObj["id"] = id;
         if (!title.isEmpty()) {
-            JsonObject insightObj = insightsArray.createNestedObject();
-            insightObj["id"] = id;
             insightObj["title"] = title;
+        } else {
+            insightObj["title"] = id; // Use ID as placeholder title if actual title is empty
         }
     }
 

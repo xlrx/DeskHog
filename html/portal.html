@@ -14,6 +14,7 @@
     
     <!-- Configuration Screen -->
     <div id="config-screen">
+        <div id="global-action-status" class="status-message" style="display:none; margin-bottom: 1em; padding: 0.75em; border-radius: 4px; text-align: center;"></div>
         <h2>WiFi</h2>
         <div class="config-section">
             
@@ -94,7 +95,7 @@
         <h2>Firmware update</h2>
         <div class="config-section">
             <p>Current version: <span id="current-version">Checking...</span></p>
-            <p>Available version: <span id="available-version">N/A</span></p>
+            <p id="available-version-container">Available version: <span id="available-version">N/A</span></p>
             <div class="button-container">
                 <button type="button" id="check-update-btn">Check for updates</button>
             </div>
@@ -128,17 +129,6 @@
         </div>
         
         <p>Redirecting in <span id="countdown">10</span> seconds...</p>
-    </div>
-    
-    <!-- Error Screen -->
-    <div id="error-screen" class="container hidden">
-        <h2>Error saving configuration</h2>
-        <p>There was an error saving your configuration.</p>
-        <p>Please try again.</p>
-        
-        <div class="button-container">
-            <button type="button" onclick="showScreen('config-screen')">Back</button>
-        </div>
     </div>
     
     <footer>People who are really serious about software should make their own hardware. - Alan Kay</footer>

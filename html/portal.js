@@ -1,22 +1,19 @@
 function showScreen(screenId) {
-    const screens = ['config-screen', 'success-screen', 'error-screen'];
+    const screens = ['config-screen', 'success-screen'];
     screens.forEach(id => {
-        document.getElementById(id).classList.add('hidden');
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
     });
-    document.getElementById(screenId).classList.remove('hidden');
+    const screenToShow = document.getElementById(screenId);
+    if (screenToShow) screenToShow.classList.remove('hidden');
     
-    // Update page title
     let title = "DeskHog Configuration";
     if (screenId === 'success-screen') {
         title = "Configuration Saved";
-        startCountdown(); // Start countdown only if success screen is explicitly shown by an action result
-        // The actual redirect/countdown might be better handled based on specific messages from /api/status
-    } else if (screenId === 'error-screen') {
-        title = "Configuration Error";
+        startCountdown();
     }
     document.getElementById('page-title').textContent = title;
     
-    // Start countdown if success screen
     if (screenId === 'success-screen') {
         startCountdown();
         document.getElementById('progress-bar').style.width = '100%';
@@ -27,54 +24,121 @@ function showScreen(screenId) {
 function saveWifiConfig() {
     const form = document.getElementById('wifi-form');
     const formData = new FormData(form);
+    const globalActionStatusEl = document.getElementById('global-action-status');
     
-    fetch('/api/actions/save-wifi', { // New endpoint
+    fetch('/api/actions/save-wifi', { 
         method: 'POST',
         body: formData
     })
     .then(response => response.json())
     .then(data => {
-        if (data.status === 'initiated') {
-            // Optionally show a general "Processing..." message
-            // Actual success/error will be handled by pollApiStatus
-            console.log("Save WiFi initiated.");
-            // Consider a small toast message here: "Saving WiFi..."
+        if (data && data.status === 'queued') {
+            console.log("Save WiFi action successfully queued.", data.message);
+            if (globalActionStatusEl) {
+                globalActionStatusEl.textContent = data.message || "Save WiFi initiated. Device will attempt to connect.";
+                globalActionStatusEl.className = 'status-message info';
+                globalActionStatusEl.style.display = 'block';
+                setTimeout(() => {
+                    if (globalActionStatusEl.textContent === (data.message || "Save WiFi initiated. Device will attempt to connect.")) {
+                        globalActionStatusEl.style.display = 'none';
+                        globalActionStatusEl.textContent = '';
+                        globalActionStatusEl.className = 'status-message';
+                    }
+                }, 5000);
+            }
         } else {
-            // Handle "busy" or other errors from the initiation request itself
-            showScreen('error-screen'); 
-            document.getElementById('error-message-text').textContent = data.message || "Failed to initiate WiFi save.";
+            const errorMessage = (data && data.message) ? data.message : "Failed to initiate WiFi save.";
+            console.error("Failed to initiate WiFi save:", errorMessage);
+            if (globalActionStatusEl) {
+                globalActionStatusEl.textContent = errorMessage;
+                globalActionStatusEl.className = 'status-message error';
+                globalActionStatusEl.style.display = 'block';
+                setTimeout(() => {
+                    if (globalActionStatusEl.className.includes('error')) {
+                        globalActionStatusEl.style.display = 'none';
+                        globalActionStatusEl.textContent = '';
+                        globalActionStatusEl.className = 'status-message';
+                    }
+                }, 7000);
+            }
         }
     })
     .catch(() => {
-        showScreen('error-screen');
-        document.getElementById('error-message-text').textContent = "Communication error trying to save WiFi.";
+        console.error("Communication error trying to save WiFi.");
+        if (globalActionStatusEl) {
+            globalActionStatusEl.textContent = "Communication error trying to save WiFi.";
+            globalActionStatusEl.className = 'status-message error';
+            globalActionStatusEl.style.display = 'block';
+            setTimeout(() => {
+                if (globalActionStatusEl.className.includes('error')) {
+                    globalActionStatusEl.style.display = 'none';
+                    globalActionStatusEl.textContent = '';
+                    globalActionStatusEl.className = 'status-message';
+                }
+            }, 7000);
+        }
     });
     
-    return false; // Prevent default form submission
+    return false; 
 }
 
 // Handle device config form submission
 function saveDeviceConfig() {
     const form = document.getElementById('device-form');
     const formData = new FormData(form);
+    const globalActionStatusEl = document.getElementById('global-action-status');
     
-    fetch('/api/actions/save-device-config', { // New endpoint
+    fetch('/api/actions/save-device-config', { 
         method: 'POST',
         body: formData
     })
     .then(response => response.json())
     .then(data => {
-        if (data.status === 'initiated') {
-            console.log("Save device config initiated.");
-            // showScreen('success-screen'); // No longer show success immediately
+        if (data && data.status === 'queued') {
+            console.log("Save device config action successfully queued.", data.message);
+            if (globalActionStatusEl) {
+                globalActionStatusEl.textContent = data.message || "Device configuration save initiated.";
+                globalActionStatusEl.className = 'status-message info';
+                globalActionStatusEl.style.display = 'block';
+                setTimeout(() => {
+                     if (globalActionStatusEl.textContent === (data.message || "Device configuration save initiated.")) {
+                        globalActionStatusEl.style.display = 'none';
+                        globalActionStatusEl.textContent = '';
+                        globalActionStatusEl.className = 'status-message';
+                    }
+                }, 5000);
+            }
         } else {
-            showScreen('error-screen');
-            document.getElementById('error-message-text').textContent = data.message || "Failed to initiate device config save.";
+            const errorMessage = (data && data.message) ? data.message : "Failed to initiate device config save.";
+            console.error("Failed to initiate device config save:", errorMessage);
+            if (globalActionStatusEl) {
+                globalActionStatusEl.textContent = errorMessage;
+                globalActionStatusEl.className = 'status-message error';
+                globalActionStatusEl.style.display = 'block';
+                setTimeout(() => {
+                    if (globalActionStatusEl.className.includes('error')) {
+                        globalActionStatusEl.style.display = 'none';
+                        globalActionStatusEl.textContent = '';
+                        globalActionStatusEl.className = 'status-message';
+                    }
+                }, 7000);
+            }
         }
     })
     .catch(() => {
-        showScreen('error-screen');
-        document.getElementById('error-message-text').textContent = "Communication error saving device config.";
+        console.error("Communication error saving device config.");
+        if (globalActionStatusEl) {
+            globalActionStatusEl.textContent = "Communication error saving device config.";
+            globalActionStatusEl.className = 'status-message error';
+            globalActionStatusEl.style.display = 'block';
+            setTimeout(() => {
+                if (globalActionStatusEl.className.includes('error')) {
+                    globalActionStatusEl.style.display = 'none';
+                    globalActionStatusEl.textContent = '';
+                    globalActionStatusEl.className = 'status-message';
+                }
+            }, 7000);
+        }
     });
     
     return false;
@@ -90,25 +154,63 @@ function toggleApiKeyVisibility() {
 function addInsight() {
     const form = document.getElementById('insight-form');
     const formData = new FormData(form);
-    
-    fetch('/api/actions/save-insight', { // New endpoint
+    const globalActionStatusEl = document.getElementById('global-action-status');
+
+    fetch('/api/actions/save-insight', {
         method: 'POST',
         body: formData
     })
     .then(response => response.json())
     .then(data => {
-        if (data.status === 'initiated') {
-            console.log("Add insight initiated.");
-            form.reset(); // Reset form on initiation, actual list update via poll
-            // loadInsights(); // No longer call directly
+        if (data && data.status === 'queued') { // Check for data and data.status, and expect 'queued' for success
+            console.log("Add insight action successfully queued.", data.message);
+            form.reset(); // Reset form on successful queueing
+            
+            if (globalActionStatusEl) {
+                globalActionStatusEl.textContent = data.message || "Insight submission initiated. List will update shortly."; // Use message from server if available
+                globalActionStatusEl.className = 'status-message info'; // Style as info
+                globalActionStatusEl.style.display = 'block';
+                setTimeout(() => {
+                    // Clear only if the message is still the one we set
+                    if (globalActionStatusEl.textContent === (data.message || "Insight submission initiated. List will update shortly.")) {
+                        globalActionStatusEl.style.display = 'none';
+                        globalActionStatusEl.textContent = '';
+                        globalActionStatusEl.className = 'status-message';
+                    }
+                }, 5000); // Hide after 5 seconds
+            }
         } else {
-            showScreen('error-screen');
-            document.getElementById('error-message-text').textContent = data.message || "Failed to initiate save insight.";
+            // Handle actual initiation errors (e.g., queue_full, or unexpected response format)
+            const errorMessage = (data && data.message) ? data.message : "Failed to initiate save insight due to an unexpected server response.";
+            console.error("Failed to initiate save insight:", errorMessage);
+            if (globalActionStatusEl) {
+                globalActionStatusEl.textContent = errorMessage;
+                globalActionStatusEl.className = 'status-message error';
+                globalActionStatusEl.style.display = 'block';
+                setTimeout(() => {
+                    if (globalActionStatusEl.className.includes('error')) {
+                         globalActionStatusEl.style.display = 'none';
+                         globalActionStatusEl.textContent = '';
+                         globalActionStatusEl.className = 'status-message';
+                    }
+                }, 7000); // Hide after 7 seconds
+            }
         }
     })
-    .catch(() => {
-        showScreen('error-screen');
-        document.getElementById('error-message-text').textContent = "Communication error saving insight.";
+    .catch((error) => {
+        console.error("Communication error saving insight:", error);
+        if (globalActionStatusEl) {
+            globalActionStatusEl.textContent = "Communication error saving insight.";
+            globalActionStatusEl.className = 'status-message error';
+            globalActionStatusEl.style.display = 'block';
+            setTimeout(() => {
+                if (globalActionStatusEl.className.includes('error')) {
+                    globalActionStatusEl.style.display = 'none';
+                    globalActionStatusEl.textContent = '';
+                    globalActionStatusEl.className = 'status-message';
+                }
+            }, 7000); // Hide after 7 seconds
+        }
     });
     
     return false;
@@ -119,30 +221,61 @@ function deleteInsight(id) {
     if (!confirm('Are you sure you want to delete this insight?')) {
         return;
     }
-    
-    // For POST with form data (if backend expects it for delete)
+    const globalActionStatusEl = document.getElementById('global-action-status');
     const formData = new FormData();
     formData.append('id', id);
 
-    fetch('/api/actions/delete-insight', { // New endpoint
+    fetch('/api/actions/delete-insight', { 
         method: 'POST',
-        // headers: { 'Content-Type': 'application/json', }, // Keep if backend handles JSON body for this
-        // body: JSON.stringify({ id: id })
-        body: formData // Assuming backend (CaptivePortal.cpp requestAction) now expects form data for delete param
+        body: formData
     })
     .then(response => response.json())
     .then(data => {
-        if (data.status === 'initiated') {
-            console.log("Delete insight initiated.");
-            // loadInsights(); // No longer call directly
+        if (data && data.status === 'queued') {
+            console.log("Delete insight action successfully queued.", data.message);
+            if (globalActionStatusEl) {
+                globalActionStatusEl.textContent = data.message || "Delete insight initiated.";
+                globalActionStatusEl.className = 'status-message info';
+                globalActionStatusEl.style.display = 'block';
+                setTimeout(() => {
+                    if (globalActionStatusEl.textContent === (data.message || "Delete insight initiated.")) {
+                        globalActionStatusEl.style.display = 'none';
+                        globalActionStatusEl.textContent = '';
+                        globalActionStatusEl.className = 'status-message';
+                    }
+                }, 5000);
+            }
         } else {
-            showScreen('error-screen');
-            document.getElementById('error-message-text').textContent = data.message || "Failed to initiate delete insight.";
+            const errorMessage = (data && data.message) ? data.message : "Failed to initiate delete insight.";
+            console.error("Failed to initiate delete insight:", errorMessage);
+            if (globalActionStatusEl) {
+                globalActionStatusEl.textContent = errorMessage;
+                globalActionStatusEl.className = 'status-message error';
+                globalActionStatusEl.style.display = 'block';
+                setTimeout(() => {
+                    if (globalActionStatusEl.className.includes('error')) {
+                        globalActionStatusEl.style.display = 'none';
+                        globalActionStatusEl.textContent = '';
+                        globalActionStatusEl.className = 'status-message';
+                    }
+                }, 7000);
+            }
         }
     })
     .catch(() => {
-        showScreen('error-screen');
-        document.getElementById('error-message-text').textContent = "Communication error deleting insight.";
+        console.error("Communication error deleting insight.");
+        if (globalActionStatusEl) {
+            globalActionStatusEl.textContent = "Communication error deleting insight.";
+            globalActionStatusEl.className = 'status-message error';
+            globalActionStatusEl.style.display = 'block';
+            setTimeout(() => {
+                if (globalActionStatusEl.className.includes('error')) {
+                    globalActionStatusEl.style.display = 'none';
+                    globalActionStatusEl.textContent = '';
+                    globalActionStatusEl.className = 'status-message';
+                }
+            }, 7000);
+        }
     });
 }
 
@@ -231,44 +364,95 @@ function pollApiStatus() {
         .then(data => {
             // console.log('[API_STATUS]', data);
 
-            // 1. Update Portal Action Status (generic messages, loading indicators)
             const portalStatus = data.portal;
-            if (portalStatus) {
-                const actionInProgressEl = document.getElementById('action-in-progress-message'); // Assume such an element exists for global status
-                if (actionInProgressEl) {
-                    if (portalStatus.action_in_progress && portalStatus.action_in_progress !== 'NONE') {
-                        actionInProgressEl.textContent = `Processing: ${portalStatus.action_in_progress}...`;
-                        actionInProgressEl.style.display = 'block';
-                    } else {
-                        actionInProgressEl.style.display = 'none';
-                    }
-                }
+            const globalActionStatusEl = document.getElementById('global-action-status');
 
-                // Handle completion of an action (e.g., show success/error screen once)
-                if (portalStatus.last_action_completed && portalStatus.last_action_completed !== 'NONE') {
-                    const completedActionKey = portalStatus.last_action_completed + '-' + portalStatus.last_action_message; // Simple key for uniqueness
+            if (portalStatus && globalActionStatusEl) {
+                // Handle action in progress
+                if (portalStatus.action_in_progress && portalStatus.action_in_progress !== 'NONE') {
+                    globalActionStatusEl.textContent = `Processing: ${portalStatus.action_in_progress.replace(/_/g, ' ').toLowerCase()}...`;
+                    globalActionStatusEl.className = 'status-message info'; 
+                    globalActionStatusEl.style.display = 'block';
+                    lastProcessedAction = null; 
+                }
+                // Handle completed action
+                else if (portalStatus.last_action_completed && portalStatus.last_action_completed !== 'NONE') {
+                    const completedActionKey = portalStatus.last_action_completed + '-' + (portalStatus.last_action_status || 'UNKNOWN') + '-' + (portalStatus.last_action_message || 'NO_MSG');
+
                     if (lastProcessedAction !== completedActionKey) {
                         console.log(`Action completed: ${portalStatus.last_action_completed}, Status: ${portalStatus.last_action_status}, Msg: ${portalStatus.last_action_message}`);
+
                         if (portalStatus.last_action_status === 'SUCCESS') {
-                            // Show success screen for specific actions if desired
-                            if (['SAVE_WIFI', 'SAVE_DEVICE_CONFIG', 'SAVE_INSIGHT'].includes(portalStatus.last_action_completed)) {
-                                showScreen('success-screen'); 
-                            } else {
-                                // Or a toast message for other successes
-                                // e.g., showToast(portalStatus.last_action_message, 'success');
+                            let successMsg = portalStatus.last_action_message || `${portalStatus.last_action_completed.replace(/_/g, ' ')} successful.`;
+                            if (!portalStatus.last_action_message) {
+                                switch (portalStatus.last_action_completed) {
+                                    case 'SAVE_WIFI': successMsg = 'WiFi configuration saved. Device will attempt to connect.'; break;
+                                    case 'SAVE_DEVICE_CONFIG': successMsg = 'Device configuration saved.'; break;
+                                    case 'SAVE_INSIGHT': successMsg = 'New insight saved.'; break;
+                                    case 'DELETE_INSIGHT': successMsg = 'Insight deleted.'; break;
+                                }
                             }
+                            globalActionStatusEl.textContent = successMsg;
+                            globalActionStatusEl.className = 'status-message success';
+                            globalActionStatusEl.style.display = 'block';
+
+                            // If specific success screens are desired for *other* actions (not general config), they could be added here.
+                            // For now, all successes use the global status bar or success-screen for major events (like WiFi save leading to redirect)
+                            if (['SAVE_WIFI'].includes(portalStatus.last_action_completed)) {
+                                // For actions like SAVE_WIFI that might redirect, keep showScreen for success
+                                // but ensure it's the actual 'config-saved-and-redirecting' screen if that's the flow
+                                showScreen('success-screen'); // Kept for WiFi save, as it has a countdown/redirect
+                            }
+
+                            setTimeout(() => {
+                                if (globalActionStatusEl.textContent === successMsg && !globalActionStatusEl.className.includes('info')) { 
+                                    globalActionStatusEl.style.display = 'none';
+                                    globalActionStatusEl.textContent = '';
+                                    globalActionStatusEl.className = 'status-message';
+                                }
+                            }, 7000); 
+
                         } else if (portalStatus.last_action_status === 'ERROR') {
-                            showScreen('error-screen');
-                            const errorMsgEl = document.getElementById('error-message-text');
-                            if (errorMsgEl) errorMsgEl.textContent = portalStatus.last_action_message || "An unknown error occurred.";
+                            // No longer call showScreen('error-screen');
+                            // Use globalActionStatusEl for errors
+                            const errorMsgText = portalStatus.last_action_message || "An unknown error occurred with " + portalStatus.last_action_completed + ".";
+                            console.error("Action failed:", errorMsgText);
+                            if (globalActionStatusEl) {
+                                globalActionStatusEl.textContent = `Status: ${errorMsgText}`;
+                                globalActionStatusEl.className = 'status-message error';
+                                globalActionStatusEl.style.display = 'block';
+                                setTimeout(() => {
+                                    if (globalActionStatusEl.className.includes('error')) {
+                                        globalActionStatusEl.style.display = 'none';
+                                        globalActionStatusEl.textContent = '';
+                                        globalActionStatusEl.className = 'status-message';
+                                    }
+                                }, 10000); 
+                            }
                         }
                         lastProcessedAction = completedActionKey;
-                        lastProcessedActionMessage = portalStatus.last_action_message;
-                        
-                        // Clear the message after a short delay or user interaction if it's a transient message not on success/error screen
-                        // setTimeout(() => { if(lastProcessedAction === completedActionKey) lastProcessedAction = null; }, 10000);
+                    }
+                } else {
+                    if (globalActionStatusEl.className.includes('info') && globalActionStatusEl.textContent.startsWith('Processing:')) {
+                        // If it was showing 'Processing...' and now there's no action_in_progress and no last_action_completed,
+                        // it implies the processing message should be cleared if it wasn't already handled by a success/error path.
+                        // This can happen if an action completes but doesn't immediately set last_action_completed or if an action was cancelled.
+                        // However, most completed actions should flow through the 'last_action_completed' block.
+                        // Let's be cautious and only clear if it's still showing a generic 'Processing...' and not a specific success/error.
+                        // The success/error timeouts should handle clearing their specific messages.
+                    } else if (globalActionStatusEl.style.display !== 'none' && !globalActionStatusEl.className.includes('success') && !globalActionStatusEl.className.includes('error')){
+                        // Generic clear for info messages not handled by specific timeouts
+                        // globalActionStatusEl.style.display = 'none';
+                        // globalActionStatusEl.textContent = '';
+                        // globalActionStatusEl.className = 'status-message';
                     }
                 }
+            } else if (globalActionStatusEl && portalStatus === null) { // data.portal is null
+                 if (globalActionStatusEl.style.display !== 'none' && !globalActionStatusEl.className.includes('success') && !globalActionStatusEl.className.includes('error')){
+                    globalActionStatusEl.style.display = 'none';
+                    globalActionStatusEl.textContent = '';
+                    globalActionStatusEl.className = 'status-message';
+                 }
             }
 
             // 2. Update WiFi Info
@@ -328,7 +512,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Check if we need to show a specific screen based on URL hash
     // This might be less relevant if all feedback comes via /api/status poll
     const hash = window.location.hash.substr(1);
-    if (hash && ['config-screen', 'success-screen', 'error-screen'].includes(hash)) {
+    if (hash && ['config-screen', 'success-screen'].includes(hash)) {
         showScreen(hash);
     }
     
@@ -444,6 +628,7 @@ function requestStartFirmwareUpdate() {
 function updateOtaUI(otaData, portalData) {
     const currentVersionEl = document.getElementById('current-version');
     const availableVersionEl = document.getElementById('available-version');
+    const availableVersionContainerEl = document.getElementById('available-version-container');
     const releaseNotesEl = document.getElementById('release-notes');
     const updateAvailableSection = document.getElementById('update-available-section');
     const installUpdateBtn = document.getElementById('install-update-btn');
@@ -470,7 +655,18 @@ function updateOtaUI(otaData, portalData) {
 
     // Update displayed versions and notes - always try to update these from otaData
     if (currentVersionEl) currentVersionEl.textContent = otaData.current_firmware_version || 'N/A';
-    if (availableVersionEl) availableVersionEl.textContent = otaData.update_available ? otaData.available_version : 'N/A';
+    
+    // Handle visibility and content of available version
+    if (availableVersionContainerEl && availableVersionEl) {
+        if (otaData.update_available && otaData.available_version && otaData.available_version !== 'N/A') {
+            availableVersionEl.textContent = otaData.available_version;
+            availableVersionContainerEl.style.display = ''; // Show the container (default P display is block)
+        } else {
+            availableVersionEl.textContent = 'N/A'; // Set to N/A for consistency if hidden
+            availableVersionContainerEl.style.display = 'none'; // Hide the container
+        }
+    }
+
     if (releaseNotesEl) releaseNotesEl.textContent = otaData.update_available ? (otaData.release_notes || 'No release notes.') : '';
 
     // Show/hide update available section and control install button based on otaData
