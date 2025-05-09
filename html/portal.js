@@ -220,14 +220,106 @@ function requestScanNetworks() {
         });
 }
 
+// Main function to poll /api/status and update UI
+let lastProcessedAction = null; // To track last action for one-time messages like success/error screens
+let lastProcessedActionMessage = "";
+let initialDeviceConfigLoaded = false; // Flag to track initial device config load
+
+function pollApiStatus() {
+    fetch('/api/status')
+        .then(response => response.json())
+        .then(data => {
+            // console.log('[API_STATUS]', data);
+
+            // 1. Update Portal Action Status (generic messages, loading indicators)
+            const portalStatus = data.portal;
+            if (portalStatus) {
+                const actionInProgressEl = document.getElementById('action-in-progress-message'); // Assume such an element exists for global status
+                if (actionInProgressEl) {
+                    if (portalStatus.action_in_progress && portalStatus.action_in_progress !== 'NONE') {
+                        actionInProgressEl.textContent = `Processing: ${portalStatus.action_in_progress}...`;
+                        actionInProgressEl.style.display = 'block';
+                    } else {
+                        actionInProgressEl.style.display = 'none';
+                    }
+                }
+
+                // Handle completion of an action (e.g., show success/error screen once)
+                if (portalStatus.last_action_completed && portalStatus.last_action_completed !== 'NONE') {
+                    const completedActionKey = portalStatus.last_action_completed + '-' + portalStatus.last_action_message; // Simple key for uniqueness
+                    if (lastProcessedAction !== completedActionKey) {
+                        console.log(`Action completed: ${portalStatus.last_action_completed}, Status: ${portalStatus.last_action_status}, Msg: ${portalStatus.last_action_message}`);
+                        if (portalStatus.last_action_status === 'SUCCESS') {
+                            // Show success screen for specific actions if desired
+                            if (['SAVE_WIFI', 'SAVE_DEVICE_CONFIG', 'SAVE_INSIGHT'].includes(portalStatus.last_action_completed)) {
+                                showScreen('success-screen'); 
+                            } else {
+                                // Or a toast message for other successes
+                                // e.g., showToast(portalStatus.last_action_message, 'success');
+                            }
+                        } else if (portalStatus.last_action_status === 'ERROR') {
+                            showScreen('error-screen');
+                            const errorMsgEl = document.getElementById('error-message-text');
+                            if (errorMsgEl) errorMsgEl.textContent = portalStatus.last_action_message || "An unknown error occurred.";
+                        }
+                        lastProcessedAction = completedActionKey;
+                        lastProcessedActionMessage = portalStatus.last_action_message;
+                        
+                        // Clear the message after a short delay or user interaction if it's a transient message not on success/error screen
+                        // setTimeout(() => { if(lastProcessedAction === completedActionKey) lastProcessedAction = null; }, 10000);
+                    }
+                }
+            }
+
+            // 2. Update WiFi Info
+            if (data.wifi) {
+                _updateNetworksListUI(data.wifi.networks);
+                const wifiStatusEl = document.getElementById('wifi-connection-status'); // Assume element exists
+                if (wifiStatusEl) {
+                    wifiStatusEl.textContent = data.wifi.is_connected ? `Connected to ${data.wifi.connected_ssid} (${data.wifi.ip_address})` : "Not Connected";
+                }
+            }
+
+            // 3. Update Device Config Info
+            if (data.device_config) {
+                _updateDeviceConfigUI(data.device_config);
+            }
+
+            // 4. Update Insights List
+            if (data.insights) {
+                _updateInsightsListUI(data.insights);
+            }
+
+            // 5. Update OTA Firmware Info & UI State
+            if (data.ota) {
+                updateOtaUI(data.ota, data.portal);
+            }
+
+        })
+        .catch(error => {
+            console.error('Error polling /api/status:', error);
+            // Display a global error message, e.g., "Lost connection to device"
+            const actionInProgressEl = document.getElementById('action-in-progress-message');
+            if(actionInProgressEl) {
+                actionInProgressEl.textContent = 'Error fetching status from device. Check connection.';
+                actionInProgressEl.style.display = 'block';
+            }
+        });
+}
+
 // Load current configuration - UI update part will be in pollApiStatus
 function _updateDeviceConfigUI(config) { // Renamed
-    if (config.team_id !== undefined) {
-        document.getElementById('teamId').value = config.team_id;
-    }
-    // The API key from /api/status should be the display version (e.g., ********1234)
-    if (config.api_key_display !== undefined) { 
-        document.getElementById('apiKey').value = config.api_key_display;
+    if (!initialDeviceConfigLoaded) {
+        if (config.team_id !== undefined) {
+            document.getElementById('teamId').value = config.team_id;
+        }
+        // The API key from /api/status should be the display version (e.g., ********1234)
+        // We only set it if it's the first load, otherwise user input might be overwritten.
+        // The actual API key is sent on form submission, not from this display value.
+        if (config.api_key_display !== undefined) { 
+            document.getElementById('apiKey').value = config.api_key_display;
+        }
+        initialDeviceConfigLoaded = true;
     }
 }
 
@@ -345,92 +437,6 @@ function requestStartFirmwareUpdate() {
             if(checkUpdateBtn) checkUpdateBtn.disabled = false;
             const updateStatusTextEl = document.getElementById('update-status-text');
             if(updateStatusTextEl) updateStatusTextEl.textContent = 'Communication error during update request.';
-        });
-}
-
-// Main function to poll /api/status and update UI
-let lastProcessedAction = null; // To track last action for one-time messages like success/error screens
-let lastProcessedActionMessage = "";
-
-function pollApiStatus() {
-    fetch('/api/status')
-        .then(response => response.json())
-        .then(data => {
-            // console.log('[API_STATUS]', data);
-
-            // 1. Update Portal Action Status (generic messages, loading indicators)
-            const portalStatus = data.portal;
-            if (portalStatus) {
-                const actionInProgressEl = document.getElementById('action-in-progress-message'); // Assume such an element exists for global status
-                if (actionInProgressEl) {
-                    if (portalStatus.action_in_progress && portalStatus.action_in_progress !== 'NONE') {
-                        actionInProgressEl.textContent = `Processing: ${portalStatus.action_in_progress}...`;
-                        actionInProgressEl.style.display = 'block';
-                    } else {
-                        actionInProgressEl.style.display = 'none';
-                    }
-                }
-
-                // Handle completion of an action (e.g., show success/error screen once)
-                if (portalStatus.last_action_completed && portalStatus.last_action_completed !== 'NONE') {
-                    const completedActionKey = portalStatus.last_action_completed + '-' + portalStatus.last_action_message; // Simple key for uniqueness
-                    if (lastProcessedAction !== completedActionKey) {
-                        console.log(`Action completed: ${portalStatus.last_action_completed}, Status: ${portalStatus.last_action_status}, Msg: ${portalStatus.last_action_message}`);
-                        if (portalStatus.last_action_status === 'SUCCESS') {
-                            // Show success screen for specific actions if desired
-                            if (['SAVE_WIFI', 'SAVE_DEVICE_CONFIG', 'SAVE_INSIGHT'].includes(portalStatus.last_action_completed)) {
-                                showScreen('success-screen'); 
-                            } else {
-                                // Or a toast message for other successes
-                                // e.g., showToast(portalStatus.last_action_message, 'success');
-                            }
-                        } else if (portalStatus.last_action_status === 'ERROR') {
-                            showScreen('error-screen');
-                            const errorMsgEl = document.getElementById('error-message-text');
-                            if (errorMsgEl) errorMsgEl.textContent = portalStatus.last_action_message || "An unknown error occurred.";
-                        }
-                        lastProcessedAction = completedActionKey;
-                        lastProcessedActionMessage = portalStatus.last_action_message;
-                        
-                        // Clear the message after a short delay or user interaction if it's a transient message not on success/error screen
-                        // setTimeout(() => { if(lastProcessedAction === completedActionKey) lastProcessedAction = null; }, 10000);
-                    }
-                }
-            }
-
-            // 2. Update WiFi Info
-            if (data.wifi) {
-                _updateNetworksListUI(data.wifi.networks);
-                const wifiStatusEl = document.getElementById('wifi-connection-status'); // Assume element exists
-                if (wifiStatusEl) {
-                    wifiStatusEl.textContent = data.wifi.is_connected ? `Connected to ${data.wifi.connected_ssid} (${data.wifi.ip_address})` : "Not Connected";
-                }
-            }
-
-            // 3. Update Device Config Info
-            if (data.device_config) {
-                _updateDeviceConfigUI(data.device_config);
-            }
-
-            // 4. Update Insights List
-            if (data.insights) {
-                _updateInsightsListUI(data.insights);
-            }
-
-            // 5. Update OTA Firmware Info & UI State
-            if (data.ota) {
-                updateOtaUI(data.ota, data.portal);
-            }
-
-        })
-        .catch(error => {
-            console.error('Error polling /api/status:', error);
-            // Display a global error message, e.g., "Lost connection to device"
-            const actionInProgressEl = document.getElementById('action-in-progress-message');
-            if(actionInProgressEl) {
-                actionInProgressEl.textContent = 'Error fetching status from device. Check connection.';
-                actionInProgressEl.style.display = 'block';
-            }
         });
 }
 
