@@ -82,6 +82,16 @@ public:
      */
     static void processUIQueue();
     
+    /**
+     * @brief Thread-safe method to dispatch UI updates to the LVGL task
+     * 
+     * @param update Lambda function containing UI operations
+     * 
+     * Queues UI operations to be executed on the LVGL thread.
+     * Handles queue overflow by discarding updates if queue is full.
+     */
+    static void dispatchToLVGLTask(std::function<void()> update);
+
 private:
     // Constants for UI layout and limits
     static constexpr int MAX_FUNNEL_STEPS = 5;     ///< Maximum number of steps in a funnel

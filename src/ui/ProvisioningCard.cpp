@@ -42,12 +42,12 @@ void ProvisioningCard::createCard() {
     lv_obj_set_pos(_statusScreen, 0, 0);
 
     // Create and configure the top-left version label
-    _topLeftVersionLabel = lv_label_create(_card);
-    lv_obj_set_style_text_font(_topLeftVersionLabel, Style::labelFont(), 0);
-    lv_obj_set_style_text_color(_topLeftVersionLabel, Style::labelColor(), 0);
-    lv_label_set_text(_topLeftVersionLabel, CURRENT_FIRMWARE_VERSION);
-    lv_obj_align(_topLeftVersionLabel, LV_ALIGN_TOP_LEFT, 5, 5); // 5px padding from top-left
-    lv_obj_move_foreground(_topLeftVersionLabel); // Ensure it's on top
+    // _topLeftVersionLabel = lv_label_create(_card);
+    // lv_obj_set_style_text_font(_topLeftVersionLabel, Style::labelFont(), 0);
+    // lv_obj_set_style_text_color(_topLeftVersionLabel, Style::labelColor(), 0);
+    // lv_label_set_text(_topLeftVersionLabel, CURRENT_FIRMWARE_VERSION);
+    // lv_obj_align(_topLeftVersionLabel, LV_ALIGN_TOP_LEFT, 5, 5); // 5px padding from top-left
+    // lv_obj_move_foreground(_topLeftVersionLabel); // Ensure it's on top
 }
 
 void ProvisioningCard::updateConnectionStatus(const String& status) {
@@ -118,6 +118,14 @@ void ProvisioningCard::createQRScreen() {
     lv_obj_set_style_pad_all(_qrScreen, 0, 0);
     lv_obj_set_style_border_width(_qrScreen, 0, 0);
     
+    // Create and configure the top-left version label
+    _topLeftVersionLabel = lv_label_create(_qrScreen); // Parent is now _qrScreen
+    lv_obj_set_style_text_font(_topLeftVersionLabel, Style::labelFont(), 0);
+    lv_obj_set_style_text_color(_topLeftVersionLabel, Style::labelColor(), 0);
+    lv_label_set_text(_topLeftVersionLabel, CURRENT_FIRMWARE_VERSION);
+    lv_obj_align(_topLeftVersionLabel, LV_ALIGN_TOP_LEFT, 5, 5); // 5px padding from top-left
+    lv_obj_move_foreground(_topLeftVersionLabel); // Ensure it's on top within _qrScreen
+
     // Define layout parameters
     const int estimated_label_height = 16; // Estimated height for the SSID label
     const int padding_qr_to_label = 5;     // Padding between QR code and SSID label

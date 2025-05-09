@@ -71,6 +71,25 @@ void InsightCard::dispatchToUI(std::function<void()> update) {
     }
 }
 
+// Static version for general dispatching
+void InsightCard::dispatchToLVGLTask(std::function<void()> update) {
+    static int dispatchCount = 0;
+    dispatchCount++;
+    
+    // Create a callback object to hold the update function
+    UICallback* callback = new UICallback(std::move(update));
+    
+    Serial.printf("[UI-DEBUG] Dispatching static UI update #%d from Core %d\n", 
+                 dispatchCount, xPortGetCoreID());
+    
+    // Try to send to queue
+    if (xQueueSend(uiQueue, &callback, 0) != pdTRUE) {
+        // Queue is full, handle error
+        Serial.println("[UI-DEBUG] Static UI queue full, update discarded");
+        delete callback;
+    }
+}
+
 InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, EventQueue& eventQueue,
                         const String& insightId, uint16_t width, uint16_t height)
     : _config(config)
