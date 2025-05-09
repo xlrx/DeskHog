@@ -403,7 +403,6 @@ void CaptivePortal::handleUpdateStatus(AsyncWebServerRequest *request) {
 // --- New method to process async operations ---
 // This should be called periodically from a task (e.g., portalTaskFunction in main.cpp)
 void CaptivePortal::processAsyncOperations() {
-    Serial.println("DEBUG: CaptivePortal::processAsyncOperations() entered.");
     
     if (_action_in_progress != PortalAction::NONE && !_action_queue.empty()) {
         // This condition implies an action was set as _action_in_progress by requestAction,
@@ -434,16 +433,14 @@ void CaptivePortal::processAsyncOperations() {
         QueuedAction current_queued_action = _action_queue.front();
         _action_queue.erase(_action_queue.begin()); // Dequeue
 
-        // _action_in_progress = current_queued_action.action; // This was the old place to set it
-        // Now, requestAction sets _action_in_progress as a "request pending" hint.
-        // This function will update _last_action_completed and clear _action_in_progress properly.
         PortalAction actionToProcess = current_queued_action.action;
 
-        Serial.printf("Processing action from queue: %s\n", portalActionToString(actionToProcess));
+        Serial.printf("Processing action from queue: %s (Enum Value: %d)\n", portalActionToString(actionToProcess), static_cast<int>(actionToProcess));
 
         bool currentActionSuccess = false;
         String currentActionMessage = "Action failed or not implemented.";
 
+        Serial.println("DEBUG: CaptivePortal - About to enter action processing switch statement.");
         switch (actionToProcess) {
             case PortalAction::SCAN_WIFI:
                 performWiFiScan(); 
@@ -526,20 +523,37 @@ void CaptivePortal::processAsyncOperations() {
                 }
                 break;
             case PortalAction::START_OTA_UPDATE: {
+                Serial.println("DEBUG: CaptivePortal - *** EXECUTION HAS REACHED START_OTA_UPDATE CASE ***"); // New very first line
+                Serial.println("DEBUG: CaptivePortal - START_OTA_UPDATE case entered.");
                 UpdateInfo lastCheck = _otaManager.getLastCheckResult();
+                Serial.println("DEBUG: CaptivePortal - Got lastCheck result from OtaManager.");
+                Serial.printf("DEBUG: CaptivePortal - lastCheck.updateAvailable: %d, downloadUrl empty: %d, URL: %s\n", lastCheck.updateAvailable, lastCheck.downloadUrl.isEmpty(), lastCheck.downloadUrl.c_str());
+
                 if (lastCheck.updateAvailable && !lastCheck.downloadUrl.isEmpty()) {
-                    if (_otaManager.beginUpdate(lastCheck.downloadUrl)) { // This is asynchronous
+                    Serial.println("DEBUG: CaptivePortal - Conditions met to call _otaManager.beginUpdate().");
+                    bool updateBegun = _otaManager.beginUpdate(lastCheck.downloadUrl);
+                    Serial.printf("DEBUG: CaptivePortal - _otaManager.beginUpdate() returned: %s\n", updateBegun ? "true" : "false");
+                    if (updateBegun) { 
                         currentActionSuccess = true;
                         currentActionMessage = "OTA update process started. Poll /api/status for progress.";
+                        Serial.println("DEBUG: CaptivePortal - OTA update process reported as started by beginUpdate.");
                     } else {
+                        Serial.println("DEBUG: CaptivePortal - _otaManager.beginUpdate() returned false. Getting OtaManager status...");
                         UpdateStatus status = _otaManager.getStatus();
+                        Serial.println("DEBUG: CaptivePortal - Got OtaManager status after beginUpdate failed.");
                         currentActionMessage = "Failed to start OTA update: " + status.message;
+                        Serial.printf("DEBUG: CaptivePortal - OTA beginUpdate failed. Portal's message: %s\n", currentActionMessage.c_str());
                     }
                 } else if (!lastCheck.updateAvailable) {
+                    currentActionSuccess = false; // Ensure success is false
                     currentActionMessage = "No OTA update available to start.";
-                } else {
+                    Serial.println("DEBUG: CaptivePortal - No OTA update available according to lastCheck.");
+                } else { // This implies updateAvailable is true, but downloadUrl is empty
+                    currentActionSuccess = false; // Ensure success is false
                     currentActionMessage = "OTA update available, but download URL is missing.";
+                    Serial.println("DEBUG: CaptivePortal - OTA update available, but download URL is missing according to lastCheck.");
                 }
+                Serial.println("DEBUG: CaptivePortal - Exiting START_OTA_UPDATE case logic.");
                 break;
             }
             case PortalAction::NONE:
@@ -552,8 +566,6 @@ void CaptivePortal::processAsyncOperations() {
         _last_action_message = currentActionMessage;
         _action_in_progress = PortalAction::NONE; // Mark PORTAL as done with this action processing cycle.
         Serial.printf("Finished processing action: %s, Success: %d, Msg: %s\n", portalActionToString(actionToProcess), currentActionSuccess, currentActionMessage.c_str());
-    } else {
-        Serial.println("DEBUG: Action queue is empty.");
     }
 }
 

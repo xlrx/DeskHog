@@ -4,6 +4,7 @@
 #include <Update.h> // For ESP32 Update functions
 #include "esp_task_wdt.h"
 #include <WiFi.h> // For WiFi.status() and WL_CONNECTED
+#include "esp_ota_ops.h" // Needed for esp_ota_get_running_partition()
 
 // For heap_caps_malloc and esp_ptr_external_ram, ensure correct include if not already covered by Arduino.h/ESP-IDF basics
 // #include "esp_heap_caps.h" // Already in OtaManager.h but good to be mindful
@@ -67,6 +68,12 @@ struct PsramAllocator {
     }
 };
 #endif
+
+// Structure to pass parameters to the update task
+struct UpdateTaskParams {
+    OtaManager* otaManagerInstance;
+    char* downloadUrl;
+};
 
 // Constructor
 OtaManager::OtaManager(const String& currentVersion, const String& repoOwner, const String& repoName)
@@ -134,7 +141,7 @@ bool OtaManager::checkForUpdate() {
         ) != pdPASS) {
         Serial.println("OtaManager: Failed to create check update task.");
         if (_dataMutex) xSemaphoreTake(_dataMutex, portMAX_DELAY);
-        _setUpdateStatus(UpdateStatus::State::IDLE, "Failed to start check task");
+        _setUpdateStatus(UpdateStatus::State::IDLE, "Failed to start check task.");
         _lastCheckResult.error = "Failed to start check task.";
         if (_dataMutex) xSemaphoreGive(_dataMutex);
         return false;
@@ -143,45 +150,101 @@ bool OtaManager::checkForUpdate() {
 }
 
 bool OtaManager::beginUpdate(const String& downloadUrl) {
+    Serial.printf("OtaManager: [beginUpdate] Entered. Download URL: %s\n", downloadUrl.c_str());
+
     if (downloadUrl.isEmpty()) {
+        Serial.println("OtaManager: [beginUpdate] Error: Download URL is empty.");
         _setUpdateStatus(UpdateStatus::State::ERROR_UPDATE_BEGIN, "Download URL is empty.");
         return false;
     }
 
-    if (_dataMutex) xSemaphoreTake(_dataMutex, portMAX_DELAY);
+    if (_dataMutex) {
+        Serial.println("OtaManager: [beginUpdate] Attempting to take dataMutex.");
+        if (xSemaphoreTake(_dataMutex, portMAX_DELAY) == pdTRUE) {
+            Serial.println("OtaManager: [beginUpdate] dataMutex taken.");
+        } else {
+            Serial.println("OtaManager: [beginUpdate] CRITICAL: Failed to take dataMutex.");
+            // Potentially return or handle error, though portMAX_DELAY should wait indefinitely
+        }
+    } else {
+        Serial.println("OtaManager: [beginUpdate] CRITICAL: _dataMutex is NULL.");
+        _setUpdateStatus(UpdateStatus::State::ERROR_INTERNAL, "Mutex not initialized in beginUpdate");
+        return false; // Cannot proceed without mutex
+    }
+
+    Serial.printf("OtaManager: [beginUpdate] Before status check. Raw _currentStatus.status: %d\n", static_cast<int>(_currentStatus.status)); // Log the raw status value
     if (_currentStatus.status == UpdateStatus::State::DOWNLOADING || _currentStatus.status == UpdateStatus::State::WRITING) {
-        Serial.println("OtaManager: Update already in progress.");
-        if (_dataMutex) xSemaphoreGive(_dataMutex);
+        Serial.println("OtaManager: [beginUpdate] Error: Update already in progress.");
+        if (_dataMutex) xSemaphoreGive(_dataMutex); // Release mutex before returning
+        Serial.println("OtaManager: [beginUpdate] dataMutex given (update already in progress).");
         return false; 
     }
-    _setUpdateStatus(UpdateStatus::State::DOWNLOADING, "Starting update...", 0);
-    if (_dataMutex) xSemaphoreGive(_dataMutex);
+    // If we are here, status is NOT DOWNLOADING or WRITING. Mutex is still held.
+    // Crucial change: Release mutex BEFORE calling _setUpdateStatus, as _setUpdateStatus will take it.
+    if (_dataMutex) {
+        xSemaphoreGive(_dataMutex);
+        Serial.println("OtaManager: [beginUpdate] dataMutex given (before calling _setUpdateStatus).");
+    } else {
+        Serial.println("OtaManager: [beginUpdate] CRITICAL: _dataMutex was NULL before trying to give it prior to _setUpdateStatus call. This shouldn't happen if taken above.");
+        // This is a sanity check; if mutex was taken successfully, it shouldn't be NULL here.
+    }
 
-    // Create a task to handle the update process
-    // Pass the download URL to the task. Need to copy it as the String object might go out of scope.
+    _setUpdateStatus(UpdateStatus::State::DOWNLOADING, "Starting update...", 0); 
+    // _setUpdateStatus will handle its own mutex locking for setting the status.
+
+    // The rest of the function does not need to re-take the mutex for its operations (strdup, malloc, xTaskCreatePinnedToCore)
+    // unless _updateTaskHandle itself needs protection, but xTaskCreatePinnedToCore is task-safe for the handle.
+
+    Serial.println("OtaManager: [beginUpdate] About to allocate memory for URL copy.");
     char* urlCopy = strdup(downloadUrl.c_str()); 
     if (!urlCopy) {
-        Serial.println("OtaManager: Failed to allocate memory for URL copy.");
+        Serial.println("OtaManager: [beginUpdate] Error: Failed to allocate memory for URL copy.");
         _setUpdateStatus(UpdateStatus::State::ERROR_UPDATE_BEGIN, "Memory allocation failed for URL.");
         return false;
     }
+    Serial.printf("OtaManager: [beginUpdate] URL copied to: %p, Content: %s\n", (void*)urlCopy, urlCopy);
 
-    if (xTaskCreatePinnedToCore(
+    Serial.println("OtaManager: [beginUpdate] About to allocate memory for UpdateTaskParams struct.");
+    UpdateTaskParams* taskParams = (UpdateTaskParams*)malloc(sizeof(UpdateTaskParams));
+    if (!taskParams) {
+        Serial.println("OtaManager: [beginUpdate] Error: Failed to allocate memory for task params.");
+        free(urlCopy); // Clean up urlCopy if params allocation fails
+        Serial.println("OtaManager: [beginUpdate] Freed urlCopy due to taskParams allocation failure.");
+        _setUpdateStatus(UpdateStatus::State::ERROR_UPDATE_BEGIN, "Memory allocation failed for task params.");
+        return false;
+    }
+    taskParams->otaManagerInstance = this;
+    taskParams->downloadUrl = urlCopy;
+    Serial.printf("OtaManager: [beginUpdate] taskParams allocated at %p. otaManagerInstance: %p, downloadUrl (copied): %p -> %s\n", (void*)taskParams, (void*)taskParams->otaManagerInstance, (void*)taskParams->downloadUrl, taskParams->downloadUrl);
+
+    Serial.println("OtaManager: [beginUpdate] About to call xTaskCreatePinnedToCore for _updateTaskRunner.");
+    BaseType_t taskCreateResult = xTaskCreatePinnedToCore(
             _updateTaskRunner,      /* Task function */
             "otaUpdateTask",        /* Name of task */
             12288,                  /* Stack size of task (increased for HTTPS and flashing) */
-            (void*)urlCopy,         /* Parameter of the task (pass the copied URL) */
+            (void*)taskParams,      /* Parameter of the task (pass the new struct) */
             2,                      /* Priority of the task (higher than check) */
             &_updateTaskHandle,     /* Task handle */
             0                       /* Core pin */
-        ) != pdPASS) {
-        Serial.println("OtaManager: Failed to create update task.");
-        free(urlCopy); // Free the copied URL if task creation fails
+        );
+    
+    Serial.printf("OtaManager: [beginUpdate] xTaskCreatePinnedToCore result: %s\n", (taskCreateResult == pdPASS) ? "pdPASS" : "pdFAIL");
+
+    if (taskCreateResult != pdPASS) {
+        Serial.println("OtaManager: [beginUpdate] Error: Failed to create update task.");
+        free(taskParams->downloadUrl); // Free the copied URL
+        Serial.println("OtaManager: [beginUpdate] Freed taskParams->downloadUrl due to task creation failure.");
+        free(taskParams);              // Free the params struct
+        Serial.println("OtaManager: [beginUpdate] Freed taskParams struct due to task creation failure.");
+        // Mutex should be taken before setting status if beginUpdate can be called from multiple contexts
+        // However, at this point, it was released earlier. For safety, re-take if setting status here.
         if (_dataMutex) xSemaphoreTake(_dataMutex, portMAX_DELAY);
         _setUpdateStatus(UpdateStatus::State::IDLE, "Failed to start update task");
         if (_dataMutex) xSemaphoreGive(_dataMutex);
         return false;
     }
+    // taskParams and taskParams->downloadUrl will be freed by _updateTaskRunner
+    Serial.println("OtaManager: [beginUpdate] Update task created successfully. Exiting beginUpdate.");
     return true;
 }
 
@@ -237,6 +300,8 @@ void OtaManager::process() {
 
 // Private helper methods
 void OtaManager::_setUpdateStatus(UpdateStatus::State state, const String& message, int progress) {
+    Serial.printf("OtaManager: [_setUpdateStatus] Entered. Requested State: %d, Msg: %s, Prog: %d\n", static_cast<int>(state), message.c_str(), progress);
+
     // Local copies for logging after mutex release
     UpdateStatus::State localState = state;
     String localMessage = message;
@@ -244,32 +309,42 @@ void OtaManager::_setUpdateStatus(UpdateStatus::State state, const String& messa
     int actualProgressForLogging = 0; // Will be updated if progress is valid
 
     if (_dataMutex) {
+        Serial.println("OtaManager: [_setUpdateStatus] Attempting to take dataMutex.");
         if (xSemaphoreTake(_dataMutex, portMAX_DELAY) == pdTRUE) {
+            Serial.println("OtaManager: [_setUpdateStatus] dataMutex taken.");
             _currentStatus.status = localState;
+            Serial.printf("OtaManager: [_setUpdateStatus] _currentStatus.status set to %d\n", static_cast<int>(_currentStatus.status));
             _currentStatus.message = localMessage;
+            Serial.printf("OtaManager: [_setUpdateStatus] _currentStatus.message set to %s\n", _currentStatus.message.c_str());
             if (localProgress != -1) { // Only update progress if a valid value is provided
                 _currentStatus.progress = localProgress;
                 actualProgressForLogging = localProgress;
+                Serial.printf("OtaManager: [_setUpdateStatus] _currentStatus.progress set to %d\n", _currentStatus.progress);
             } else {
                 actualProgressForLogging = _currentStatus.progress; // Log existing progress
+                Serial.printf("OtaManager: [_setUpdateStatus] _currentStatus.progress unchanged, remains %d\n", _currentStatus.progress);
             }
             xSemaphoreGive(_dataMutex);
+            Serial.println("OtaManager: [_setUpdateStatus] dataMutex given.");
         } else {
-            // Failed to take mutex, critical. Log with passed-in values.
+            Serial.println("OtaManager: [_setUpdateStatus] CRITICAL_ERROR: Failed to take dataMutex even with portMAX_DELAY.");
             // This situation should ideally not happen with portMAX_DELAY.
-            Serial.printf("CRITICAL_ERROR: OtaManager::_setUpdateStatus failed to take mutex. Requested state: [%d] %s (%d%%)\n", 
+            // Log with passed-in values, as status wasn't actually set.
+            Serial.printf("CRITICAL_ERROR_DETAIL: OtaManager::_setUpdateStatus mutex fail. Requested state: [%d] %s (%d%%)\n", 
                           static_cast<int>(localState), localMessage.c_str(), localProgress == -1 ? -1 : localProgress);
             return; // Skip logging below as status wasn't actually set
         }
     } else {
-        Serial.printf("CRITICAL_ERROR: OtaManager::_setUpdateStatus: _dataMutex is NULL. Requested state: [%d] %s (%d%%)\n", 
+        Serial.println("OtaManager: [_setUpdateStatus] CRITICAL_ERROR: _dataMutex is NULL.");
+        Serial.printf("CRITICAL_ERROR_DETAIL: OtaManager::_setUpdateStatus _dataMutex NULL. Requested state: [%d] %s (%d%%)\n", 
                       static_cast<int>(localState), localMessage.c_str(), localProgress == -1 ? -1 : localProgress);
         return; // Skip logging below
     }
 
     // Perform logging after mutex has been released
-    Serial.printf("OtaManager Status: [%d] %s (%d%%)\n", 
+    Serial.printf("OtaManager Status: [%d] %s (%d%%) (Logged from _setUpdateStatus after mutex release)\n", 
                   static_cast<int>(localState), localMessage.c_str(), actualProgressForLogging);
+    Serial.println("OtaManager: [_setUpdateStatus] Exiting.");
 }
 
 String OtaManager::_performHttpsRequest(const char* url, const char* rootCa) {
@@ -413,6 +488,7 @@ bool OtaManager::_ensureTimeSynced() {
 // Static task runners
 void OtaManager::_checkUpdateTaskRunner(void* pvParameters) {
     Serial.println("DEBUG: _checkUpdateTaskRunner started.");
+        Serial.println("!!!!!!!!!! UPDATE TASK RUNNER - VERSION XYZ - CHECKING IN !!!!!!!!!!"); 
     OtaManager* self = static_cast<OtaManager*>(pvParameters);
     esp_task_wdt_config_t twdt_config_check = {
         .timeout_ms = 30000, // 30 seconds
@@ -534,10 +610,51 @@ void OtaManager::_checkUpdateTaskRunner(void* pvParameters) {
 }
 
 void OtaManager::_updateTaskRunner(void* pvParameters) {
-    OtaManager* self = static_cast<OtaManager*>(pvParameters);
-    char* downloadUrlCStr = static_cast<char*>(pvParameters);
-    String downloadUrl = String(downloadUrlCStr);
-    free(downloadUrlCStr); // Free the copied URL string now that we have it in a String object
+    Serial.println("OtaManager: [_updateTaskRunner] *** TASK STARTED SUCCESSFULLY ***"); // New very first line
+
+    UpdateTaskParams* params = static_cast<UpdateTaskParams*>(pvParameters);
+    if (!params) {
+        Serial.println("OtaManager: [_updateTaskRunner] CRITICAL ERROR: pvParameters is NULL. Task cannot proceed.");
+        // Cannot call self->_setUpdateStatus as self is unknown. Log and delete task.
+        vTaskDelete(NULL);
+        return;
+    }
+    Serial.printf("OtaManager: [_updateTaskRunner] pvParameters (params struct) address: %p\n", (void*)params);
+
+    OtaManager* self = params->otaManagerInstance;
+    if (!self) {
+        Serial.println("OtaManager: [_updateTaskRunner] CRITICAL ERROR: params->otaManagerInstance is NULL. Task cannot proceed.");
+        // Cannot call self->_setUpdateStatus. Log, free what we can, and delete task.
+        if(params->downloadUrl) free(params->downloadUrl);
+        free(params);
+        vTaskDelete(NULL);
+        return;
+    }
+    Serial.printf("OtaManager: [_updateTaskRunner] self (OtaManager instance) address: %p\n", (void*)self);
+    
+    char* downloadUrlCStr_task = params->downloadUrl; // Keep a C-string pointer before creating String
+    if (!downloadUrlCStr_task) {
+        Serial.println("OtaManager: [_updateTaskRunner] CRITICAL ERROR: params->downloadUrl is NULL. Task cannot proceed.");
+        self->_setUpdateStatus(UpdateStatus::State::ERROR_INTERNAL, "Task started with NULL download URL");
+        // self is valid here, so we can use _setUpdateStatus if needed, though probably implies bigger issues.
+        free(params); // Free the params struct itself
+        vTaskDelete(NULL);
+        return;
+    }
+    Serial.printf("OtaManager: [_updateTaskRunner] downloadUrlCStr_task (from params) address: %p, Content: %s\n", (void*)downloadUrlCStr_task, downloadUrlCStr_task);
+
+    String downloadUrl = String(downloadUrlCStr_task);
+    Serial.printf("OtaManager: [_updateTaskRunner] downloadUrl (String object created): %s\n", downloadUrl.c_str());
+    
+    // Free the passed parameters now that we have copied/used them
+    // Important: downloadUrlCStr_task (which is params->downloadUrl) must be freed.
+    // The 'params' struct itself also needs to be freed.
+    Serial.printf("OtaManager: [_updateTaskRunner] Freeing params->downloadUrl (%p)\n", (void*)params->downloadUrl);
+    free(params->downloadUrl); 
+    params->downloadUrl = nullptr; // Good practice after free
+    Serial.printf("OtaManager: [_updateTaskRunner] Freeing params struct (%p)\n", (void*)params);
+    free(params);
+    params = nullptr; // Good practice
 
     esp_task_wdt_config_t twdt_config_update = {
         .timeout_ms = 120000, // 120 seconds
@@ -548,116 +665,241 @@ void OtaManager::_updateTaskRunner(void* pvParameters) {
     ESP_ERROR_CHECK(esp_task_wdt_add(NULL));    // Add current task to WDT
 
     HTTPClient http;
-    Serial.printf("OtaManager: Starting firmware update from URL: %s\n", downloadUrl.c_str());
+    Serial.printf("OtaManager: [_updateTaskRunner] Starting firmware update from URL: %s\n", downloadUrl.c_str());
     self->_setUpdateStatus(UpdateStatus::State::DOWNLOADING, "Downloading firmware...", 0);
 
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("OtaManager: WiFi not connected for firmware download.");
+        Serial.println("OtaManager: [_updateTaskRunner] WiFi not connected for firmware download.");
         self->_setUpdateStatus(UpdateStatus::State::ERROR_WIFI, "WiFi not connected for download");
-        if (self->_dataMutex) xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
-        self->_updateTaskHandle = NULL;
-        if (self->_dataMutex) xSemaphoreGive(self->_dataMutex);
+        if (self->_dataMutex) { // Check if mutex is valid before taking
+             if (xSemaphoreTake(self->_dataMutex, portMAX_DELAY) == pdTRUE) {
+                self->_updateTaskHandle = NULL;
+                xSemaphoreGive(self->_dataMutex);
+            } else {
+                Serial.println("ERROR: _updateTaskRunner (WiFi Fail) failed to take mutex!");
+                self->_updateTaskHandle = NULL; // Attempt to clear handle anyway
+            }
+        } else {
+             Serial.println("ERROR: _updateTaskRunner (WiFi Fail) _dataMutex is NULL!");
+             self->_updateTaskHandle = NULL; // Attempt to clear handle anyway
+        }
         esp_task_wdt_delete(NULL);
         vTaskDelete(NULL);
         return;
     }
     
-    http.begin(downloadUrl);
+    // Use the CA certificate for the HTTPS connection
+    Serial.println("OtaManager: [_updateTaskRunner] Calling http.begin() with URL and Root CA.");
+    http.begin(downloadUrl, self->_githubApiRootCa); 
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); // Enable following redirects
     http.setConnectTimeout(10000); // 10s
     http.setTimeout(180000);      // 3 minutes for download
+
+    Serial.println("OtaManager: [_updateTaskRunner] About to call http.GET().");
     int httpCode = http.GET();
+    Serial.printf("OtaManager: [_updateTaskRunner] http.GET() returned code: %d\n", httpCode);
     
-    if (httpCode == HTTP_CODE_OK) {
-        int totalSize = http.getSize();
-        if (totalSize <= 0) {
-            Serial.println("OtaManager: Content length header missing or zero.");
-            self->_setUpdateStatus(UpdateStatus::State::ERROR_HTTP_DOWNLOAD, "Invalid content length from server.");
-             if (self->_dataMutex) xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
-            self->_updateTaskHandle = NULL;
-            if (self->_dataMutex) xSemaphoreGive(self->_dataMutex);
-            http.end();
-            esp_task_wdt_delete(NULL);
-            vTaskDelete(NULL);
-            return;
-        }
-
-        if (!Update.begin(totalSize)) {
-            Serial.printf("OtaManager: Not enough space to begin OTA update. Error: %u\n", Update.getError());
-            self->_setUpdateStatus(UpdateStatus::State::ERROR_NO_SPACE, "Not enough space for update. Error: " + String(Update.errorString()));
-            if (self->_dataMutex) xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
-            self->_updateTaskHandle = NULL;
-            if (self->_dataMutex) xSemaphoreGive(self->_dataMutex);
-            http.end();
-            esp_task_wdt_delete(NULL);
-            vTaskDelete(NULL);
-            return;
-        }
-        self->_setUpdateStatus(UpdateStatus::State::WRITING, "Writing firmware...", 0);
-
-        WiFiClient* stream = http.getStreamPtr();
-        size_t written = 0;
-        uint8_t buff[1460] = {0}; // TCP MSS typical size
-        unsigned long lastProgressUpdate = millis();
-
-        while (http.connected() && (written < totalSize)) {
-            esp_task_wdt_reset(); // Reset WDT periodically during download/write
-            size_t len = stream->available();
-            if (len > 0) {
-                int c = stream->readBytes(buff, ((len > sizeof(buff)) ? sizeof(buff) : len));
-                if (Update.write(buff, c) != c) {
-                    self->_setUpdateStatus(UpdateStatus::State::ERROR_UPDATE_WRITE, "Firmware write error: " + String(Update.errorString()));
-                     if (self->_dataMutex) xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
+    if (httpCode > 0) { // Moved the check for httpCode > 0 to encompass redirect handling
+        Serial.printf("OtaManager: [_updateTaskRunner] HTTP GET successful, code: %d\n", httpCode);
+        if (httpCode == HTTP_CODE_OK) {
+            int totalSize = http.getSize();
+            Serial.printf("OtaManager: [_updateTaskRunner] HTTP_CODE_OK. Total size: %d\n", totalSize);
+            if (totalSize <= 0) {
+                Serial.println("OtaManager: [_updateTaskRunner] Content length header missing or zero.");
+                self->_setUpdateStatus(UpdateStatus::State::ERROR_HTTP_DOWNLOAD, "Invalid content length from server.");
+                if (self->_dataMutex) { // Check if mutex is valid before taking
+                    if (xSemaphoreTake(self->_dataMutex, portMAX_DELAY) == pdTRUE) {
+                        self->_updateTaskHandle = NULL;
+                        xSemaphoreGive(self->_dataMutex);
+                    } else {
+                        Serial.println("ERROR: _updateTaskRunner (Content Length) failed to take mutex!");
+                        self->_updateTaskHandle = NULL;
+                    }
+                } else {
+                    Serial.println("ERROR: _updateTaskRunner (Content Length) _dataMutex is NULL!");
                     self->_updateTaskHandle = NULL;
-                    if (self->_dataMutex) xSemaphoreGive(self->_dataMutex);
-                    Update.abort();
-                    http.end();
-                    esp_task_wdt_delete(NULL);
-                    vTaskDelete(NULL);
-                    return;
-                }
-                written += c;
-                int progress = (int)(((float)written / totalSize) * 100);
-                // Update progress not too frequently to avoid flooding serial/logs
-                if (progress > self->_currentStatus.progress && (millis() - lastProgressUpdate > 1000 || progress == 100)) {
-                    self->_setUpdateStatus(UpdateStatus::State::WRITING, "Writing firmware...", progress);
-                    lastProgressUpdate = millis();
                 }
             }
-            delay(1); // Small delay to allow other tasks and prevent tight loop if stream is slow
-        }
 
-        if (written != totalSize) {
-             Serial.printf("OtaManager: Update failed. Bytes written: %d / %d\n", written, totalSize);
-             self->_setUpdateStatus(UpdateStatus::State::ERROR_HTTP_DOWNLOAD, "Download incomplete.");
-             Update.abort();
-        } else if (!Update.end(true)) { // true to set the boot partition
-            Serial.printf("OtaManager: Error occurred during Update.end(): %u\n", Update.getError());
-            self->_setUpdateStatus(UpdateStatus::State::ERROR_UPDATE_END, "Finalizing update error: " + String(Update.errorString()));
-            Update.abort(); // ensure abort is called
+            // Initialize OTA Update process
+            Serial.printf("OtaManager: [_updateTaskRunner] Pre-Update.begin(): Update.isRunning(): %s, Update.canRollBack(): %s\\n",
+                          Update.isRunning() ? "true" : "false",
+                          Update.canRollBack() ? "true" : "false");
+
+            // Log the currently running partition
+            const esp_partition_t *running_partition = esp_ota_get_running_partition();
+            if (running_partition != NULL) {
+                Serial.printf("OtaManager: [_updateTaskRunner] Currently running from partition: %s (Type: %d, SubType: %d)\\n", 
+                              running_partition->label, running_partition->type, running_partition->subtype);
+            } else {
+                Serial.println("OtaManager: [_updateTaskRunner] Could not determine running partition (esp_ota_get_running_partition() returned NULL).");
+            }
+
+            Serial.printf("OtaManager: [_updateTaskRunner] Attempting Update.begin(totalSize: %d, command: U_FLASH, label: \\\"ota_1\\\")\\n", totalSize);
+            // Explicitly target the "ota_1" partition label. U_FLASH (0) is for application partitions.
+            bool update_begin_success = Update.begin(totalSize, U_FLASH, -1, LOW, "ota_1"); 
+            Serial.printf("OtaManager: [_updateTaskRunner] Update.begin(\\\"ota_1\\\") result: %s\\n", update_begin_success ? "SUCCESS" : "FAILED");
+            
+            if (!update_begin_success) {
+                uint8_t update_error_code = Update.getError();
+                const char* update_error_cstr = Update.errorString(); 
+                Serial.printf("OtaManager: [_updateTaskRunner] Update.begin(\\\"ota_1\\\") FAILED. Error: %s (%d)\n", update_error_cstr, update_error_code);
+                self->_setUpdateStatus(UpdateStatus::State::ERROR_NO_SPACE, "Update.begin(\\\"ota_1\\\") failed: " + String(update_error_cstr));
+                
+                // Standard error handling: clear task handle, release mutex, end HTTP, delete WDT & task.
+                if (self->_dataMutex) { 
+                    if (xSemaphoreTake(self->_dataMutex, portMAX_DELAY) == pdTRUE) {
+                        self->_updateTaskHandle = NULL;
+                        xSemaphoreGive(self->_dataMutex);
+                    } else {
+                         Serial.println("ERROR: _updateTaskRunner (Update.begin fail) failed to take mutex!");
+                         self->_updateTaskHandle = NULL; 
+                    }
+                } else {
+                    Serial.println("ERROR: _updateTaskRunner (Update.begin fail) _dataMutex is NULL!");
+                    self->_updateTaskHandle = NULL; 
+                }
+                http.end();
+                esp_task_wdt_delete(NULL);
+                vTaskDelete(NULL);
+                return; // Essential to exit the task here
+            }
+            
+            // If Update.begin() was successful:
+            Serial.printf("OtaManager: [_updateTaskRunner] Post-Update.begin(\\\"ota_1\\\") SUCCESS: Update.isRunning(): %s, Update.canRollBack(): %s\\n",
+                          Update.isRunning() ? "true" : "false",
+                          Update.canRollBack() ? "true" : "false");
+
+            self->_setUpdateStatus(UpdateStatus::State::WRITING, "Writing firmware...", 0);
+
+            WiFiClient* stream = http.getStreamPtr();
+            Serial.println("OtaManager: [_updateTaskRunner] Got stream pointer.");
+            size_t written = 0;
+            uint8_t buff[1460] = {0}; // TCP MSS typical size
+            unsigned long lastProgressUpdate = millis();
+
+            Serial.println("OtaManager: [_updateTaskRunner] Entering firmware write loop.");
+            while (http.connected() && (written < totalSize)) {
+                esp_task_wdt_reset(); // Reset WDT periodically during download/write
+                Serial.printf("OtaManager: [_updateTaskRunner] Loop Start: http.connected(): %d, stream->available(): %d, written: %d / %d\n", http.connected(), stream->available(), written, totalSize);
+                size_t len = stream->available();
+                if (len > 0) {
+                    int c = stream->readBytes(buff, ((len > sizeof(buff)) ? sizeof(buff) : len));
+                    Serial.printf("OtaManager: [_updateTaskRunner] stream->readBytes read %d bytes.\n", c);
+                    if (c > 0) { // Only call Update.write if bytes were actually read
+                        size_t bytes_written_by_update = Update.write(buff, c);
+                        if (bytes_written_by_update != c) {
+                            Serial.printf("OtaManager: [_updateTaskRunner] Update.write() failed. Expected to write %d, actually wrote %d.\n", c, bytes_written_by_update);
+                            // Capture error immediately after the failed write
+                            uint8_t update_error_code = Update.getError(); // Get the error code
+                            const char* update_error_cstr = Update.errorString(); // Get the error string (no argument)
+                            Serial.printf("OtaManager: [_updateTaskRunner] Update Error (captured immediately): %s (%d)\n", update_error_cstr, update_error_code);
+                            
+                            self->_setUpdateStatus(UpdateStatus::State::ERROR_UPDATE_WRITE, "Firmware write error: " + String(update_error_cstr));
+                            if (self->_dataMutex) { 
+                                if (xSemaphoreTake(self->_dataMutex, portMAX_DELAY) == pdTRUE) {
+                                    self->_updateTaskHandle = NULL;
+                                    xSemaphoreGive(self->_dataMutex);
+                                } else {
+                                    Serial.println("ERROR: _updateTaskRunner (Write Error) failed to take mutex!");
+                                    self->_updateTaskHandle = NULL;
+                                }
+                            } else {
+                                Serial.println("ERROR: _updateTaskRunner (Write Error) _dataMutex is NULL!");
+                                self->_updateTaskHandle = NULL;
+                            }
+                            Update.abort();
+                            Serial.println("OtaManager: [_updateTaskRunner] Called Update.abort() after write error.");
+                            http.end();
+                            Serial.println("OtaManager: [_updateTaskRunner] Called http.end() after write error.");
+                            esp_task_wdt_delete(NULL);
+                            vTaskDelete(NULL);
+                            Serial.println("OtaManager: [_updateTaskRunner] Task deleted after write error.");
+                            return;
+                        }
+                        written += bytes_written_by_update; // Use actual bytes written
+                    } else if (c < 0) { // readBytes can return -1 on error/timeout for some stream types
+                        Serial.println("OtaManager: [_updateTaskRunner] stream->readBytes returned a negative value, indicating an error.");
+                        // Treat as a download error
+                        self->_setUpdateStatus(UpdateStatus::State::ERROR_HTTP_DOWNLOAD, "Stream read error during download");
+                         if (self->_dataMutex) { 
+                            if (xSemaphoreTake(self->_dataMutex, portMAX_DELAY) == pdTRUE) {
+                                self->_updateTaskHandle = NULL;
+                                xSemaphoreGive(self->_dataMutex);
+                            } else {
+                                Serial.println("ERROR: _updateTaskRunner (Stream Read Error) failed to take mutex!");
+                                self->_updateTaskHandle = NULL;
+                            }
+                        } else {
+                            Serial.println("ERROR: _updateTaskRunner (Stream Read Error) _dataMutex is NULL!");
+                            self->_updateTaskHandle = NULL;
+                        }
+                        Update.abort();
+                        http.end();
+                        esp_task_wdt_delete(NULL);
+                        vTaskDelete(NULL);
+                        return;
+                    } // If c == 0, it means no data was available right now, loop will continue based on http.connected()
+                    
+                    int progress = (int)(((float)written / totalSize) * 100);
+                    // Update progress not too frequently to avoid flooding serial/logs
+                    if (progress > self->_currentStatus.progress && (millis() - lastProgressUpdate > 1000 || progress == 100)) {
+                        self->_setUpdateStatus(UpdateStatus::State::WRITING, "Writing firmware...", progress);
+                        lastProgressUpdate = millis();
+                    }
+                }
+                delay(1); // Small delay to allow other tasks and prevent tight loop if stream is slow
+            }
+
+            if (written != totalSize) {
+                Serial.printf("OtaManager: [_updateTaskRunner] Update failed. Bytes written: %d / %d\n", written, totalSize);
+                self->_setUpdateStatus(UpdateStatus::State::ERROR_HTTP_DOWNLOAD, "Download incomplete.");
+                Update.abort();
+            } else if (!Update.end(true)) { // true to set the boot partition
+                Serial.printf("OtaManager: [_updateTaskRunner] Error occurred during Update.end(): %u\n", Update.getError());
+                self->_setUpdateStatus(UpdateStatus::State::ERROR_UPDATE_END, "Finalizing update error: " + String(Update.errorString()));
+                Update.abort(); // ensure abort is called
+            } else {
+                self->_setUpdateStatus(UpdateStatus::State::SUCCESS, "Update successful! Rebooting...", 100);
+                Serial.println("OtaManager: [_updateTaskRunner] Update successful. Rebooting...");
+                delay(1000); // Give a moment for serial message to get out
+                ESP.restart();
+            }
         } else {
-            self->_setUpdateStatus(UpdateStatus::State::SUCCESS, "Update successful! Rebooting...", 100);
-            Serial.println("OtaManager: Update successful. Rebooting...");
-            delay(1000); // Give a moment for serial message to get out
-            ESP.restart();
+            Serial.printf("OtaManager: [_updateTaskRunner] HTTP GET completed with code %d, but not HTTP_CODE_OK. Error: %s\n", httpCode, http.errorToString(httpCode).c_str());
+            self->_setUpdateStatus(UpdateStatus::State::ERROR_HTTP_DOWNLOAD, "Firmware download HTTP error: " + String(httpCode) + " " + http.errorToString(httpCode));
         }
-
     } else {
-        Serial.printf("OtaManager: Firmware download HTTP error: %d - %s\n", httpCode, http.errorToString(httpCode).c_str());
-        self->_setUpdateStatus(UpdateStatus::State::ERROR_HTTP_DOWNLOAD, "HTTP error during download: " + String(httpCode));
+        Serial.printf("OtaManager: [_updateTaskRunner] HTTP GET failed, error: %s (httpCode: %d)\n", http.errorToString(httpCode).c_str(), httpCode);
+        self->_setUpdateStatus(UpdateStatus::State::ERROR_HTTP_DOWNLOAD, "HTTP connection failed: " + http.errorToString(httpCode));
     }
+    Serial.println("OtaManager: [_updateTaskRunner] Calling http.end().");
     http.end();
     
     // If we reach here and haven't rebooted, it means an error occurred after starting or during HTTP connection.
     // Ensure task handle is cleared if not already done by an error path.
-    if (self->_dataMutex) xSemaphoreTake(self->_dataMutex, portMAX_DELAY);
-    if (self->_currentStatus.status != UpdateStatus::State::SUCCESS) { // Only set to IDLE if not successful
-        if(self->_currentStatus.status == UpdateStatus::State::DOWNLOADING || self->_currentStatus.status == UpdateStatus::State::WRITING){
-             // If it was in progress but failed and didn't set a specific error state above
-             self->_setUpdateStatus(UpdateStatus::State::IDLE, "Update failed"); 
+    // Also set status to IDLE if it was an in-progress state that failed silently.
+    if (self->_dataMutex) { // Check if mutex is valid before taking
+        if (xSemaphoreTake(self->_dataMutex, portMAX_DELAY) == pdTRUE) {
+            if (self->_currentStatus.status != UpdateStatus::State::SUCCESS) { 
+                // If it was in progress but failed and didn't set a specific error state above
+                if(self->_currentStatus.status == UpdateStatus::State::DOWNLOADING || self->_currentStatus.status == UpdateStatus::State::WRITING || 
+                   self->_currentStatus.status == UpdateStatus::State::ERROR_HTTP_DOWNLOAD || // if previously set to this by this task
+                   self->_currentStatus.status == UpdateStatus::State::ERROR_UPDATE_WRITE || // if previously set to this by this task
+                   self->_currentStatus.status == UpdateStatus::State::ERROR_NO_SPACE) { // if previously set to this
+                     self->_setUpdateStatus(UpdateStatus::State::IDLE, "Update failed or ended prematurely"); 
+                }
+            }
+            self->_updateTaskHandle = NULL;
+            xSemaphoreGive(self->_dataMutex);
+        } else {
+             Serial.println("ERROR: _updateTaskRunner (End Task) failed to take mutex!");
+             self->_updateTaskHandle = NULL; // Attempt to clear handle anyway
         }
+    } else {
+        Serial.println("ERROR: _updateTaskRunner (End Task) _dataMutex is NULL!");
+        self->_updateTaskHandle = NULL; // Attempt to clear handle anyway
     }
-    self->_updateTaskHandle = NULL;
-    if (self->_dataMutex) xSemaphoreGive(self->_dataMutex);
 
     esp_task_wdt_delete(NULL); // Remove current task from WDT
     vTaskDelete(NULL);
