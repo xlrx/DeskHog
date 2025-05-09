@@ -419,6 +419,8 @@ void InsightCard::createLineGraphElements() {
     lv_obj_set_size(_chart, GRAPH_WIDTH, GRAPH_HEIGHT);
     lv_obj_center(_chart);
     lv_chart_set_type(_chart, LV_CHART_TYPE_LINE);
+    lv_obj_set_style_bg_color(_chart, lv_color_hex(0x1A1A1A), 0); // Dark grey background
+    lv_obj_set_style_border_width(_chart, 0, 0); // Match other elements
     
     _series = lv_chart_add_series(_chart, lv_color_hex(0x2980b9), LV_CHART_AXIS_PRIMARY_Y);
     if (!_series) {
@@ -554,7 +556,7 @@ void InsightCard::updateLineGraphDisplay(const String& title, double* values, si
         }
         
         // Limit to 20 points max for performance
-        const size_t displayPoints = std::min(pointCount, static_cast<size_t>(20));
+        const size_t displayPoints = pointCount;
         
         // Update chart
         lv_chart_set_point_count(_chart, displayPoints);
