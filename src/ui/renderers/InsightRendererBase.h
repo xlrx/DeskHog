@@ -21,6 +21,29 @@
 // The UICallback is now self-contained or in its own header, not needed here directly
 // if InsightCard::dispatchToLVGLTask handles UICallback creation.
 
+/**
+ * @class InsightRendererBase
+ * @brief Abstract base class for rendering different types of insights.
+ *
+ * Defines the interface for creating, updating, and clearing UI elements 
+ * for a specific insight visualization.
+ *
+ * **Important LVGL Rendering Lifecycle Note:**
+ * When implementing a new renderer, be aware of LVGL's rendering and layout lifecycle.
+ * LVGL may not immediately calculate the final dimensions and positions of newly created 
+ * objects (especially when using flexbox or percentage-based sizing in parent containers)
+ * within the same execution cycle as their creation.
+ *
+ * If a renderer's `updateDisplay` method relies on the final, calculated dimensions of 
+ * elements just created in its `createElements` method (e.g., to size or position 
+ * children accurately), it's crucial to ensure LVGL has processed these layouts.
+ * In the `InsightCard` (which manages these renderers), a forced refresh 
+ * (e.g., `lv_obj_invalidate()` on the container followed by `lv_refr_now()`) 
+ * is performed *between* calling `createElements()` and `updateDisplay()`.
+ * This allows `updateDisplay()` to work with more reliable, up-to-date element dimensions.
+ * Failure to account for this can lead to elements appearing incorrectly sized, 
+ * misplaced, or not appearing until a later, unrelated refresh cycle.
+ */
 class InsightRendererBase {
 public:
     virtual ~InsightRendererBase() = default;
