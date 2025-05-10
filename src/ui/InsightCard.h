@@ -7,6 +7,10 @@
 #include "ConfigManager.h"
 #include "EventQueue.h"
 #include "posthog/parsers/InsightParser.h"
+#include "UICallback.h"
+
+// Forward declaration for the renderer base class
+class InsightRendererBase;
 
 /**
  * @class InsightCard
@@ -56,14 +60,14 @@ public:
      * 
      * @return LVGL object pointer for the main card container
      */
-    lv_obj_t* getCard();
+    lv_obj_t* getCard() const { return _card; }
 
     /**
      * @brief Get the insight ID
      * 
      * @return String containing the unique insight identifier
      */
-    String getInsightId() const;
+    String getInsightId() const { return _insight_id; }
 
     /**
      * @brief Initialize the UI update queue
@@ -86,11 +90,12 @@ public:
      * @brief Thread-safe method to dispatch UI updates to the LVGL task
      * 
      * @param update Lambda function containing UI operations
+     * @param to_front If true, tries to add the callback to the front of the queue
      * 
      * Queues UI operations to be executed on the LVGL thread.
      * Handles queue overflow by discarding updates if queue is full.
      */
-    static void dispatchToLVGLTask(std::function<void()> update);
+    static void dispatchToLVGLTask(std::function<void()> update_func, bool to_front = false);
 
 private:
     // Constants for UI layout and limits
@@ -104,16 +109,6 @@ private:
     static constexpr int FUNNEL_LABEL_HEIGHT = 20; ///< Height of funnel step labels
 
     static QueueHandle_t uiQueue;  ///< Queue for thread-safe UI updates
-    
-    /**
-     * @brief Thread-safe method to dispatch UI updates
-     * 
-     * @param update Lambda function containing UI operations
-     * 
-     * Queues UI operations to be executed on the LVGL thread.
-     * Handles queue overflow by discarding updates if queue is full.
-     */
-    void dispatchToUI(std::function<void()> update);
     
     /**
      * @brief Handle events from the event queue
@@ -141,54 +136,7 @@ private:
      * Safely removes all UI elements from the content container
      * and resets internal element pointers to nullptr.
      */
-    void clearCardContent();
-    
-    /**
-     * @brief Create UI elements for different visualization types
-     * 
-     * Each method creates the necessary LVGL objects for its visualization type:
-     * - createNumericElements: Large centered value label
-     * - createLineGraphElements: Chart with single data series
-     * - createFunnelElements: Bars and labels for funnel steps with breakdown segments
-     */
-    void createNumericElements();
-    void createLineGraphElements();
-    void createFunnelElements();
-    
-    /**
-     * @brief Update visualization with new data
-     * 
-     * Thread-safe methods to update each visualization type:
-     * - updateNumericDisplay: Updates title and formatted value
-     * - updateLineGraphDisplay: Updates chart with scaled data points
-     * - updateFunnelDisplay: Updates funnel bars, labels, and breakdown segments
-     */
-    void updateNumericDisplay(const String& title, double value);
-    void updateLineGraphDisplay(const String& title, double* values, size_t pointCount);
-    void updateFunnelDisplay(const String& title, InsightParser& parser);
-    
-    /**
-     * @brief Format a numeric value with appropriate scale and separators
-     * 
-     * @param value Value to format
-     * @param buffer Buffer to store formatted string
-     * @param bufferSize Size of buffer
-     * 
-     * Formats numbers with:
-     * - M suffix for millions
-     * - K suffix for thousands
-     * - Thousands separators for integers
-     * - 1-2 decimal places for fractional values
-     */
-    void formatNumber(double value, char* buffer, size_t bufferSize);
-    
-    /**
-     * @brief Initialize funnel visualization colors
-     * 
-     * Sets up color palette for funnel breakdown segments:
-     * - Blue, Green, Purple, Orange, Red
-     */
-    void initBreakdownColors();
+    void clearContentContainer();
     
     /**
      * @brief Check if an LVGL object is valid
@@ -212,17 +160,6 @@ private:
     lv_obj_t* _title_label;             ///< Title text label
     lv_obj_t* _content_container;       ///< Container for visualization
     
-    // Numeric display elements
-    lv_obj_t* _value_label;             ///< Large value display label
-    
-    // Chart elements
-    lv_obj_t* _chart;                   ///< Line graph chart
-    lv_chart_series_t* _series;         ///< Data series for chart
-    
-    // Funnel elements
-    lv_obj_t* _funnel_container;        ///< Container for funnel visualization
-    lv_obj_t* _funnel_bars[MAX_FUNNEL_STEPS];          ///< Bar containers for each step
-    lv_obj_t* _funnel_labels[MAX_FUNNEL_STEPS];        ///< Labels for each step
-    lv_obj_t* _funnel_segments[MAX_FUNNEL_STEPS][MAX_BREAKDOWNS]; ///< Breakdown segments per step
-    lv_color_t _breakdown_colors[MAX_BREAKDOWNS];       ///< Colors for breakdown segments
+    // Renderer related members
+    std::unique_ptr<InsightRendererBase> _active_renderer; // Smart pointer to the current renderer
 };
