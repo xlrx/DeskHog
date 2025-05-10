@@ -206,8 +206,8 @@ void FunnelRenderer::updateDisplay(InsightParser& parser, const String& title_st
             if (isValidLVGLObject(_funnel_step_bars[i])) {
                 lv_obj_clear_flag(_funnel_step_bars[i], LV_OBJ_FLAG_HIDDEN);
                 lv_obj_align(_funnel_step_bars[i], LV_ALIGN_TOP_LEFT, 0, y_offset);
-                // The width of the bar container itself remains full, segments define visible width
-                // lv_obj_set_width(_funnel_step_bars[i], available_width_for_bars * step_data.relative_width_to_first_step); 
+                // Ensure the bar container is set to the full available width before placing segments
+                lv_obj_set_width(_funnel_step_bars[i], available_width_for_bars); 
 
                 for (size_t j = 0; j < breakdown_count; ++j) {
                     if (isValidLVGLObject(_funnel_bar_segments[i][j])) {

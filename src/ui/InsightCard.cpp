@@ -216,6 +216,13 @@ void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
 
             if (_active_renderer) {
                 _active_renderer->createElements(_content_container);
+                if (isValidObject(_content_container)) {
+                    lv_obj_invalidate(_content_container);
+                }
+                lv_display_t* disp = lv_display_get_default();
+                if (disp) {
+                    lv_refr_now(disp);
+                }
             } else {
                 Serial.printf("[InsightCard-%s] CRITICAL: Failed to create a renderer!\n", id.c_str());
             }
