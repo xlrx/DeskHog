@@ -21,9 +21,9 @@ private:
     static constexpr int MAX_FUNNEL_STEPS = 5;     
     static constexpr int MAX_BREAKDOWNS = 5;       
     static constexpr int FUNNEL_BAR_HEIGHT = 5;    
-    static constexpr int FUNNEL_BAR_GAP = 20;      
+    static constexpr int FUNNEL_BAR_GAP = 24;      
     // static constexpr int FUNNEL_LEFT_MARGIN = 0; // Might not be needed if aligning within container
-    static constexpr int FUNNEL_LABEL_HEIGHT = 15; // Adjusted from 20 for potentially tighter fit 
+    static constexpr int FUNNEL_LABEL_HEIGHT = 20; // Restored to original value, as 15 might be too small for Style::valueFont()
 
     lv_obj_t* _funnel_main_container; // A container created by this renderer within parent_container
     

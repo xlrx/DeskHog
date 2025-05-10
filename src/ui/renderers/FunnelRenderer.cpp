@@ -27,10 +27,10 @@ void FunnelRenderer::resetElementPointers() {
 
 void FunnelRenderer::initBreakdownColors() {
     _breakdown_colors[0] = lv_color_hex(0x2980b9);  // Blue
-    _breakdown_colors[1] = lv_color_hex(0x27ae60);  // Green
-    _breakdown_colors[2] = lv_color_hex(0x8e44ad);  // Purple
-    _breakdown_colors[3] = lv_color_hex(0xd35400);  // Orange
-    _breakdown_colors[4] = lv_color_hex(0xc0392b);  // Red
+    _breakdown_colors[1] = lv_color_hex(0x8e44ad);  // Purple (was Green)
+    _breakdown_colors[2] = lv_color_hex(0xd35400);  // Orange (was Purple)
+    _breakdown_colors[3] = lv_color_hex(0xc0392b);  // Red (was Orange)
+    _breakdown_colors[4] = lv_color_hex(0x27ae60);  // Green (was Red)
     // Ensure any unused slots get a default, though MAX_BREAKDOWNS should be respected
     for (int i = 5; i < MAX_BREAKDOWNS; ++i) { // Should not run if MAX_BREAKDOWNS is 5
         _breakdown_colors[i] = lv_color_hex(0x7f8c8d); // Gray for extra, if any
@@ -76,7 +76,7 @@ void FunnelRenderer::createElements(lv_obj_t* parent_container) {
         if (!_funnel_step_labels[i]) continue;
 
         lv_obj_set_style_text_color(_funnel_step_labels[i], Style::valueColor(), 0);
-        lv_obj_set_style_text_font(_funnel_step_labels[i], Style::valueFont(), 0); // Smaller font for step labels
+        lv_obj_set_style_text_font(_funnel_step_labels[i], Style::valueFont(), 0);
         lv_label_set_long_mode(_funnel_step_labels[i], LV_LABEL_LONG_DOT);
         lv_obj_set_width(_funnel_step_labels[i], available_width);
         lv_obj_set_height(_funnel_step_labels[i], FUNNEL_LABEL_HEIGHT);
@@ -146,6 +146,7 @@ void FunnelRenderer::updateDisplay(InsightParser& parser, const String& title_st
         struct SegmentUIData {
             float width_pixels; 
             float offset_pixels; 
+            lv_color_t color; // Added to store color for sorted segments
         } segments[MAX_BREAKDOWNS];
     };
     std::vector<FunnelStepUIData> ui_steps_data(step_count);
@@ -161,32 +162,54 @@ void FunnelRenderer::updateDisplay(InsightParser& parser, const String& title_st
         parser.getFunnelStepData(0, i, step_name_buffer, sizeof(step_name_buffer), nullptr, nullptr, nullptr);
         
         char number_buffer[20];
-        NumberFormat::addThousandsSeparators(number_buffer, sizeof(number_buffer), step_counts_total[i]); // Using global NumberFormat, corrected function name
+        NumberFormat::addThousandsSeparators(number_buffer, sizeof(number_buffer), step_counts_total[i]);
 
-        String label = String(number_buffer);
+        // New label formatting logic
+        uint32_t percentage_val = 0;
+        if (total_first_step > 0) {
+            percentage_val = (step_counts_total[i] * 100) / total_first_step;
+        }
+
+        String new_label_format = "";
+        if (percentage_val == 100 && i == 0) { // Only omit for the first step if it's 100%
+            new_label_format = String(number_buffer);
+        } else {
+            new_label_format = String(percentage_val) + "% - " + String(number_buffer);
+        }
+
         if (step_name_buffer[0] != '\0') {
-            label += " - ";
-            label += step_name_buffer;
+            new_label_format += " - ";
+            new_label_format += step_name_buffer;
         }
-        if (i > 0 && total_first_step > 0) {
-            uint32_t percentage = (step_counts_total[i] * 100) / total_first_step;
-            label += " (";
-            label += String(percentage);
-            label += "%)";
-        }
-        current_ui_step.label_text = label;
+        current_ui_step.label_text = new_label_format;
 
         // Calculate breakdown segments for this step
         uint32_t breakdown_val_counts[MAX_BREAKDOWNS] = {0};
         if (parser.getFunnelBreakdownComparison(i, breakdown_val_counts, nullptr) && step_counts_total[i] > 0) {
             float total_width_for_this_step_bar = available_width_for_bars * current_ui_step.relative_width_to_first_step;
             float current_offset = 0.0f;
-            for (size_t j = 0; j < breakdown_count; ++j) {
-                float segment_percentage_of_step = static_cast<float>(breakdown_val_counts[j]) / step_counts_total[i];
+
+            // Create a vector of {count, original_index} to sort breakdowns
+            std::vector<std::pair<uint32_t, int>> sorted_breakdowns_info;
+            for (size_t k = 0; k < breakdown_count; ++k) {
+                sorted_breakdowns_info.push_back({breakdown_val_counts[k], (int)k});
+            }
+
+            // Sort descending by count (largest first)
+            std::sort(sorted_breakdowns_info.begin(), sorted_breakdowns_info.end(), [](const auto& a, const auto& b) {
+                return a.first > b.first; 
+            });
+
+            for (size_t k = 0; k < breakdown_count; ++k) {
+                uint32_t current_segment_count = sorted_breakdowns_info[k].first;
+                int original_segment_index = sorted_breakdowns_info[k].second;
+
+                float segment_percentage_of_step = static_cast<float>(current_segment_count) / step_counts_total[i];
                 float segment_width_pixels = total_width_for_this_step_bar * segment_percentage_of_step;
                 
-                current_ui_step.segments[j].width_pixels = segment_width_pixels;
-                current_ui_step.segments[j].offset_pixels = current_offset;
+                current_ui_step.segments[k].width_pixels = segment_width_pixels;
+                current_ui_step.segments[k].offset_pixels = current_offset;
+                current_ui_step.segments[k].color = _breakdown_colors[original_segment_index]; // Assign color based on original index
                 current_offset += segment_width_pixels;
             }
         }
@@ -218,6 +241,7 @@ void FunnelRenderer::updateDisplay(InsightParser& parser, const String& title_st
                         if (seg_width > 0) {
                             lv_obj_set_size(_funnel_bar_segments[i][j], seg_width, FUNNEL_BAR_HEIGHT);
                             lv_obj_align(_funnel_bar_segments[i][j], LV_ALIGN_LEFT_MID, static_cast<int>(step_data.segments[j].offset_pixels), 0);
+                            lv_obj_set_style_bg_color(_funnel_bar_segments[i][j], step_data.segments[j].color, 0); // Use stored color
                             lv_obj_clear_flag(_funnel_bar_segments[i][j], LV_OBJ_FLAG_HIDDEN);
                         } else {
                             lv_obj_add_flag(_funnel_bar_segments[i][j], LV_OBJ_FLAG_HIDDEN);
@@ -233,6 +257,7 @@ void FunnelRenderer::updateDisplay(InsightParser& parser, const String& title_st
             }
 
             if (isValidLVGLObject(_funnel_step_labels[i])) {
+                lv_obj_set_width(_funnel_step_labels[i], available_width_for_bars); // Ensure label width is updated
                 lv_label_set_text(_funnel_step_labels[i], step_data.label_text.c_str());
                 lv_obj_clear_flag(_funnel_step_labels[i], LV_OBJ_FLAG_HIDDEN);
                 lv_obj_align(_funnel_step_labels[i], LV_ALIGN_TOP_LEFT, 1, y_offset + FUNNEL_BAR_HEIGHT + 2); // +2 for small gap
