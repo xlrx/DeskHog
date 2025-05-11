@@ -1,274 +1,784 @@
-#include "CaptivePortal.h"
-#include <ArduinoJson.h>
+#include "ui/CaptivePortal.h"
+#include "ConfigManager.h"
+#include "hardware/WifiInterface.h"
+#include "EventQueue.h"
+#include "OtaManager.h" // Required for OtaManager interaction
+#include "html_portal.h"  // For portal HTML
+#include <ArduinoJson.h>  // For JSON responses
+#include <pgmspace.h> // For PROGMEM
+#include <vector> // For std::vector (action queue)
 
-CaptivePortal::CaptivePortal(ConfigManager& configManager, WiFiInterface& wifiInterface, EventQueue& eventQueue)
-    : _server(80), _configManager(configManager), _wifiInterface(wifiInterface), _eventQueue(eventQueue), _lastScanTime(0) {
+// Max size for the action queue
+const size_t MAX_ACTION_QUEUE_SIZE = 5; // Define a reasonable limit
+
+// Action queue structure
+struct QueuedAction { // Defined globally in this .cpp file
+    PortalAction action;
+    String param1;
+    String param2;
+};
+
+// Forward declaration if QueuedAction is used before full definition within the class
+// struct QueuedAction; // Not strictly needed if defined before first use or within class scope directly
+
+// Definition for portalActionToString
+const char* portalActionToString(PortalAction action) {
+    switch (action) {
+        case PortalAction::NONE: return "NONE";
+        case PortalAction::SCAN_WIFI: return "SCAN_WIFI";
+        case PortalAction::SAVE_WIFI: return "SAVE_WIFI";
+        case PortalAction::SAVE_DEVICE_CONFIG: return "SAVE_DEVICE_CONFIG";
+        case PortalAction::SAVE_INSIGHT: return "SAVE_INSIGHT";
+        case PortalAction::DELETE_INSIGHT: return "DELETE_INSIGHT";
+        case PortalAction::CHECK_OTA_UPDATE: return "CHECK_OTA_UPDATE";
+        case PortalAction::START_OTA_UPDATE: return "START_OTA_UPDATE";
+        default: return "UNKNOWN_ACTION"; // Good practice for a default
+    }
+}
+
+// Constructor
+CaptivePortal::CaptivePortal(ConfigManager& configManager, WiFiInterface& wifiInterface, EventQueue& eventQueue, OtaManager& otaManager)
+    : _server(80),
+      _configManager(configManager),
+      _wifiInterface(wifiInterface),
+      _eventQueue(eventQueue),
+      _otaManager(otaManager), // Initialize the OtaManager reference
+      _lastScanTime(0),
+      _action_in_progress(PortalAction::NONE),
+      _last_action_completed(PortalAction::NONE),
+      _last_action_was_success(false),
+      _last_action_message(""),
+      _action_queue() { // Initialize the action queue vector (assuming _action_queue is a member declared in CaptivePortal.h)
 }
 
 void CaptivePortal::begin() {
-    // Set up server routes
-    _server.on("/", [this]() { handleRoot(); });
-    _server.on("/scan-networks", [this]() { handleScanNetworks(); });
-    _server.on("/save-wifi", [this]() { handleSaveWifi(); });
-    _server.on("/get-device-config", [this]() { handleGetDeviceConfig(); });
-    _server.on("/save-device-config", [this]() { handleSaveDeviceConfig(); });
-    _server.on("/get-insights", [this]() { handleGetInsights(); });
-    _server.on("/save-insight", [this]() { handleSaveInsight(); });
-    _server.on("/delete-insight", [this]() { handleDeleteInsight(); });
-    _server.on("/generate_204", [this]() { handleCaptivePortal(); }); // Android captive portal detection
-    _server.on("/fwlink", [this]() { handleCaptivePortal(); }); // Microsoft captive portal detection
-    
-    // Handle all other routes as a captive portal
-    _server.onNotFound([this]() { handle404(); });
-    
-    // Start server
-    _server.begin();
-    
-    // Do initial WiFi scan
+    // Serial.println("CaptivePortal::begin() - START"); // DEBUG REMOVED
+
+    // Perform initial WiFi scan
     performWiFiScan();
-    
-    Serial.println("Captive portal started");
+
+    // CORS Preflight handler for all relevant routes
+    // Needs to be defined before the actual GET/POST handlers for the same paths.
+    _server.on("/save-wifi", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1));
+    _server.on("/save-device-config", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1));
+    _server.on("/save-insight", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1));
+    _server.on("/delete-insight", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1));
+    _server.on("/start-update", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1));
+    // _server.on("/check-update", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1)); // Usually GET, but if POST later
+    // _server.on("/update-status", HTTP_OPTIONS, std::bind(&CaptivePortal::handleCorsPreflight, this, std::placeholders::_1)); // Usually GET
+
+    // Setup page
+    _server.on("/", HTTP_GET, std::bind(&CaptivePortal::handleRoot, this, std::placeholders::_1));
+
+    // New API status endpoint
+    // Serial.println("Registering /api/status..."); // DEBUG REMOVED
+    _server.on("/api/status", HTTP_GET, std::bind(&CaptivePortal::handleApiStatus, this, std::placeholders::_1));
+
+    // New async action triggering endpoints
+    // Serial.println("Registering /api/actions/start-wifi-scan..."); // DEBUG REMOVED
+    _server.on("/api/actions/start-wifi-scan", HTTP_POST, std::bind(&CaptivePortal::handleRequestWifiScan, this, std::placeholders::_1));
+    _server.on("/api/actions/save-wifi", HTTP_POST, std::bind(&CaptivePortal::handleRequestSaveWifi, this, std::placeholders::_1));
+    _server.on("/api/actions/save-device-config", HTTP_POST, std::bind(&CaptivePortal::handleRequestSaveDeviceConfig, this, std::placeholders::_1));
+    _server.on("/api/actions/save-insight", HTTP_POST, std::bind(&CaptivePortal::handleRequestSaveInsight, this, std::placeholders::_1));
+    _server.on("/api/actions/delete-insight", HTTP_POST, std::bind(&CaptivePortal::handleRequestDeleteInsight, this, std::placeholders::_1));
+    // Serial.println("Registering /api/actions/check-ota-update..."); // DEBUG REMOVED
+    _server.on("/api/actions/check-ota-update", HTTP_POST, std::bind(&CaptivePortal::handleRequestCheckOtaUpdate, this, std::placeholders::_1));
+    _server.on("/api/actions/start-ota-update", HTTP_POST, std::bind(&CaptivePortal::handleRequestStartOtaUpdate, this, std::placeholders::_1));
+
+    // WiFi actions
+    _server.on("/scan-networks", HTTP_GET, std::bind(&CaptivePortal::handleScanNetworks, this, std::placeholders::_1));
+
+    // Device config actions
+    _server.on("/get-device-config", HTTP_GET, std::bind(&CaptivePortal::handleGetDeviceConfig, this, std::placeholders::_1));
+
+    // Insight actions
+    _server.on("/get-insights", HTTP_GET, std::bind(&CaptivePortal::handleGetInsights, this, std::placeholders::_1));
+
+    // OTA Update actions
+    _server.on("/check-update", HTTP_GET, std::bind(&CaptivePortal::handleCheckUpdate, this, std::placeholders::_1));
+    _server.on("/start-update", HTTP_POST, std::bind(&CaptivePortal::handleStartUpdate, this, std::placeholders::_1));
+    _server.on("/update-status", HTTP_GET, std::bind(&CaptivePortal::handleUpdateStatus, this, std::placeholders::_1));
+
+    // Captive portal detection URLs
+    _server.on("/generate_204", HTTP_GET, std::bind(&CaptivePortal::handleCaptivePortal, this, std::placeholders::_1)); // Android
+    _server.on("/fwlink", HTTP_GET, std::bind(&CaptivePortal::handleCaptivePortal, this, std::placeholders::_1));         // Microsoft
+    _server.on("/connecttest.txt", HTTP_GET, std::bind(&CaptivePortal::handleCaptivePortal, this, std::placeholders::_1)); // Microsoft
+    _server.on("/hotspot-detect.html", HTTP_GET, std::bind(&CaptivePortal::handleCaptivePortal, this, std::placeholders::_1)); // Apple
+    _server.on("/mobile/status.php", HTTP_GET, std::bind(&CaptivePortal::handleCaptivePortal, this, std::placeholders::_1)); // Some Androids
+    _server.on("/ncsi.txt", HTTP_GET, std::bind(&CaptivePortal::handleCaptivePortal, this, std::placeholders::_1)); // NCSI
+
+    // Not found handler
+    _server.onNotFound(std::bind(&CaptivePortal::handle404, this, std::placeholders::_1));
+
+    // Serial.println("CaptivePortal _server.begin() called."); // DEBUG REMOVED
+    _server.begin();
+    // Serial.println("CaptivePortal _server.begin() FINISHED. Server should be running."); // DEBUG REMOVED
+    Serial.println("Captive Portal HTTP server started (Async Refactor).");
 }
 
-void CaptivePortal::process() {
-    _server.handleClient();
+void CaptivePortal::handleCorsPreflight(AsyncWebServerRequest *request) {
+    AsyncWebServerResponse *response = request->beginResponse(204);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    response->addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    response->addHeader("Access-Control-Allow-Headers", "Content-Type");
+    request->send(response);
 }
 
-void CaptivePortal::handleRoot() {
-    // Return the static HTML - network list will be populated by JavaScript
-    String html = FPSTR(PORTAL_HTML);
-    _server.send(200, "text/html", html);
-}
-
-void CaptivePortal::handleScanNetworks() {
-    // Return cached networks immediately
-    _server.send(200, "application/json", _cachedNetworks);
-    
-    // Trigger a new scan for next time if it's been more than 10 seconds
-    unsigned long now = millis();
-    if (now - _lastScanTime >= 10000) {  // 10 second cooldown
-        performWiFiScan();
-    }
+void CaptivePortal::handleRoot(AsyncWebServerRequest *request) {
+    // Use PORTAL_HTML and its size directly from html_portal.h
+    // Note: beginResponse_P expects uint8_t*, PORTAL_HTML is char*. Casting might be needed
+    // or prefer beginResponse if types are an issue.
+    // For now, let's try with a cast if the compiler insists, otherwise direct usage.
+    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", 
+                                                               (const uint8_t*)PORTAL_HTML, 
+                                                               sizeof(PORTAL_HTML) - 1);
+    response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    response->addHeader("Pragma", "no-cache");
+    response->addHeader("Expires", "0");
+    request->send(response);
 }
 
 void CaptivePortal::performWiFiScan() {
-    _lastScanTime = millis();
+    Serial.println("Starting WiFi Scan...");
+    _wifiInterface.scanNetworks(); // Assuming this is synchronous or handles its own async
     _cachedNetworks = getNetworksJson();
-}
-
-void CaptivePortal::handleSaveWifi() {
-    // This endpoint handles the AJAX POST from the form
-    String ssid = _server.arg("ssid");
-    String password = _server.arg("password");
-    bool success = false;
-    
-    if (ssid.length() > 0) {
-        success = _configManager.saveWiFiCredentials(ssid, password);
-        
-        if (success) {
-            // Try to connect to the new network in the background
-            _wifiInterface.stopAccessPoint();
-            _wifiInterface.connectToStoredNetwork();
-        }
-    }
-    
-    // Return JSON response
-    String response = "{\"success\":" + String(success ? "true" : "false") + "}";
-    _server.send(200, "application/json", response);
-}
-
-void CaptivePortal::handleGetDeviceConfig() {
-    // Create JSON response with current config
-    StaticJsonDocument<256> doc;
-    doc["teamId"] = _configManager.getTeamId();
-    String truncatedKey = _configManager.getApiKey();
-    if (truncatedKey.length() > 12) {
-        truncatedKey = truncatedKey.substring(0, 12) + "...";
-    }
-    doc["apiKey"] = truncatedKey;
-    
-    String response;
-    serializeJson(doc, response);
-    _server.send(200, "application/json", response);
-}
-
-void CaptivePortal::handleSaveDeviceConfig() {
-    bool success = true;
-    String message;
-    
-    // Handle team ID
-    if (_server.hasArg("teamId")) {
-        int teamId = _server.arg("teamId").toInt();
-        _configManager.setTeamId(teamId);
-    }
-    
-    // Handle API key
-    if (_server.hasArg("apiKey")) {
-        String apiKey = _server.arg("apiKey");
-        if (apiKey.endsWith("...")) {
-            success = true;
-            message = "Discarding truncated API key";
-        } else if (!_configManager.setApiKey(apiKey)) {
-            success = false;
-            message = "Invalid API key";
-        }
-    }
-    
-    // Create JSON response
-    StaticJsonDocument<128> doc;
-    doc["success"] = success;
-    if (!success) {
-        doc["message"] = message;
-    }
-    
-    String response;
-    serializeJson(doc, response);
-    _server.send(200, "application/json", response);
-}
-
-void CaptivePortal::handleGetInsights() {
-    // Create JSON response with insights list
-    DynamicJsonDocument doc(4096);  // Adjust size based on your needs
-    JsonArray insights = doc.createNestedArray("insights");
-    
-    auto ids = _configManager.getAllInsightIds();
-    for (const auto& id : ids) {
-        JsonObject insight = insights.createNestedObject();
-        insight["id"] = id;
-        String title = _configManager.getInsight(id);
-        insight["title"] = title.length() > 1 ? title : id;
-    }
-    
-    String response;
-    serializeJson(doc, response);
-    _server.send(200, "application/json", response);
-}
-
-void CaptivePortal::handleSaveInsight() {
-    bool success = false;
-    String message;
-    
-    if (_server.hasArg("insightId")) {
-        String id = _server.arg("insightId");
-        
-        success = _configManager.saveInsight(id, "");
-        if (success) {
-            // Publish an event that an insight was added
-            _eventQueue.publishEvent(EventType::INSIGHT_ADDED, id);
-        } else {
-            message = "Failed to save insight";
-        }
-    } else {
-        message = "Missing required fields";
-    }
-    
-    // Create JSON response
-    StaticJsonDocument<128> doc;
-    doc["success"] = success;
-    if (!success) {
-        doc["message"] = message;
-    }
-    
-    String response;
-    serializeJson(doc, response);
-    _server.send(200, "application/json", response);
-}
-
-void CaptivePortal::handleDeleteInsight() {
-    bool success = false;
-    String message;
-    
-    // Parse JSON request body
-    StaticJsonDocument<128> doc;
-    if (_server.hasArg("plain")) {
-        DeserializationError error = deserializeJson(doc, _server.arg("plain"));
-        
-        if (!error) {
-            const char* id = doc["id"];
-            if (id) {
-                _configManager.deleteInsight(id);
-                success = true;
-                
-                // Publish an event that an insight was deleted
-                _eventQueue.publishEvent(EventType::INSIGHT_DELETED, id);
-            } else {
-                message = "Missing insight ID";
-            }
-        } else {
-            message = "Invalid JSON";
-        }
-    } else {
-        message = "Missing request body";
-    }
-    
-    // Create JSON response
-    StaticJsonDocument<128> response;
-    response["success"] = success;
-    if (!success) {
-        response["message"] = message;
-    }
-    
-    String responseStr;
-    serializeJson(response, responseStr);
-    _server.send(200, "application/json", responseStr);
-}
-
-void CaptivePortal::handleCaptivePortal() {
-    // Redirect to the setup page for captive portal detection
-    _server.sendHeader("Location", "http://" + _wifiInterface.getAPIPAddress(), true);
-    _server.send(302, "text/plain", "");
-}
-
-void CaptivePortal::handle404() {
-    // Redirect to the setup page for all unknown URLs
-    _server.sendHeader("Location", "http://" + _wifiInterface.getAPIPAddress(), true);
-    _server.send(302, "text/plain", "");
+    _lastScanTime = millis();
+    Serial.println("WiFi Scan Complete. Cached networks.");
 }
 
 String CaptivePortal::getNetworksJson() {
-    DynamicJsonDocument doc(4096);  // Adjust size based on max networks
-    JsonArray networks = doc.createNestedArray("networks");
-    
-    // Scan for networks
-    int numNetworks = WiFi.scanNetworks();
-    
-    if (numNetworks > 0) {
-        // Sort networks by signal strength
-        int indices[numNetworks];
-        for (int i = 0; i < numNetworks; i++) {
-            indices[i] = i;
-        }
+    DynamicJsonDocument doc(1024);
+    JsonArray networksArray = doc.to<JsonArray>();
+    std::vector<WiFiInterface::NetworkInfo> networks = _wifiInterface.getScannedNetworks();
+    for (const auto& net : networks) { 
+        JsonObject netObj = networksArray.createNestedObject(); 
+        netObj["ssid"] = net.ssid;
+        netObj["rssi"] = net.rssi;
+        netObj["encrypted"] = net.encryptionType != WIFI_AUTH_OPEN; // Corrected: net.encryptionType
+    }
+    String jsonString;
+    serializeJson(doc, jsonString);
+    return jsonString;
+}
+
+void CaptivePortal::handleScanNetworks(AsyncWebServerRequest *request) {
+    // If cache is older than 10 seconds, request a new scan.
+    // The actual scan is done by processAsyncOperations.
+    // Client polls /api/status for results including the network list.
+    if (millis() - _lastScanTime > 10000) { // Still check cache age to decide if a new scan *request* is needed
+        requestAction(PortalAction::SCAN_WIFI, request); // This will respond with 202 if queued, or 429 if queue full
+    } else {
+        // Cache is fresh, return current cached networks immediately.
+        // This maintains some responsiveness if a recent scan is available.
+        // Alternatively, could also make this path queue an action, and client always polls.
+        // For now, let's return cached if fresh, and queue if stale.
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", _cachedNetworks);
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    }
+}
+
+void CaptivePortal::handleSaveWifi(AsyncWebServerRequest *request) {
+    String ssid;
+    String password;
+    bool success = false;
+
+    if (request->hasParam("ssid", true) && request->hasParam("password", true)) {
+        ssid = request->getParam("ssid", true)->value();
+        password = request->getParam("password", true)->value();
         
-        // Sort by RSSI (signal strength)
-        for (int i = 0; i < numNetworks; i++) {
-            for (int j = i + 1; j < numNetworks; j++) {
-                if (WiFi.RSSI(indices[j]) > WiFi.RSSI(indices[i])) {
-                    std::swap(indices[i], indices[j]);
-                }
-            }
+        Serial.printf("Received WiFi credentials for SSID: %s\n", ssid.c_str());
+        if (_configManager.saveWiFiCredentials(ssid, password)) {
+            // Trigger WiFi connection attempt via EventQueue or directly
+            _eventQueue.publishEvent(EventType::WIFI_CREDENTIALS_FOUND, ssid);
+            success = true;
         }
-        
-        // Add networks to JSON array
-        for (int i = 0; i < numNetworks; i++) {
-            int index = indices[i];
-            String ssid = WiFi.SSID(index);
-            int rssi = WiFi.RSSI(index);
-            bool encrypted = WiFi.encryptionType(index) != WIFI_AUTH_OPEN;
-            
-            // Only include networks with an SSID
-            if (ssid.length() > 0) {
-                JsonObject network = networks.createNestedObject();
-                network["ssid"] = ssid;
-                network["rssi"] = rssi;
-                network["encrypted"] = encrypted;
-            }
+    }
+
+    DynamicJsonDocument doc(256); // Switched to DynamicJsonDocument
+    doc["success"] = success;
+    String responseJson;
+    serializeJson(doc, responseJson);
+    
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+}
+
+void CaptivePortal::handleGetDeviceConfig(AsyncWebServerRequest *request) {
+    DynamicJsonDocument doc(256); // Switched to DynamicJsonDocument
+    doc["teamId"] = _configManager.getTeamId();
+    String apiKey = _configManager.getApiKey();
+    // Send a truncated or placeholder API key for security if it's set
+    doc["apiKey"] = apiKey.length() > 0 ? "********" + apiKey.substring(apiKey.length() - 4) : "";
+
+    String responseJson;
+    serializeJson(doc, responseJson);
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+}
+
+void CaptivePortal::handleSaveDeviceConfig(AsyncWebServerRequest *request) {
+    bool success = false;
+    if (request->hasParam("teamId", true) && request->hasParam("apiKey", true)) {
+        int teamId = request->getParam("teamId", true)->value().toInt();
+        String apiKey = request->getParam("apiKey", true)->value();
+
+        _configManager.setTeamId(teamId);
+        // Only update API key if it's not the placeholder
+        if (apiKey.indexOf("********") == -1) {
+             _configManager.setApiKey(apiKey);
+        }
+        success = true;
+        // No direct EventType mapping for API_CONFIG_UPDATED, so removing for now.
+        // Consider if a different existing event is appropriate or if one needs to be added to EventQueue.h
+    }
+
+    DynamicJsonDocument doc(256); // Switched to DynamicJsonDocument
+    doc["success"] = success;
+    String responseJson;
+    serializeJson(doc, responseJson);
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+}
+
+void CaptivePortal::handleGetInsights(AsyncWebServerRequest *request) {
+    DynamicJsonDocument doc(1024); // Switched to DynamicJsonDocument, larger for potential list
+    JsonArray insightsArray = doc.createNestedArray("insights");
+
+    std::vector<String> insightIds = _configManager.getAllInsightIds();
+    for (const String& id : insightIds) {
+        String title = _configManager.getInsight(id); // Assuming getInsight returns the title or config string
+        if (!title.isEmpty()) {
+            JsonObject insightObj = insightsArray.createNestedObject(); // Using createNestedObject()
+            insightObj["id"] = id;
+            insightObj["title"] = title; // Or parse title if it's a JSON string
         }
     }
     
-    // Free memory used by scan
-    WiFi.scanDelete();
+    String responseJson;
+    serializeJson(doc, responseJson);
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+}
+
+void CaptivePortal::handleSaveInsight(AsyncWebServerRequest *request) {
+    bool success = false;
+    if (request->hasParam("insightId", true)) {
+        String id = request->getParam("insightId", true)->value();
+        if (_configManager.saveInsight(id, "")) {
+            _eventQueue.publishEvent(EventType::INSIGHT_ADDED, id); // Corrected publish call
+            success = true;
+        }
+    }
+
+    DynamicJsonDocument doc(256); // Switched to DynamicJsonDocument
+    doc["success"] = success;
+    String responseJson;
+    serializeJson(doc, responseJson);
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+}
+
+void CaptivePortal::handleDeleteInsight(AsyncWebServerRequest *request) {
+    bool success = false;
+    if (request->hasParam("id", true)) {
+        String id = request->getParam("id", true)->value();
+         _configManager.deleteInsight(id); // deleteInsight doesn't return bool, assume success
+        _eventQueue.publishEvent(EventType::INSIGHT_DELETED, id); // Corrected publish call
+        success = true;
+    }
+
+
+    DynamicJsonDocument doc(256); // Switched to DynamicJsonDocument
+    doc["success"] = success;
+    String responseJson;
+    serializeJson(doc, responseJson);
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+}
+
+void CaptivePortal::handleCaptivePortal(AsyncWebServerRequest *request) {
+    if (_wifiInterface.isConnected()) { // Check if ESP32 STA is connected to an upstream WiFi
+        String url = request->url();
+        Serial.printf("CaptivePortal: WiFi connected, handling OS detection URL: %s\n", url.c_str());
+
+        if (url.indexOf("generate_204") != -1) {
+            request->send(204); // HTTP 204 No Content for Android/Chrome detection
+        } else if (url.indexOf("hotspot-detect.html") != -1) {
+            // Apple expects a page containing "Success"
+            request->send(200, "text/html", "<!DOCTYPE HTML><HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>");
+        } else if (url.indexOf("connecttest.txt") != -1) {
+            // Microsoft NCSI connecttest.txt
+            request->send(200, "text/plain", "Microsoft Connect Test");
+        } else if (url.indexOf("ncsi.txt") != -1) {
+            // Microsoft NCSI ncsi.txt - often expects specific content or just a 200/204
+            request->send(200, "text/plain", "Microsoft NCSI"); // Or send(204)
+        } else {
+            // For other unhandled but common captive portal detection URLs (like fwlink, mobile/status.php)
+            // a generic success response might work.
+            Serial.printf("CaptivePortal: Unhandled OS detection URL while WiFi connected: %s. Sending generic 204.\n", url.c_str());
+            request->send(204); 
+        }
+    } else {
+        // WiFi STA not connected, ESP32 is in 'portal setup' mode. Redirect to the portal UI.
+        Serial.printf("CaptivePortal: WiFi not connected, redirecting OS detection URL %s to / (portal UI)\n", request->url().c_str());
+        request->redirect("/");
+    }
+}
+
+void CaptivePortal::handle404(AsyncWebServerRequest *request) {
+    // For any other request, also redirect to the root page in AP mode
+    // Or, if WiFi is connected, could send a 404.
+    // Assuming this is primarily for AP mode config.
+    Serial.printf("CaptivePortal: 404 for %s, redirecting to /\n", request->url().c_str());
+    request->redirect("/");
+}
+
+// OTA Update Handlers (interacting with OtaManager)
+void CaptivePortal::handleCheckUpdate(AsyncWebServerRequest *request) {
+    DynamicJsonDocument doc(512); // Switched to DynamicJsonDocument
+    UpdateInfo lastCheck = _otaManager.getLastCheckResult(); // Get previous check result first
     
-    String response;
-    serializeJson(doc, response);
-    return response;
+    doc["current_firmware_version"] = lastCheck.currentVersion; // Use version from OtaManager
+    
+    bool checkInitiated = _otaManager.checkForUpdate(); // Attempt to start a new check
+    
+    doc["check_initiated"] = checkInitiated;
+    if (checkInitiated) {
+        doc["initial_status_message"] = "Update check started. Polling for results...";
+    } else {
+        // Could be already checking, or WiFi not ready, etc. OtaManager handles details.
+        // Get current status to reflect why it might not have initiated.
+        UpdateStatus currentStatus = _otaManager.getStatus();
+        doc["initial_status_message"] = currentStatus.message; // Reflect current status message
+    }
+
+    String responseJson;
+    serializeJson(doc, responseJson);
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+}
+
+void CaptivePortal::handleStartUpdate(AsyncWebServerRequest *request) {
+    DynamicJsonDocument doc(256); // Switched to DynamicJsonDocument
+    UpdateInfo lastCheck = _otaManager.getLastCheckResult(); // Need this for the download URL
+
+    bool success = false;
+    String message = "No update information available or update not available.";
+
+    if (lastCheck.updateAvailable && !lastCheck.downloadUrl.isEmpty()) {
+        if (_otaManager.beginUpdate(lastCheck.downloadUrl)) {
+            success = true;
+            message = "Update process initiated.";
+        } else {
+            // beginUpdate failed, get status to explain why
+            UpdateStatus currentStatus = _otaManager.getStatus();
+            message = "Failed to start update: " + currentStatus.message;
+        }
+    } else if (!lastCheck.updateAvailable) {
+        message = "No update available to start.";
+    } else if (lastCheck.downloadUrl.isEmpty()) {
+        message = "Update available, but download URL is missing.";
+    }
+    
+    doc["success"] = success;
+    doc["message"] = message;
+
+    String responseJson;
+    serializeJson(doc, responseJson);
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+}
+
+void CaptivePortal::handleUpdateStatus(AsyncWebServerRequest *request) {
+    DynamicJsonDocument doc(512); // Switched to DynamicJsonDocument
+    UpdateStatus status = _otaManager.getStatus();
+    UpdateInfo lastCheck = _otaManager.getLastCheckResult(); // Also get last check results
+
+    doc["status_code"] = static_cast<int>(status.status);
+    doc["status_message"] = status.message;
+    doc["progress"] = status.progress;
+
+    // Information from the last check result (UpdateInfo)
+    // This is what portal.js expects for displaying available versions etc.
+    // The names in portal.js are like `available_firmware_version_info`
+    doc["current_firmware_version_info"] = lastCheck.currentVersion;
+    doc["is_update_available_info"] = lastCheck.updateAvailable;
+    doc["available_firmware_version_info"] = lastCheck.availableVersion;
+    doc["release_notes_info"] = lastCheck.releaseNotes;
+    doc["error_message_info"] = lastCheck.error; // Error specifically from the check process
+
+    String responseJson;
+    serializeJson(doc, responseJson);
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+}
+
+// --- New method to process async operations ---
+// This should be called periodically from a task (e.g., portalTaskFunction in main.cpp)
+void CaptivePortal::processAsyncOperations() {
+    
+    if (_action_in_progress != PortalAction::NONE && !_action_queue.empty()) {
+        // This condition implies an action was set as _action_in_progress by requestAction,
+        // but processAsyncOperations hasn't completed it yet (or another action is still truly in progress from a previous cycle).
+        // We only want to start a new action from the queue if the *portal itself* is not mid-processing an action from a *previous* call to processAsyncOperations.
+        // The _action_in_progress set by requestAction is more of an optimistic "request pending" state for the UI.
+        // The true gate for starting new work here is if the *actual processing machinery* is idle.
+        // For now, the original logic is: if _action_in_progress is NOT NONE (set by previous cycle of this func), return.
+        // If it WAS set by requestAction but this function is now running, we should process from queue.
+        // Let's refine the gate: only proceed if no *true* async op from this function is pending.
+        // The current _action_in_progress set by requestAction should NOT prevent dequeuing.
+        // The real check should be if a previous call to this function set _action_in_progress and hasn't cleared it.
+        // However, the current code structure IS: if _action_in_progress is anything but NONE, return.
+        // This is the part that needs to align with the immediate _action_in_progress update in requestAction.
+
+        // If _action_in_progress was set by requestAction(), it signals a *request* is pending.
+        // The actual processing of that request starts here by dequeuing.
+        // The original `if (_action_in_progress != PortalAction::NONE) { return; }` was too simple
+        // if requestAction() also sets _action_in_progress immediately.
+
+        // Corrected logic: if there is something in the queue, we process it, 
+        // regardless of _action_in_progress set by requestAction, as that's just a UI hint.
+        // The _action_in_progress will be properly managed by *this* function upon completion.
+    }
+
+    if (!_action_queue.empty()) {
+        Serial.println("DEBUG: Action queue is not empty, processing next action.");
+        QueuedAction current_queued_action = _action_queue.front();
+        _action_queue.erase(_action_queue.begin()); // Dequeue
+
+        PortalAction actionToProcess = current_queued_action.action;
+
+        Serial.printf("Processing action from queue: %s (Enum Value: %d)\n", portalActionToString(actionToProcess), static_cast<int>(actionToProcess));
+
+        bool currentActionSuccess = false;
+        String currentActionMessage = "Action failed or not implemented.";
+
+        Serial.println("DEBUG: CaptivePortal - About to enter action processing switch statement.");
+        switch (actionToProcess) {
+            case PortalAction::SCAN_WIFI:
+                performWiFiScan(); 
+                currentActionSuccess = true;
+                currentActionMessage = "WiFi scan completed.";
+                break;
+            case PortalAction::SAVE_WIFI: {
+                String ssid = current_queued_action.param1; // Use from QueuedAction
+                String password = current_queued_action.param2; // Use from QueuedAction
+                if (!ssid.isEmpty()) {
+                    Serial.printf("Saving WiFi credentials for SSID: %s\n", ssid.c_str());
+                    if (_configManager.saveWiFiCredentials(ssid, password)) {
+                        _eventQueue.publishEvent(EventType::WIFI_CREDENTIALS_FOUND, ssid);
+                        currentActionSuccess = true;
+                        currentActionMessage = "WiFi credentials saved for " + ssid;
+                    } else {
+                        currentActionMessage = "Failed to save WiFi credentials.";
+                    }
+                } else {
+                    currentActionMessage = "SSID cannot be empty for SAVE_WIFI.";
+                }
+                // _pending_param1 = ""; _pending_param2 = ""; // Not needed now
+                break;
+            }
+            case PortalAction::SAVE_DEVICE_CONFIG: {
+                String teamIdStr = current_queued_action.param1; // Use from QueuedAction
+                String apiKey = current_queued_action.param2;    // Use from QueuedAction
+                if (!teamIdStr.isEmpty()) {
+                    _configManager.setTeamId(teamIdStr.toInt());
+                    if (!apiKey.isEmpty() && apiKey.indexOf("********") == -1) {
+                        _configManager.setApiKey(apiKey);
+                    }
+                    currentActionSuccess = true;
+                    currentActionMessage = "Device configuration saved.";
+                } else {
+                    currentActionMessage = "Team ID cannot be empty.";
+                }
+                 // _pending_param1 = ""; _pending_param2 = ""; // Not needed now
+                break;
+            }
+            case PortalAction::SAVE_INSIGHT: {
+                String id = current_queued_action.param1;     // Use from QueuedAction
+                if (!id.isEmpty()) {
+                    if (_configManager.saveInsight(id, "")) {
+                        _eventQueue.publishEvent(EventType::INSIGHT_ADDED, id);
+                        currentActionSuccess = true;
+                        currentActionMessage = "Insight '" + id + "' saved.";
+                    } else {
+                        currentActionMessage = "Failed to save insight.";
+                    }
+                } else {
+                    currentActionMessage = "Insight ID cannot be empty.";
+                }
+                // _pending_param1 = ""; _pending_param2 = ""; // Not needed now
+                break;
+            }
+            case PortalAction::DELETE_INSIGHT: {
+                String id = current_queued_action.param1; // Use from QueuedAction
+                 if (!id.isEmpty()) {
+                    _configManager.deleteInsight(id);
+                    _eventQueue.publishEvent(EventType::INSIGHT_DELETED, id);
+                    currentActionSuccess = true;
+                    currentActionMessage = "Insight '" + id + "' deleted.";
+                } else {
+                    currentActionMessage = "Insight ID cannot be empty for deletion.";
+                }
+                // _pending_param1 = ""; // Not needed now
+                break;
+            }
+            case PortalAction::CHECK_OTA_UPDATE:
+                Serial.println("DEBUG: Case PortalAction::CHECK_OTA_UPDATE reached in processAsyncOperations.");
+                if (_otaManager.checkForUpdate()) { 
+                    currentActionSuccess = true; 
+                    currentActionMessage = "OTA update check successfully initiated with OtaManager.";
+                } else {
+                    currentActionSuccess = false; // Explicitly false
+                    UpdateStatus status = _otaManager.getStatus();
+                    currentActionMessage = "Portal failed to initiate OTA update check with OtaManager. OtaManager status: " + status.message;
+                }
+                break;
+            case PortalAction::START_OTA_UPDATE: {
+                Serial.println("DEBUG: CaptivePortal - *** EXECUTION HAS REACHED START_OTA_UPDATE CASE ***"); // New very first line
+                Serial.println("DEBUG: CaptivePortal - START_OTA_UPDATE case entered.");
+                UpdateInfo lastCheck = _otaManager.getLastCheckResult();
+                Serial.println("DEBUG: CaptivePortal - Got lastCheck result from OtaManager.");
+                Serial.printf("DEBUG: CaptivePortal - lastCheck.updateAvailable: %d, downloadUrl empty: %d, URL: %s\n", lastCheck.updateAvailable, lastCheck.downloadUrl.isEmpty(), lastCheck.downloadUrl.c_str());
+
+                if (lastCheck.updateAvailable && !lastCheck.downloadUrl.isEmpty()) {
+                    Serial.println("DEBUG: CaptivePortal - Conditions met to call _otaManager.beginUpdate().");
+                    bool updateBegun = _otaManager.beginUpdate(lastCheck.downloadUrl);
+                    Serial.printf("DEBUG: CaptivePortal - _otaManager.beginUpdate() returned: %s\n", updateBegun ? "true" : "false");
+                    if (updateBegun) { 
+                        currentActionSuccess = true;
+                        currentActionMessage = "OTA update process started. Poll /api/status for progress.";
+                        Serial.println("DEBUG: CaptivePortal - OTA update process reported as started by beginUpdate.");
+                    } else {
+                        Serial.println("DEBUG: CaptivePortal - _otaManager.beginUpdate() returned false. Getting OtaManager status...");
+                        UpdateStatus status = _otaManager.getStatus();
+                        Serial.println("DEBUG: CaptivePortal - Got OtaManager status after beginUpdate failed.");
+                        currentActionMessage = "Failed to start OTA update: " + status.message;
+                        Serial.printf("DEBUG: CaptivePortal - OTA beginUpdate failed. Portal's message: %s\n", currentActionMessage.c_str());
+                    }
+                } else if (!lastCheck.updateAvailable) {
+                    currentActionSuccess = false; // Ensure success is false
+                    currentActionMessage = "No OTA update available to start.";
+                    Serial.println("DEBUG: CaptivePortal - No OTA update available according to lastCheck.");
+                } else { // This implies updateAvailable is true, but downloadUrl is empty
+                    currentActionSuccess = false; // Ensure success is false
+                    currentActionMessage = "OTA update available, but download URL is missing.";
+                    Serial.println("DEBUG: CaptivePortal - OTA update available, but download URL is missing according to lastCheck.");
+                }
+                Serial.println("DEBUG: CaptivePortal - Exiting START_OTA_UPDATE case logic.");
+                break;
+            }
+            case PortalAction::NONE:
+                // Should not happen
+                break;
+        }
+        
+        _last_action_completed = actionToProcess;
+        _last_action_was_success = currentActionSuccess;
+        _last_action_message = currentActionMessage;
+        _action_in_progress = PortalAction::NONE; // Mark PORTAL as done with this action processing cycle.
+        Serial.printf("Finished processing action: %s, Success: %d, Msg: %s\n", portalActionToString(actionToProcess), currentActionSuccess, currentActionMessage.c_str());
+    }
+}
+
+// --- New /api/status endpoint ---
+void CaptivePortal::handleApiStatus(AsyncWebServerRequest *request) {
+    Serial.println("/api/status HANDLER CALLED"); // You can keep this line if useful
+    // REMOVE SIMPLIFIED TEST BLOCK
+    // request->send(200, "text/plain", "API Status OK - Simplified"); 
+    // return; 
+
+    // RESTORE ORIGINAL FULL LOGIC
+    DynamicJsonDocument doc(2048); 
+
+    JsonObject portalObj = doc.createNestedObject("portal");
+    portalObj["action_in_progress"] = portalActionToString(_action_in_progress);
+    portalObj["last_action_completed"] = portalActionToString(_last_action_completed);
+    portalObj["last_action_status"] = _last_action_was_success ? "SUCCESS" : (_last_action_completed != PortalAction::NONE ? "ERROR" : "NONE");
+    portalObj["last_action_message"] = _last_action_message;
+
+    // Add specific OTA request status message from the portal's perspective
+    String portalOtaRequestMsg = "";
+    if (_action_in_progress == PortalAction::CHECK_OTA_UPDATE) {
+        portalOtaRequestMsg = "Portal: OTA update check request is pending execution.";
+    } else if (_action_in_progress == PortalAction::START_OTA_UPDATE) {
+        portalOtaRequestMsg = "Portal: OTA update start request is pending execution.";
+    } else {
+        // Check if the *last completed* action by the portal was an OTA dispatch
+        if (_last_action_completed == PortalAction::CHECK_OTA_UPDATE || _last_action_completed == PortalAction::START_OTA_UPDATE) {
+            if (_last_action_was_success) {
+                portalOtaRequestMsg = "Portal: Successfully dispatched '" + String(portalActionToString(_last_action_completed)) + "' to OtaManager. Current OtaManager status follows.";
+            } else {
+                portalOtaRequestMsg = "Portal: Failed to dispatch '" + String(portalActionToString(_last_action_completed)) + "'. Error: " + _last_action_message;
+            }
+        }
+    }
+    if (!portalOtaRequestMsg.isEmpty()) {
+        portalObj["portal_ota_action_message"] = portalOtaRequestMsg;
+    }
+
+    JsonObject wifiObj = doc.createNestedObject("wifi");
+    wifiObj["is_scanning"] = (_action_in_progress == PortalAction::SCAN_WIFI); 
+    if (_lastScanTime > 0 && !_cachedNetworks.isEmpty()){ 
+        DynamicJsonDocument cachedNetDoc(1024);
+        DeserializationError error = deserializeJson(cachedNetDoc, _cachedNetworks);
+        if (!error) {
+            wifiObj["networks"] = cachedNetDoc.as<JsonArray>(); 
+        } else {
+            Serial.printf("Failed to parse cached networks JSON in handleApiStatus: %s\n", error.c_str());
+            wifiObj.createNestedArray("networks");
+        }
+    } else {
+        wifiObj.createNestedArray("networks");
+    }
+    wifiObj["last_scan_time"] = _lastScanTime;
+    wifiObj["connected_ssid"] = _wifiInterface.getCurrentSsid(); 
+    wifiObj["ip_address"] = _wifiInterface.getIPAddress();
+    wifiObj["is_connected"] = _wifiInterface.isConnected(); 
+
+    JsonObject deviceConfigObj = doc.createNestedObject("device_config");
+    deviceConfigObj["team_id"] = _configManager.getTeamId();
+    String apiKey = _configManager.getApiKey();
+    deviceConfigObj["api_key_display"] = apiKey.length() > 0 ? "********" + apiKey.substring(apiKey.length() - 4) : "";
+    deviceConfigObj["api_key_present"] = apiKey.length() > 0;
+
+    JsonArray insightsArray = doc.createNestedArray("insights");
+    std::vector<String> insightIds = _configManager.getAllInsightIds();
+    for (const String& id : insightIds) {
+        String title = _configManager.getInsight(id);
+        JsonObject insightObj = insightsArray.createNestedObject();
+        insightObj["id"] = id;
+        if (!title.isEmpty()) {
+            insightObj["title"] = title;
+        } else {
+            insightObj["title"] = id; // Use ID as placeholder title if actual title is empty
+        }
+    }
+
+    JsonObject otaObj = doc.createNestedObject("ota");
+    UpdateStatus status = _otaManager.getStatus();
+    UpdateInfo lastCheck = _otaManager.getLastCheckResult();
+    otaObj["status_code"] = static_cast<int>(status.status);
+    otaObj["status_message"] = status.message;
+    otaObj["progress"] = status.progress;
+    otaObj["current_firmware_version"] = lastCheck.currentVersion; 
+    otaObj["update_available"] = lastCheck.updateAvailable;     
+    otaObj["available_version"] = lastCheck.availableVersion;  
+    otaObj["release_notes"] = lastCheck.releaseNotes;        
+    otaObj["error_message"] = lastCheck.error;               
+
+    String responseJson;
+    serializeJson(doc, responseJson);
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    response->addHeader("Pragma", "no-cache");
+    response->addHeader("Expires", "0");
+    request->send(response);
+}
+
+void CaptivePortal::handleRequestWifiScan(AsyncWebServerRequest *request) {
+    requestAction(PortalAction::SCAN_WIFI, request);
+}
+
+void CaptivePortal::handleRequestSaveWifi(AsyncWebServerRequest *request) {
+    requestAction(PortalAction::SAVE_WIFI, request);
+}
+
+void CaptivePortal::handleRequestSaveDeviceConfig(AsyncWebServerRequest *request) {
+    requestAction(PortalAction::SAVE_DEVICE_CONFIG, request);
+}
+
+void CaptivePortal::handleRequestSaveInsight(AsyncWebServerRequest *request) {
+    requestAction(PortalAction::SAVE_INSIGHT, request);
+}
+
+void CaptivePortal::handleRequestDeleteInsight(AsyncWebServerRequest *request) {
+    requestAction(PortalAction::DELETE_INSIGHT, request);
+}
+
+void CaptivePortal::handleRequestCheckOtaUpdate(AsyncWebServerRequest *request) {
+    requestAction(PortalAction::CHECK_OTA_UPDATE, request);
+}
+
+void CaptivePortal::handleRequestStartOtaUpdate(AsyncWebServerRequest *request) {
+    requestAction(PortalAction::START_OTA_UPDATE, request);
+}
+
+void CaptivePortal::requestAction(PortalAction action, AsyncWebServerRequest *request) {
+    DynamicJsonDocument doc(128);
+    if (_action_queue.size() >= MAX_ACTION_QUEUE_SIZE) {
+        doc["status"] = "queue_full";
+        doc["message"] = "Action queue is full. Please try again later.";
+        String responseJson;
+        serializeJson(doc, responseJson);
+        AsyncWebServerResponse *response = request->beginResponse(429, "application/json", responseJson); // 429 Too Many Requests
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    } else {
+        QueuedAction new_action;
+        new_action.action = action;
+
+        // _pending_param1 = ""; // Clear previous pending params // No longer global like this
+        // _pending_param2 = "";
+
+        // Populate parameters for the action based on its type
+        if (action == PortalAction::SAVE_WIFI) {
+            if (request->hasParam("ssid", true)) new_action.param1 = request->getParam("ssid", true)->value();
+            if (request->hasParam("password", true)) new_action.param2 = request->getParam("password", true)->value();
+        } else if (action == PortalAction::SAVE_DEVICE_CONFIG) {
+            if (request->hasParam("teamId", true)) new_action.param1 = request->getParam("teamId", true)->value();
+            if (request->hasParam("apiKey", true)) new_action.param2 = request->getParam("apiKey", true)->value();
+        } else if (action == PortalAction::SAVE_INSIGHT) {
+            if (request->hasParam("insightId", true)) new_action.param1 = request->getParam("insightId", true)->value();
+            if (request->hasParam("insightTitle", true)) new_action.param2 = request->getParam("insightTitle", true)->value();
+        } else if (action == PortalAction::DELETE_INSIGHT) {
+            if (request->hasParam("id", true)) { 
+                new_action.param1 = request->getParam("id", true)->value();
+            } else if (request->contentType() == "application/json") {
+                const AsyncWebParameter* p = request->getParam(request->params() -1); 
+                if (p && p->isPost() && p->value().length() > 0) {
+                    Serial.println("Attempting to parse JSON body for DELETE_INSIGHT");
+                    Serial.printf("Body Value: %s\n", p->value().c_str()); 
+                    DynamicJsonDocument jsonDoc(128); 
+                    DeserializationError error = deserializeJson(jsonDoc, p->value());
+                    if (!error && jsonDoc.containsKey("id")) {
+                        new_action.param1 = jsonDoc["id"].as<String>();
+                        Serial.printf("Extracted ID from JSON: %s\n", new_action.param1.c_str());
+                    } else {
+                        Serial.printf("Failed to parse JSON body for DELETE_INSIGHT or id missing. Error: %s\n", error.c_str());
+                    }
+                } else {
+                    Serial.println("DELETE_INSIGHT with JSON content type, but no body parameter found or body empty.");
+                }
+            }
+        }
+        // For actions like SCAN_WIFI, CHECK_OTA_UPDATE, START_OTA_UPDATE, params are not from request body initially.
+
+        _action_queue.push_back(new_action);
+
+        // Immediately update portal state to reflect action is pending
+        _action_in_progress = action;
+        _last_action_completed = PortalAction::NONE; // Clear previous completed action for this new pending one
+        _last_action_was_success = false; // Default until processed
+        _last_action_message = "Action '" + String(portalActionToString(action)) + "' received and is pending.";
+
+        doc["status"] = "queued";
+        doc["message"] = "Action '" + String(portalActionToString(action)) + "' queued.";
+        String responseJson;
+        serializeJson(doc, responseJson);
+        AsyncWebServerResponse *response = request->beginResponse(202, "application/json", responseJson); // 202 Accepted
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    }
 }

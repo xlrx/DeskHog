@@ -32,6 +32,8 @@
 #include "esp_heap_caps.h" // For PSRAM management
 #include "ui/CardController.h"
 #include "EventQueue.h"
+#include "esp_partition.h" // Include for partition functions
+#include "OtaManager.h"
 
 // Display dimensions
 #define SCREEN_WIDTH 240
@@ -60,6 +62,7 @@ CardController* cardController; // Replace individual card objects with controll
 PostHogClient* posthogClient;
 EventQueue* eventQueue; // Add global EventQueue
 NeoPixelController* neoPixelController;  // Renamed from neoPixelManager
+OtaManager* otaManager;
 
 // Task handles
 TaskHandle_t wifiTask;
@@ -84,11 +87,9 @@ void wifiTaskFunction(void* parameter) {
 // Captive portal task that handles web server requests
 void portalTaskFunction(void* parameter) {
     while (1) {
-        // Process portal requests regardless of mode
-        captivePortal->process();
-        
+        captivePortal->processAsyncOperations(); // Process pending portal actions
         // Delay to prevent hogging CPU
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(100)); // Check for operations every 100ms
     }
 }
 
@@ -140,7 +141,7 @@ void neoPixelTaskFunction(void* parameter) {
 }
 
 void setup() {
-    Serial.begin(115200);
+    Serial.begin(115200); // Keep Serial.begin() as it initializes the port
     delay(100);  // Give serial port time to initialize
     Serial.println("Starting up...");
 
@@ -155,6 +156,27 @@ void setup() {
         Serial.println("PSRAM initialization failed!");
         while(1); // Stop here if PSRAM init fails
     }
+
+    // Add Partition Logging Here
+    Serial.println("--- Partition Table Info ---");
+    esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
+    if (it == NULL) {
+        Serial.println("Could not find partitions!");
+    } else {
+        while (it != NULL) {
+            const esp_partition_t *p = esp_partition_get(it);
+            if (p == NULL) {
+                // Added null check for safety, might occur if iterator is exhausted
+                it = esp_partition_next(it); // Make sure to advance iterator even if partition is null
+                continue;
+            }
+            Serial.printf("  Label: %-10s Type: 0x%02x Subtype: 0x%02x Offset: 0x%08x Size: 0x%08x (%d KB)\n",
+                          p->label, p->type, p->subtype, p->address, p->size, p->size / 1024);
+            it = esp_partition_next(it);
+        }
+        esp_partition_iterator_release(it); // Release the iterator!
+    }
+    Serial.println("--------------------------");
 
     InsightCard::initUIQueue();
 
@@ -207,8 +229,11 @@ void setup() {
     // Initialize with display interface directly
     cardController->initialize(displayInterface);
     
+    // Initialize OtaManager
+    otaManager = new OtaManager(CURRENT_FIRMWARE_VERSION, "PostHog", "DeskHog");
+    
     // Initialize captive portal
-    captivePortal = new CaptivePortal(*configManager, *wifiInterface, *eventQueue);
+    captivePortal = new CaptivePortal(*configManager, *wifiInterface, *eventQueue, *otaManager);
     captivePortal->begin();
     
     // Create task for WiFi operations
@@ -226,18 +251,18 @@ void setup() {
     xTaskCreatePinnedToCore(
         portalTaskFunction,
         "portalTask",
-        4096,
+        8192,
         NULL,
         1,
         &portalTask,
-        0
+        1
     );
     
     // Create task for insight processing
     xTaskCreatePinnedToCore(
         insightTaskFunction,
         "insightTask",
-        81920,
+        8192,
         NULL,
         1,
         &insightTask,

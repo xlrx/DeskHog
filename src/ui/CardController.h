@@ -65,9 +65,8 @@ public:
     /**
      * @brief Create and add a new insight card to the UI
      * @param insightId Unique identifier for the insight
-     * @return Pointer to the created insight card
      */
-    InsightCard* createInsightCard(const String& insightId);
+    void createInsightCard(const String& insightId);
     
     /**
      * @brief Get the card navigation stack

@@ -17,11 +17,6 @@ extern "C" {
 #include "sprite_Normal_Walking_04.h"
 #include "sprite_Normal_Walking_05.h"
 #include "sprite_Normal_Walking_06.h"
-#include "sprite_Normal_Walking_07.h"
-#include "sprite_Normal_Walking_08.h"
-#include "sprite_Normal_Walking_09.h"
-#include "sprite_Normal_Walking_10.h"
-#include "sprite_Normal_Walking_11.h"
 
 // Array of all walking animation sprites
 extern const lv_img_dsc_t* walking_sprites[];

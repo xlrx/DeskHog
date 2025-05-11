@@ -131,32 +131,53 @@ void CardController::createAnimationCard() {
 }
 
 // Create an insight card and add it to the UI
-InsightCard* CardController::createInsightCard(const String& insightId) {
-    if (!displayInterface || !displayInterface->takeMutex(portMAX_DELAY)) {
-        return nullptr;
-    }
-    
-    // Create new insight card using full screen dimensions
-    InsightCard* insightCard = new InsightCard(
-        screen,
-        configManager,
-        eventQueue,
-        insightId,
-        screenWidth,
-        screenHeight
-    );
-    
-    // Add to navigation stack
-    cardStack->addCard(insightCard->getCard());
-    
-    // Add to our list of cards
-    insightCards.push_back(insightCard);
-    
-    // Request immediate data for this insight
-    posthogClient.requestInsightData(insightId);
-    
-    displayInterface->giveMutex();
-    return insightCard;
+void CardController::createInsightCard(const String& insightId) {
+    // Log current task and core
+    Serial.printf("[CardCtrl-DEBUG] createInsightCard called from Core: %d, Task: %s\n", 
+                  xPortGetCoreID(), 
+                  pcTaskGetTaskName(NULL));
+
+    // Dispatch the actual card creation and LVGL work to the LVGL task
+    InsightCard::dispatchToLVGLTask([this, insightId]() {
+        Serial.printf("[CardCtrl-DEBUG] LVGL Task creating card for insight: %s from Core: %d, Task: %s\n", 
+                      insightId.c_str(), xPortGetCoreID(), pcTaskGetTaskName(NULL));
+
+        if (!displayInterface || !displayInterface->takeMutex(portMAX_DELAY)) {
+            Serial.println("[CardCtrl-ERROR] Failed to take mutex in LVGL task for card creation.");
+            return;
+        }
+
+        // Create new insight card using full screen dimensions
+        InsightCard* newCard = new InsightCard(
+            screen,         // LVGL parent object
+            configManager,  // Dependencies
+            eventQueue,
+            insightId,
+            screenWidth,    // Dimensions
+            screenHeight
+        );
+
+        if (!newCard || !newCard->getCard()) {
+            Serial.printf("[CardCtrl-ERROR] Failed to create InsightCard or its LVGL object for ID: %s\n", insightId.c_str());
+            displayInterface->giveMutex();
+            delete newCard; // Clean up if partially created
+            return;
+        }
+
+        // Add to navigation stack
+        cardStack->addCard(newCard->getCard());
+
+        // Add to our list of cards (ensure this is thread-safe if accessed elsewhere)
+        // The mutex taken above should protect this operation too.
+        insightCards.push_back(newCard);
+        
+        Serial.printf("[CardCtrl-DEBUG] InsightCard for ID: %s created and added to stack.\n", insightId.c_str());
+
+        displayInterface->giveMutex();
+
+        // Request immediate data for this insight now that it's set up
+        posthogClient.requestInsightData(insightId);
+    });
 }
 
 // Handle insight events

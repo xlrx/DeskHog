@@ -106,22 +106,6 @@ void CardNavigationStack::addCard(lv_obj_t* card) {
     }
 }
 
-void CardNavigationStack::addCard(lv_color_t color, const char* label_text) {
-    // Create a new card container
-    lv_obj_t* card = lv_obj_create(_parent);
-    lv_obj_set_style_bg_color(card, color, 0);
-    
-    // Create and configure the label
-    lv_obj_t* label = lv_label_create(card);
-    lv_label_set_text(label, label_text);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-    lv_obj_center(label);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    
-    // Add the card to the navigation stack
-    addCard(card);
-}
-
 void CardNavigationStack::nextCard() {
     uint32_t card_count = lv_obj_get_child_cnt(_main_container);
     if (card_count == 0) return;
