@@ -43,15 +43,6 @@ public:
     void addCard(lv_obj_t* card);
     
     /**
-     * @brief Create and add a simple colored card with text
-     * @param color Background color for the card
-     * @param label_text Text to display centered on the card
-     * 
-     * Creates a basic card with Montserrat 14pt white text.
-     */
-    void addCard(lv_color_t color, const char* label_text);
-    
-    /**
      * @brief Remove a card from the stack
      * @param card LVGL object to remove
      * @return true if card was found and removed

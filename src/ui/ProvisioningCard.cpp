@@ -4,7 +4,8 @@
 ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterface, uint16_t width, uint16_t height)
     : _parent(parent), _wifiInterface(wifiInterface), _width(width), _height(height),
     _card(nullptr), _qrScreen(nullptr), _statusScreen(nullptr),
-    _qrCode(nullptr), _statusLabel(nullptr), _ipLabel(nullptr), _signalLabel(nullptr) {
+    _qrCode(nullptr), _ssidLabel(nullptr), _statusLabel(nullptr), _ipLabel(nullptr), _signalLabel(nullptr), _versionLabel(nullptr),
+    _topLeftVersionLabel(nullptr) {
     
     createCard();
     createQRScreen();
@@ -39,6 +40,14 @@ void ProvisioningCard::createCard() {
     // Position screens at 0,0 relative to card
     lv_obj_set_pos(_qrScreen, 0, 0);
     lv_obj_set_pos(_statusScreen, 0, 0);
+
+    // Create and configure the top-left version label
+    // _topLeftVersionLabel = lv_label_create(_card);
+    // lv_obj_set_style_text_font(_topLeftVersionLabel, Style::labelFont(), 0);
+    // lv_obj_set_style_text_color(_topLeftVersionLabel, Style::labelColor(), 0);
+    // lv_label_set_text(_topLeftVersionLabel, CURRENT_FIRMWARE_VERSION);
+    // lv_obj_align(_topLeftVersionLabel, LV_ALIGN_TOP_LEFT, 5, 5); // 5px padding from top-left
+    // lv_obj_move_foreground(_topLeftVersionLabel); // Ensure it's on top
 }
 
 void ProvisioningCard::updateConnectionStatus(const String& status) {
@@ -65,12 +74,14 @@ void ProvisioningCard::showQRCode() {
         lv_obj_t* hide_screen;
         lv_obj_t* qr_code;
         String qr_data;
+        lv_obj_t* ssid_label;
+        String ssid_text;
         
-        QRUpdateData(lv_obj_t* s, lv_obj_t* h, lv_obj_t* q, const String& d) 
-            : show_screen(s), hide_screen(h), qr_code(q), qr_data(d) {}
+        QRUpdateData(lv_obj_t* s, lv_obj_t* h, lv_obj_t* q, const String& d, lv_obj_t* sl, const String& st) 
+            : show_screen(s), hide_screen(h), qr_code(q), qr_data(d), ssid_label(sl), ssid_text(st) {}
     };
     
-    auto* data = new QRUpdateData(_qrScreen, _statusScreen, _qrCode, qrData);
+    auto* data = new QRUpdateData(_qrScreen, _statusScreen, _qrCode, qrData, _ssidLabel, "SSID: " + ssid);
     
     lv_timer_t* timer = lv_timer_create([](lv_timer_t* timer) {
         auto* params = static_cast<QRUpdateData*>(lv_timer_get_user_data(timer));
@@ -87,6 +98,11 @@ void ProvisioningCard::showQRCode() {
             if (params->qr_code && lv_obj_is_valid(params->qr_code)) {
                 lv_qrcode_update(params->qr_code, params->qr_data.c_str(), params->qr_data.length());
             }
+
+            // Update SSID label
+            if (params->ssid_label && lv_obj_is_valid(params->ssid_label)) {
+                lv_label_set_text(params->ssid_label, params->ssid_text.c_str());
+            }
         }
         delete params;
         lv_timer_del(timer);
@@ -102,18 +118,46 @@ void ProvisioningCard::createQRScreen() {
     lv_obj_set_style_pad_all(_qrScreen, 0, 0);
     lv_obj_set_style_border_width(_qrScreen, 0, 0);
     
-    // Calculate appropriate QR code size with padding
-    const int qr_size = _height - 20;
+    // Create and configure the top-left version label
+    _topLeftVersionLabel = lv_label_create(_qrScreen); // Parent is now _qrScreen
+    lv_obj_set_style_text_font(_topLeftVersionLabel, Style::labelFont(), 0);
+    lv_obj_set_style_text_color(_topLeftVersionLabel, Style::labelColor(), 0);
+    lv_label_set_text(_topLeftVersionLabel, CURRENT_FIRMWARE_VERSION);
+    lv_obj_align(_topLeftVersionLabel, LV_ALIGN_TOP_LEFT, 5, 5); // 5px padding from top-left
+    lv_obj_move_foreground(_topLeftVersionLabel); // Ensure it's on top within _qrScreen
+
+    // Define layout parameters
+    const int estimated_label_height = 16; // Estimated height for the SSID label
+    const int padding_qr_to_label = 5;     // Padding between QR code and SSID label
+    const int screen_top_padding = 5;      // Padding at the top of the QR screen area
+    const int screen_bottom_padding = 5;   // Padding at the bottom of the QR screen area
+
+    // Calculate QR code size
+    // qr_size = _height (total card height) - top_pad - bottom_pad - space_between_qr_label - label_height
+    const int qr_size = _height - screen_top_padding - screen_bottom_padding - padding_qr_to_label - estimated_label_height;
     
     // Create a placeholder QR code (will be updated later)
     _qrCode = lv_qrcode_create(_qrScreen);
     lv_qrcode_set_size(_qrCode, qr_size);
     lv_qrcode_set_dark_color(_qrCode, lv_color_black());
     lv_qrcode_set_light_color(_qrCode, lv_color_white()); 
-    lv_obj_center(_qrCode);
+    // Align QR code to the top-center with padding
+    lv_obj_align(_qrCode, LV_ALIGN_TOP_MID, 0, screen_top_padding);
     
     // Initialize with placeholder text
     lv_qrcode_update(_qrCode, "WIFI:T:WPA;", 10);
+
+    // Create SSID label beneath the QR code
+    _ssidLabel = lv_label_create(_qrScreen);
+    lv_obj_set_style_text_font(_ssidLabel, Style::valueFont(), 0);
+    lv_obj_set_style_text_color(_ssidLabel, Style::valueColor(), 0);
+    lv_obj_set_width(_ssidLabel, LV_PCT(100)); // Set label width to fill screen width
+    lv_obj_set_style_text_align(_ssidLabel, LV_TEXT_ALIGN_CENTER, 0); // Center text within the label
+
+    // Set initial SSID text - will be updated by showQRCode if/when called
+    const String& currentSsid = _wifiInterface.getSSID();
+    lv_label_set_text(_ssidLabel, ("SSID: " + currentSsid).c_str());
+    lv_obj_align_to(_ssidLabel, _qrCode, LV_ALIGN_OUT_BOTTOM_MID, 0, padding_qr_to_label); // 5px padding below QR code
 }
 
 void ProvisioningCard::createStatusScreen() {
@@ -133,11 +177,13 @@ void ProvisioningCard::createStatusScreen() {
     createTableRow(table, 0, "WiFi", &_statusLabel, Style::labelColor());
     createTableRow(table, 1, "IP", &_ipLabel, Style::labelColor());
     createTableRow(table, 2, "Signal", &_signalLabel, Style::labelColor());
+    createTableRow(table, 3, "Version", &_versionLabel, Style::labelColor());
     
     // Set initial values
     lv_label_set_text(_statusLabel, "Disconnected");
     lv_label_set_text(_ipLabel, "");
     lv_label_set_text(_signalLabel, "0%");
+    lv_label_set_text(_versionLabel, CURRENT_FIRMWARE_VERSION);
 }
 
 void ProvisioningCard::createTableRow(lv_obj_t* table, uint16_t row, const char* title, 

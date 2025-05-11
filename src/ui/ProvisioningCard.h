@@ -175,7 +175,10 @@ private:
     lv_obj_t* _qrScreen;           ///< QR code screen container
     lv_obj_t* _statusScreen;       ///< Status screen container
     lv_obj_t* _qrCode;            ///< QR code widget
+    lv_obj_t* _ssidLabel;         ///< SSID text label below QR code
     lv_obj_t* _statusLabel;       ///< WiFi status text
     lv_obj_t* _ipLabel;           ///< IP address text
     lv_obj_t* _signalLabel;       ///< Signal strength text
+    lv_obj_t* _versionLabel;      ///< Firmware version text
+    lv_obj_t* _topLeftVersionLabel; ///< Firmware version text (on card top-left)
 };

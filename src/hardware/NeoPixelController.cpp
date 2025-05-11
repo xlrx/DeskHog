@@ -1,16 +1,31 @@
 #include "hardware/NeoPixelController.h"
-#include <Arduino.h>
+#include <Arduino.h> // For pinMode, digitalWrite, delay, PI, sin, constrain, millis
+// FastLED.h is included via NeoPixelController.h
 
 NeoPixelController::NeoPixelController()
-    : pixel(NUM_PIXELS, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800),
-      lastUpdate(0),
+    // No explicit member initializer for leds array or FastLED controller here
+    : lastUpdate(0),
       breathPhase(0.0f) {
 }
 
 void NeoPixelController::begin() {
-    pixel.begin();
-    pixel.setBrightness(255);
-    pixel.show();
+    // Power on the NeoPixel (board-specific, keep this logic)
+    #if defined(NEOPIXEL_POWER) && defined(NEOPIXEL_POWER_ON)
+      pinMode(NEOPIXEL_POWER, OUTPUT);
+      digitalWrite(NEOPIXEL_POWER, NEOPIXEL_POWER_ON);
+      delay(10);
+    #elif defined(NEOPIXEL_POWER)
+      pinMode(NEOPIXEL_POWER, OUTPUT);
+      digitalWrite(NEOPIXEL_POWER, HIGH);
+      delay(10);
+    #endif
+
+    // Initialize FastLED
+    // Using NEOPIXEL_DATA_PIN from NeoPixelController.h
+    FastLED.addLeds<WS2812B, NEOPIXEL_DATA_PIN, GRB>(leds, NUM_PIXELS);
+    FastLED.setBrightness(255); // Set max brightness initially
+    leds[0] = CRGB::Black; // Clear the pixel
+    FastLED.show();
 }
 
 void NeoPixelController::update() {
@@ -21,33 +36,27 @@ void NeoPixelController::update() {
     
     lastUpdate = currentTime;
     
-    // Update breath phase
     breathPhase += BREATH_SPEED;
     if (breathPhase >= BREATH_CYCLE) {
         breathPhase -= BREATH_CYCLE;
     }
     
-    // Calculate base brightness using sine wave
     float brightness = (sin(breathPhase) + 1.0f) * 0.5f;
     
-    // Add subtle color variations based on the phase
     float redVar = sin(breathPhase * 1.1f) * COLOR_VARIANCE;
     float greenVar = sin(breathPhase * 0.9f) * COLOR_VARIANCE;
     float blueVar = sin(breathPhase * 1.2f) * COLOR_VARIANCE;
     
-    // Calculate RGB values with color variation
     float red = (brightness + redVar);
     float green = (brightness + greenVar);
     float blue = (brightness + blueVar);
     
-    // Apply minimum brightness of 5% (12.75 in 0-255 range)
-    const uint8_t MIN_VALUE = 5 / 255;  // ~5% of 255
+    const uint8_t MIN_VALUE = static_cast<uint8_t>(255.0f * 0.05f);
     
-    // Convert to final RGB values, ensuring minimum brightness
-    uint8_t finalRed = constrain(red * 255, MIN_VALUE, 255);
-    uint8_t finalGreen = constrain(green * 255, MIN_VALUE, 255);
-    uint8_t finalBlue = constrain(blue * 255, MIN_VALUE, 255);
+    uint8_t finalRed = constrain(static_cast<long>(red * 255), MIN_VALUE, 255);
+    uint8_t finalGreen = constrain(static_cast<long>(green * 255), MIN_VALUE, 255);
+    uint8_t finalBlue = constrain(static_cast<long>(blue * 255), MIN_VALUE, 255);
     
-    pixel.setPixelColor(0, finalRed, finalGreen, finalBlue);
-    pixel.show();
+    leds[0] = CRGB(finalRed, finalGreen, finalBlue); // Set pixel color using FastLED
+    FastLED.show(); // Update the strip
 } 

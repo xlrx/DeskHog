@@ -149,7 +149,7 @@ footer {
     margin: 20px 0;
 }
 .progress {
-    height: 4px;
+    height: 6px;
     background-color: #e9ecef;
     border-radius: 2px;
     margin: 20px 0;
@@ -157,7 +157,7 @@ footer {
 }
 .progress-bar {
     height: 100%;
-    background-color: #0066cc;
+    background-color: #cc7000;
     width: 0%;
     transition: width 10s linear;
 }
@@ -180,4 +180,47 @@ select {
 
 select::-ms-expand {
     display: none;
+}
+
+/* Status message styling (used by global-action-status) */
+.status-message {
+    padding: 0.75em;
+    margin-bottom: 1em;
+    border-radius: 4px;
+    text-align: center;
+    font-family: monospace; /* Added for fixed-width font */
+}
+
+.status-message.info {
+    background-color: #e7f3fe; /* Light blue for info */
+    border: 1px solid #d0eaff;
+    color: #31708f;
+}
+
+.status-message.success {
+    background-color: #d4edda; /* Light green for success */
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+
+.status-message.error {
+    background-color: #f8d7da; /* Light red for error */
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+
+/* Release notes box specific styling */
+#release-notes {
+    /* Assuming .release-notes-box class already exists or you style #release-notes directly */
+    /* If .release-notes-box is the primary selector for layout, add font-family there */
+    /* For direct styling of the <pre> tag by ID: */
+    font-family: monospace; /* Added for fixed-width font */
+    white-space: pre-wrap;  /* Ensures long lines wrap */
+    word-wrap: break-word;  /* Breaks long words if necessary */
+    background-color: #f8f9fa; /* Light background for the box */
+    border: 1px solid #dee2e6;   /* Border for the box */
+    padding: 10px;              /* Padding inside the box */
+    max-height: 200px;          /* Max height with scroll if content exceeds */
+    overflow-y: auto;           /* Enable vertical scroll */
+    border-radius: var(--radius); /* Consistent border radius */
 }
