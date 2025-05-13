@@ -171,7 +171,7 @@ void FlappyBirdGame::handle_input() {
 void FlappyBirdGame::update_game_state() {
     if (current_game_state != GameState::ACTIVE) return;
 
-    bird_velocity += 0.024f;
+    bird_velocity += 0.0204f;
     bird_y += (int)bird_velocity;
 
     const int Y_VISUAL_OFFSET = (FB_SCREEN_HEIGHT / 2) - (BIRD_SIZE / 2);
