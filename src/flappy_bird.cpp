@@ -33,30 +33,23 @@ void FlappyBirdGame::setup(lv_obj_t* parent_screen) {
         main_container = lv_obj_create(parent_screen);
         lv_obj_remove_style_all(main_container);
         lv_obj_set_size(main_container, FB_SCREEN_WIDTH, FB_SCREEN_HEIGHT);
-        // lv_obj_set_style_bg_color(main_container, lv_color_hex(0x87CEEB), LV_PART_MAIN); // Solid sky blue
-        // Add gradient background for sky
+        // Sunset gradient background
         lv_obj_set_style_bg_grad_dir(main_container, LV_GRAD_DIR_VER, LV_PART_MAIN);
-        lv_obj_set_style_bg_color(main_container, lv_color_hex(0x87CEEB), LV_PART_MAIN);      // Light sky blue (top)
-        lv_obj_set_style_bg_grad_color(main_container, lv_color_hex(0x4682B4), LV_PART_MAIN); // Darker sky blue (bottom)
+        lv_obj_set_style_bg_color(main_container, lv_color_hex(0xFFA500), LV_PART_MAIN);      // Orange (top)
+        lv_obj_set_style_bg_grad_color(main_container, lv_color_hex(0x4B0082), LV_PART_MAIN); // Dark Indigo (bottom)
         lv_obj_set_style_bg_opa(main_container, LV_OPA_COVER, LV_PART_MAIN); // Ensure opaque background
         lv_obj_clear_flag(main_container, LV_OBJ_FLAG_SCROLLABLE);
     }
 
     if (!bird_obj) { 
-        // Serial.println("[FlappyBird] Creating bird_obj as label"); // DEBUG - Old
-        Serial.println("[FlappyBird] Creating bird_obj as square"); // DEBUG - New
-        // bird_obj = lv_label_create(main_container); // Old - label
-        bird_obj = lv_obj_create(main_container); // New - square object
+        Serial.println("[FlappyBird] Creating bird_obj as square"); // DEBUG
+        bird_obj = lv_obj_create(main_container); 
         
-        // // Set text to emoji and apply font - Old
-        // lv_label_set_text(bird_obj, "🦔");
-        // lv_obj_set_style_text_font(bird_obj, Style::loudNoisesFont(), 0);
-        
-        // Style for square bird - New
         lv_obj_set_size(bird_obj, BIRD_SIZE, BIRD_SIZE);
-        lv_obj_set_style_bg_color(bird_obj, lv_color_hex(0xFFD700), LV_PART_MAIN); // Yellow
-        lv_obj_set_style_radius(bird_obj, LV_RADIUS_CIRCLE, LV_PART_MAIN); // Make it a circle/rounded square
-        lv_obj_set_style_border_width(bird_obj, 0, 0); // No border
+        lv_obj_set_style_bg_color(bird_obj, lv_color_hex(0xFF4500), LV_PART_MAIN); // Vibrant Orange-Red bird
+        lv_obj_set_style_radius(bird_obj, LV_RADIUS_CIRCLE, LV_PART_MAIN); 
+        lv_obj_set_style_border_width(bird_obj, 1, LV_PART_MAIN); // 1px border
+        lv_obj_set_style_border_color(bird_obj, lv_color_black(), LV_PART_MAIN); // Black border
         
         lv_obj_align(bird_obj, LV_ALIGN_CENTER, BIRD_X_POSITION - FB_SCREEN_WIDTH/2 , 0); 
     }
@@ -71,24 +64,41 @@ void FlappyBirdGame::setup(lv_obj_t* parent_screen) {
         Serial.println("[FlappyBird] Creating start_message_label"); // DEBUG
         start_message_label = lv_label_create(main_container);
         lv_obj_set_style_text_font(start_message_label, Style::loudNoisesFont(), 0);
-        lv_obj_set_style_text_color(start_message_label, lv_color_white(), 0); // Set text color to white
+        lv_obj_set_style_text_color(start_message_label, lv_color_white(), 0); 
         lv_label_set_text(start_message_label, "Press Center!");
         lv_obj_align(start_message_label, LV_ALIGN_CENTER, 0, 0);
+        // Add text shadow
+        lv_obj_set_style_text_opa(start_message_label, LV_OPA_COVER, 0);
+        lv_obj_set_style_shadow_color(start_message_label, lv_color_black(), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_ofs_x(start_message_label, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_ofs_y(start_message_label, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_opa(start_message_label, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT); // Semi-transparent shadow
     }
     lv_obj_clear_flag(start_message_label, LV_OBJ_FLAG_HIDDEN);
     Serial.println("[FlappyBird] Start message visible"); // DEBUG
 
-    if (game_over_message_label) {
+    if (game_over_message_label) { // Ensure shadow style is applied if game_over_message_label already exists
         lv_obj_add_flag(game_over_message_label, LV_OBJ_FLAG_HIDDEN);
-        Serial.println("[FlappyBird] Game Over message hidden"); // DEBUG
+        lv_obj_set_style_text_opa(game_over_message_label, LV_OPA_COVER, 0);
+        lv_obj_set_style_shadow_color(game_over_message_label, lv_color_black(), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_ofs_x(game_over_message_label, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_ofs_y(game_over_message_label, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_opa(game_over_message_label, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT);
+        Serial.println("[FlappyBird] Game Over message hidden and styled"); // DEBUG
     }
 
     if (!score_label) {
         Serial.println("[FlappyBird] Creating score_label"); // DEBUG
         score_label = lv_label_create(main_container);
         lv_obj_set_style_text_font(score_label, Style::loudNoisesFont(), 0);
-        lv_obj_set_style_text_color(score_label, lv_color_white(), 0); // Also set score color to white for consistency
+        lv_obj_set_style_text_color(score_label, lv_color_white(), 0); 
         lv_obj_align(score_label, LV_ALIGN_TOP_LEFT, 5, 5);
+        // Add text shadow
+        lv_obj_set_style_text_opa(score_label, LV_OPA_COVER, 0);
+        lv_obj_set_style_shadow_color(score_label, lv_color_black(), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_ofs_x(score_label, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_ofs_y(score_label, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_opa(score_label, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT);
     }
     lv_label_set_text_fmt(score_label, "Score: %d", score);
     lv_obj_clear_flag(score_label, LV_OBJ_FLAG_HIDDEN); 
@@ -107,13 +117,14 @@ void FlappyBirdGame::reset_and_initialize_pipes() {
         // Create Top Pipe Rectangle
         if (!pipes[i].top_pipe_obj) {
             pipes[i].top_pipe_obj = lv_obj_create(main_container);
-            lv_obj_remove_style_all(pipes[i].top_pipe_obj); // Remove default styles
+            lv_obj_remove_style_all(pipes[i].top_pipe_obj); 
             lv_obj_set_style_bg_color(pipes[i].top_pipe_obj, lv_color_hex(0x008000), LV_PART_MAIN); // Green
             lv_obj_set_style_bg_opa(pipes[i].top_pipe_obj, LV_OPA_COVER, LV_PART_MAIN);
-            lv_obj_set_style_border_width(pipes[i].top_pipe_obj, 0, 0);
+            lv_obj_set_style_border_width(pipes[i].top_pipe_obj, 1, LV_PART_MAIN); // 1px border
+            lv_obj_set_style_border_color(pipes[i].top_pipe_obj, lv_color_black(), LV_PART_MAIN); // Black border
         }
         lv_obj_set_size(pipes[i].top_pipe_obj, PIPE_WIDTH, pipes[i].gap_y_top);
-        lv_obj_set_pos(pipes[i].top_pipe_obj, (int)pipes[i].x_position, 0); // Top pipe starts at y=0
+        lv_obj_set_pos(pipes[i].top_pipe_obj, (int)pipes[i].x_position, 0);
 
         // Create Bottom Pipe Rectangle
         if (!pipes[i].bottom_pipe_obj) {
@@ -121,7 +132,8 @@ void FlappyBirdGame::reset_and_initialize_pipes() {
             lv_obj_remove_style_all(pipes[i].bottom_pipe_obj);
             lv_obj_set_style_bg_color(pipes[i].bottom_pipe_obj, lv_color_hex(0x008000), LV_PART_MAIN); // Green
             lv_obj_set_style_bg_opa(pipes[i].bottom_pipe_obj, LV_OPA_COVER, LV_PART_MAIN);
-            lv_obj_set_style_border_width(pipes[i].bottom_pipe_obj, 0, 0);
+            lv_obj_set_style_border_width(pipes[i].bottom_pipe_obj, 1, LV_PART_MAIN); // 1px border
+            lv_obj_set_style_border_color(pipes[i].bottom_pipe_obj, lv_color_black(), LV_PART_MAIN); // Black border
         }
         int bottom_pipe_y = pipes[i].gap_y_top + PIPE_GAP_HEIGHT;
         int bottom_pipe_height = FB_SCREEN_HEIGHT - bottom_pipe_y;
@@ -204,6 +216,12 @@ void FlappyBirdGame::update_game_state() {
             lv_obj_set_style_text_color(game_over_message_label, lv_color_white(), 0);
             lv_label_set_text(game_over_message_label, "Game Over!");
             lv_obj_align(game_over_message_label, LV_ALIGN_CENTER, 0, 0); 
+            // Add text shadow
+            lv_obj_set_style_text_opa(game_over_message_label, LV_OPA_COVER, 0);
+            lv_obj_set_style_shadow_color(game_over_message_label, lv_color_black(), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_shadow_ofs_x(game_over_message_label, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_shadow_ofs_y(game_over_message_label, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_shadow_opa(game_over_message_label, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT);
         }
         lv_obj_clear_flag(game_over_message_label, LV_OBJ_FLAG_HIDDEN);
         if (start_message_label) lv_obj_add_flag(start_message_label, LV_OBJ_FLAG_HIDDEN);
@@ -220,6 +238,12 @@ void FlappyBirdGame::update_game_state() {
             lv_obj_set_style_text_color(game_over_message_label, lv_color_white(), 0);
             lv_label_set_text(game_over_message_label, "Game Over!");
             lv_obj_align(game_over_message_label, LV_ALIGN_CENTER, 0, 0); 
+            // Add text shadow
+            lv_obj_set_style_text_opa(game_over_message_label, LV_OPA_COVER, 0);
+            lv_obj_set_style_shadow_color(game_over_message_label, lv_color_black(), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_shadow_ofs_x(game_over_message_label, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_shadow_ofs_y(game_over_message_label, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_shadow_opa(game_over_message_label, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT);
         }
         lv_obj_clear_flag(game_over_message_label, LV_OBJ_FLAG_HIDDEN);
         if (start_message_label) lv_obj_add_flag(start_message_label, LV_OBJ_FLAG_HIDDEN);
@@ -249,6 +273,12 @@ void FlappyBirdGame::update_game_state() {
                     lv_obj_set_style_text_color(game_over_message_label, lv_color_white(), 0);
                     lv_label_set_text(game_over_message_label, "Game Over!");
                     lv_obj_align(game_over_message_label, LV_ALIGN_CENTER, 0, 0); 
+                    // Add text shadow
+                    lv_obj_set_style_text_opa(game_over_message_label, LV_OPA_COVER, 0);
+                    lv_obj_set_style_shadow_color(game_over_message_label, lv_color_black(), LV_PART_MAIN | LV_STATE_DEFAULT);
+                    lv_obj_set_style_shadow_ofs_x(game_over_message_label, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+                    lv_obj_set_style_shadow_ofs_y(game_over_message_label, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+                    lv_obj_set_style_shadow_opa(game_over_message_label, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT);
                 }
                 lv_obj_clear_flag(game_over_message_label, LV_OBJ_FLAG_HIDDEN);
                 if (start_message_label) lv_obj_add_flag(start_message_label, LV_OBJ_FLAG_HIDDEN);
