@@ -176,7 +176,7 @@ void FlappyBirdGame::handle_input() {
     if (current_game_state != GameState::ACTIVE) return;
     if (Input::isCenterPressed()) {
         Serial.println("[FlappyBird] Flap! (Center pressed in ACTIVE state)"); // DEBUG
-        bird_velocity = -1.875f;
+        bird_velocity = -1.59375f;
     }
 }
 
