@@ -7,7 +7,7 @@
 // Basic game constants
 const int FB_SCREEN_WIDTH = 240;
 const int FB_SCREEN_HEIGHT = 135;
-const int BIRD_SIZE = 10; // Bird is a square
+const int BIRD_SIZE = 10; // Bird is a square - Original size
 const int BIRD_X_POSITION = 30; // Fixed X position of the bird from the left
 
 // Pipe constants

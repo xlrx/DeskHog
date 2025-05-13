@@ -33,17 +33,31 @@ void FlappyBirdGame::setup(lv_obj_t* parent_screen) {
         main_container = lv_obj_create(parent_screen);
         lv_obj_remove_style_all(main_container);
         lv_obj_set_size(main_container, FB_SCREEN_WIDTH, FB_SCREEN_HEIGHT);
-        lv_obj_set_style_bg_color(main_container, lv_color_hex(0x87CEEB), LV_PART_MAIN); 
+        // lv_obj_set_style_bg_color(main_container, lv_color_hex(0x87CEEB), LV_PART_MAIN); // Solid sky blue
+        // Add gradient background for sky
+        lv_obj_set_style_bg_grad_dir(main_container, LV_GRAD_DIR_VER, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(main_container, lv_color_hex(0x87CEEB), LV_PART_MAIN);      // Light sky blue (top)
+        lv_obj_set_style_bg_grad_color(main_container, lv_color_hex(0x4682B4), LV_PART_MAIN); // Darker sky blue (bottom)
         lv_obj_set_style_bg_opa(main_container, LV_OPA_COVER, LV_PART_MAIN); // Ensure opaque background
         lv_obj_clear_flag(main_container, LV_OBJ_FLAG_SCROLLABLE);
     }
 
     if (!bird_obj) { 
-        Serial.println("[FlappyBird] Creating bird_obj"); // DEBUG
-        bird_obj = lv_obj_create(main_container);
+        // Serial.println("[FlappyBird] Creating bird_obj as label"); // DEBUG - Old
+        Serial.println("[FlappyBird] Creating bird_obj as square"); // DEBUG - New
+        // bird_obj = lv_label_create(main_container); // Old - label
+        bird_obj = lv_obj_create(main_container); // New - square object
+        
+        // // Set text to emoji and apply font - Old
+        // lv_label_set_text(bird_obj, "🦔");
+        // lv_obj_set_style_text_font(bird_obj, Style::loudNoisesFont(), 0);
+        
+        // Style for square bird - New
         lv_obj_set_size(bird_obj, BIRD_SIZE, BIRD_SIZE);
-        lv_obj_set_style_bg_color(bird_obj, lv_color_hex(0xFFD700), LV_PART_MAIN);
-        lv_obj_set_style_radius(bird_obj, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(bird_obj, lv_color_hex(0xFFD700), LV_PART_MAIN); // Yellow
+        lv_obj_set_style_radius(bird_obj, LV_RADIUS_CIRCLE, LV_PART_MAIN); // Make it a circle/rounded square
+        lv_obj_set_style_border_width(bird_obj, 0, 0); // No border
+        
         lv_obj_align(bird_obj, LV_ALIGN_CENTER, BIRD_X_POSITION - FB_SCREEN_WIDTH/2 , 0); 
     }
     bird_y = BIRD_SIZE / 2;
@@ -157,7 +171,7 @@ void FlappyBirdGame::handle_input() {
 void FlappyBirdGame::update_game_state() {
     if (current_game_state != GameState::ACTIVE) return;
 
-    bird_velocity += 0.04f;
+    bird_velocity += 0.024f;
     bird_y += (int)bird_velocity;
 
     const int Y_VISUAL_OFFSET = (FB_SCREEN_HEIGHT / 2) - (BIRD_SIZE / 2);
