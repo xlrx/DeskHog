@@ -9,8 +9,10 @@ FlappyBirdGame::FlappyBirdGame()
       current_game_state(GameState::PRE_GAME), score(0) {
     Serial.println("[FlappyBird] Constructor called"); // DEBUG
     for (int i = 0; i < PIPE_COUNT; ++i) {
-        pipes[i].top_asterisk_obj = nullptr;     // Initialize new member
-        pipes[i].bottom_asterisk_obj = nullptr;  // Initialize new member
+        // pipes[i].top_asterisk_obj = nullptr;     // Old label pointer
+        // pipes[i].bottom_asterisk_obj = nullptr;  // Old label pointer
+        pipes[i].top_pipe_obj = nullptr;     // Initialize new member
+        pipes[i].bottom_pipe_obj = nullptr;  // Initialize new member
         pipes[i].scored = false;
     }
 }
@@ -88,25 +90,29 @@ void FlappyBirdGame::reset_and_initialize_pipes() {
         pipes[i].gap_y_top = MIN_PIPE_HEIGHT + (rand() % (available_height_for_gap + 1));
         pipes[i].scored = false;
 
-        // Top asterisk
-        if (!pipes[i].top_asterisk_obj) {
-            pipes[i].top_asterisk_obj = lv_label_create(main_container);
-            lv_label_set_text(pipes[i].top_asterisk_obj, "*");
-            lv_obj_set_style_text_font(pipes[i].top_asterisk_obj, Style::loudNoisesFont(), 0); // Or a smaller font
-            lv_obj_set_style_text_color(pipes[i].top_asterisk_obj, lv_color_hex(0xFF0000), 0); // Red
+        // Create Top Pipe Rectangle
+        if (!pipes[i].top_pipe_obj) {
+            pipes[i].top_pipe_obj = lv_obj_create(main_container);
+            lv_obj_remove_style_all(pipes[i].top_pipe_obj); // Remove default styles
+            lv_obj_set_style_bg_color(pipes[i].top_pipe_obj, lv_color_hex(0x008000), LV_PART_MAIN); // Green
+            lv_obj_set_style_bg_opa(pipes[i].top_pipe_obj, LV_OPA_COVER, LV_PART_MAIN);
+            lv_obj_set_style_border_width(pipes[i].top_pipe_obj, 0, 0);
         }
-        lv_obj_set_pos(pipes[i].top_asterisk_obj, (int)pipes[i].x_position, pipes[i].gap_y_top);
-        // Serial.printf("[FlappyBird] Pipe %d Top Asterisk: x=%d, y=%d\n", i, (int)pipes[i].x_position, pipes[i].gap_y_top);
+        lv_obj_set_size(pipes[i].top_pipe_obj, PIPE_WIDTH, pipes[i].gap_y_top);
+        lv_obj_set_pos(pipes[i].top_pipe_obj, (int)pipes[i].x_position, 0); // Top pipe starts at y=0
 
-        // Bottom asterisk
-        if (!pipes[i].bottom_asterisk_obj) {
-            pipes[i].bottom_asterisk_obj = lv_label_create(main_container);
-            lv_label_set_text(pipes[i].bottom_asterisk_obj, "*");
-            lv_obj_set_style_text_font(pipes[i].bottom_asterisk_obj, Style::loudNoisesFont(), 0); // Or a smaller font
-            lv_obj_set_style_text_color(pipes[i].bottom_asterisk_obj, lv_color_hex(0xFF0000), 0); // Red
+        // Create Bottom Pipe Rectangle
+        if (!pipes[i].bottom_pipe_obj) {
+            pipes[i].bottom_pipe_obj = lv_obj_create(main_container);
+            lv_obj_remove_style_all(pipes[i].bottom_pipe_obj);
+            lv_obj_set_style_bg_color(pipes[i].bottom_pipe_obj, lv_color_hex(0x008000), LV_PART_MAIN); // Green
+            lv_obj_set_style_bg_opa(pipes[i].bottom_pipe_obj, LV_OPA_COVER, LV_PART_MAIN);
+            lv_obj_set_style_border_width(pipes[i].bottom_pipe_obj, 0, 0);
         }
-        lv_obj_set_pos(pipes[i].bottom_asterisk_obj, (int)pipes[i].x_position, pipes[i].gap_y_top + PIPE_GAP_HEIGHT);
-        // Serial.printf("[FlappyBird] Pipe %d Bottom Asterisk: x=%d, y=%d\n", i, (int)pipes[i].x_position, pipes[i].gap_y_top + PIPE_GAP_HEIGHT);
+        int bottom_pipe_y = pipes[i].gap_y_top + PIPE_GAP_HEIGHT;
+        int bottom_pipe_height = FB_SCREEN_HEIGHT - bottom_pipe_y;
+        lv_obj_set_size(pipes[i].bottom_pipe_obj, PIPE_WIDTH, bottom_pipe_height);
+        lv_obj_set_pos(pipes[i].bottom_pipe_obj, (int)pipes[i].x_position, bottom_pipe_y);
     }
 }
 
@@ -210,13 +216,13 @@ void FlappyBirdGame::update_game_state() {
     for (int i = 0; i < PIPE_COUNT; ++i) {
         pipes[i].x_position -= PIPE_MOVE_SPEED;
         
-        int bird_left = BIRD_X_POSITION - BIRD_SIZE / 2; // X is not affected by Y offset
+        int bird_left = BIRD_X_POSITION - BIRD_SIZE / 2; 
         int bird_right = BIRD_X_POSITION + BIRD_SIZE / 2;
         
         int pipe_left = (int)pipes[i].x_position;
         int pipe_right = (int)pipes[i].x_position + PIPE_WIDTH;
-        int top_pipe_visual_bottom_edge = pipes[i].gap_y_top; // This is already a visual Y coord
-        int bottom_pipe_visual_top_edge = pipes[i].gap_y_top + PIPE_GAP_HEIGHT; // Also visual
+        int top_pipe_visual_bottom_edge = pipes[i].gap_y_top; 
+        int bottom_pipe_visual_top_edge = pipes[i].gap_y_top + PIPE_GAP_HEIGHT; 
 
         if (bird_right > pipe_left && bird_left < pipe_right) {
             if (visual_bird_top_edge < top_pipe_visual_bottom_edge || visual_bird_bottom_edge > bottom_pipe_visual_top_edge) {
@@ -255,8 +261,16 @@ void FlappyBirdGame::update_game_state() {
             pipes[i].gap_y_top = MIN_PIPE_HEIGHT + (rand() % (available_height_for_gap + 1));
             pipes[i].scored = false;
 
-            lv_obj_set_pos(pipes[i].top_asterisk_obj, (int)pipes[i].x_position, pipes[i].gap_y_top);
-            lv_obj_set_pos(pipes[i].bottom_asterisk_obj, (int)pipes[i].x_position, pipes[i].gap_y_top + PIPE_GAP_HEIGHT);
+            if (pipes[i].top_pipe_obj) {
+                 lv_obj_set_size(pipes[i].top_pipe_obj, PIPE_WIDTH, pipes[i].gap_y_top);
+                 lv_obj_set_pos(pipes[i].top_pipe_obj, (int)pipes[i].x_position, 0); 
+            }
+             if (pipes[i].bottom_pipe_obj) {
+                 int bottom_pipe_y = pipes[i].gap_y_top + PIPE_GAP_HEIGHT;
+                 int bottom_pipe_height = FB_SCREEN_HEIGHT - bottom_pipe_y;
+                 lv_obj_set_size(pipes[i].bottom_pipe_obj, PIPE_WIDTH, bottom_pipe_height);
+                 lv_obj_set_pos(pipes[i].bottom_pipe_obj, (int)pipes[i].x_position, bottom_pipe_y);
+             }
         }
     }
 }
@@ -268,11 +282,11 @@ void FlappyBirdGame::render() {
     }
 
     for (int i = 0; i < PIPE_COUNT; ++i) {
-        if (pipes[i].top_asterisk_obj) {
-            lv_obj_set_pos(pipes[i].top_asterisk_obj, (int)pipes[i].x_position, pipes[i].gap_y_top);
+        if (pipes[i].top_pipe_obj) {
+            lv_obj_set_x(pipes[i].top_pipe_obj, (int)pipes[i].x_position);
         }
-        if (pipes[i].bottom_asterisk_obj) {
-            lv_obj_set_pos(pipes[i].bottom_asterisk_obj, (int)pipes[i].x_position, pipes[i].gap_y_top + PIPE_GAP_HEIGHT);
+        if (pipes[i].bottom_pipe_obj) {
+            lv_obj_set_x(pipes[i].bottom_pipe_obj, (int)pipes[i].x_position);
         }
     }
 
@@ -284,15 +298,17 @@ void FlappyBirdGame::render() {
 void FlappyBirdGame::cleanup() {
     Serial.println("[FlappyBird] cleanup() called"); // DEBUG
     if (main_container) {
-        lv_obj_del(main_container); 
+        lv_obj_del(main_container); // This deletes children too (bird, pipes, labels)
         main_container = nullptr;
         bird_obj = nullptr; 
         start_message_label = nullptr;
         game_over_message_label = nullptr;
         score_label = nullptr;
         for (int i = 0; i < PIPE_COUNT; ++i) {
-            pipes[i].top_asterisk_obj = nullptr;     // Null out new members
-            pipes[i].bottom_asterisk_obj = nullptr;  // Null out new members
+            // pipes[i].top_asterisk_obj = nullptr;     // Old
+            // pipes[i].bottom_asterisk_obj = nullptr;  // Old
+            pipes[i].top_pipe_obj = nullptr;     // Null out new members
+            pipes[i].bottom_pipe_obj = nullptr;  // Null out new members
         }
     }
 }

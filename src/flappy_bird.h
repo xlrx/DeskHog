@@ -25,10 +25,10 @@ enum class GameState {
 };
 
 struct PipePair {
-    // lv_obj_t* top_pipe_obj;     // Removed
-    // lv_obj_t* bottom_pipe_obj;  // Removed
-    lv_obj_t* top_asterisk_obj;    // LVGL label for the top asterisk
-    lv_obj_t* bottom_asterisk_obj; // LVGL label for the bottom asterisk
+    // lv_obj_t* top_asterisk_obj;    // LVGL label for the top asterisk
+    // lv_obj_t* bottom_asterisk_obj; // LVGL label for the bottom asterisk
+    lv_obj_t* top_pipe_obj;     // LVGL object for the top pipe rectangle
+    lv_obj_t* bottom_pipe_obj;  // LVGL object for the bottom pipe rectangle
     float x_position;           
     int gap_y_top;              
     bool scored;                
