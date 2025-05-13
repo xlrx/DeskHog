@@ -5,7 +5,7 @@
 FlappyBirdGame::FlappyBirdGame()
     : main_container(nullptr), bird_obj(nullptr), 
       start_message_label(nullptr), game_over_message_label(nullptr), score_label(nullptr),
-      bird_y(FB_SCREEN_HEIGHT / 2), bird_velocity(0.0f), 
+      bird_y(BIRD_SIZE / 2), bird_velocity(0.0f), 
       current_game_state(GameState::PRE_GAME), score(0) {
     Serial.println("[FlappyBird] Constructor called"); // DEBUG
     for (int i = 0; i < PIPE_COUNT; ++i) {
@@ -44,10 +44,10 @@ void FlappyBirdGame::setup(lv_obj_t* parent_screen) {
         lv_obj_set_style_radius(bird_obj, LV_RADIUS_CIRCLE, LV_PART_MAIN);
         lv_obj_align(bird_obj, LV_ALIGN_CENTER, BIRD_X_POSITION - FB_SCREEN_WIDTH/2 , 0); 
     }
-    bird_y = FB_SCREEN_HEIGHT / 2;
+    bird_y = BIRD_SIZE / 2;
     bird_velocity = 0.0f;
     lv_obj_set_y(bird_obj, bird_y - BIRD_SIZE / 2);
-    Serial.printf("[FlappyBird] Bird initialized: y=%d, velocity=%.2f\n", bird_y, bird_velocity); // DEBUG
+    Serial.printf("[FlappyBird] Bird initialized: logical_bird_y_center=%d, velocity=%.2f\n", bird_y, bird_velocity); // DEBUG
 
     reset_and_initialize_pipes();
 
@@ -120,7 +120,7 @@ void FlappyBirdGame::loop() {
                 if (start_message_label) {
                     lv_obj_add_flag(start_message_label, LV_OBJ_FLAG_HIDDEN);
                 }
-                bird_y = FB_SCREEN_HEIGHT / 2;
+                bird_y = BIRD_SIZE / 2;
                 bird_velocity = 0.0f;
             }
             break;
@@ -144,32 +144,44 @@ void FlappyBirdGame::handle_input() {
     if (current_game_state != GameState::ACTIVE) return;
     if (Input::isCenterPressed()) {
         Serial.println("[FlappyBird] Flap! (Center pressed in ACTIVE state)"); // DEBUG
-        bird_velocity = -1.25f;
+        bird_velocity = -1.875f;
     }
 }
 
 void FlappyBirdGame::update_game_state() {
     if (current_game_state != GameState::ACTIVE) return;
 
-    bird_velocity += 0.05f;
+    bird_velocity += 0.04f;
     bird_y += (int)bird_velocity;
 
-    // Clamp bird's position to prevent going off the top of the screen
-    if (bird_y - BIRD_SIZE / 2 < 0) {
-        bird_y = BIRD_SIZE / 2; // Position bird at the very top
-        bird_velocity = 0;      // Stop upward movement if it hit the top
-        Serial.println("[FlappyBird] Bird hit top, clamped position."); // DEBUG
-    }
-    // Serial.printf("[FlappyBird] Bird update: y=%d, vel=%.2f\n", bird_y, bird_velocity); // DEBUG - Noisy
+    const int Y_VISUAL_OFFSET = (FB_SCREEN_HEIGHT / 2) - (BIRD_SIZE / 2);
 
-    // Bird-Screen TOP or BOTTOM boundary collision
-    if (bird_y - BIRD_SIZE / 2 <= 0 || bird_y + BIRD_SIZE / 2 >= FB_SCREEN_HEIGHT) { // Re-added top boundary check and used >= / <= for robustness
-        Serial.println("[FlappyBird] Top/Bottom boundary collision! Game Over."); // DEBUG: Updated message
+    // Calculate visual bird edges
+    int visual_bird_center_y = bird_y + Y_VISUAL_OFFSET;
+    int visual_bird_top_edge = visual_bird_center_y - BIRD_SIZE / 2;
+    int visual_bird_bottom_edge = visual_bird_center_y + BIRD_SIZE / 2;
+
+    // Clamp bird's visual position to prevent going off the top of the screen before collision check
+    if (visual_bird_top_edge < 0) {
+        bird_y = -Y_VISUAL_OFFSET + (BIRD_SIZE / 2); // Adjust logical bird_y so visual top is 0
+        bird_velocity = 0;      
+        Serial.println("[FlappyBird] Bird visually clamped to top screen edge.");
+        // Recalculate visual edges after clamping for immediate collision check integrity
+        visual_bird_center_y = bird_y + Y_VISUAL_OFFSET;
+        visual_bird_top_edge = visual_bird_center_y - BIRD_SIZE / 2;
+        visual_bird_bottom_edge = visual_bird_center_y + BIRD_SIZE / 2;
+    }
+
+    // --- Explicit Boundary Collision Checks (using visual coordinates) ---
+
+    // Check Top Boundary
+    if (visual_bird_top_edge <= 0) {
+        Serial.printf("[FlappyBird] COLLISION TYPE: TOP BOUNDARY! visual_top_edge=%d <= 0. Game Over.\n", visual_bird_top_edge);
         current_game_state = GameState::GAME_OVER;
         if (!game_over_message_label) {
             game_over_message_label = lv_label_create(main_container);
             lv_obj_set_style_text_font(game_over_message_label, Style::loudNoisesFont(), 0);
-            lv_obj_set_style_text_color(game_over_message_label, lv_color_white(), 0); // Set text color to white
+            lv_obj_set_style_text_color(game_over_message_label, lv_color_white(), 0);
             lv_label_set_text(game_over_message_label, "Game Over!");
             lv_obj_align(game_over_message_label, LV_ALIGN_CENTER, 0, 0); 
         }
@@ -178,51 +190,59 @@ void FlappyBirdGame::update_game_state() {
         return; 
     }
 
+    // Check Bottom Boundary
+    if (visual_bird_bottom_edge >= FB_SCREEN_HEIGHT) {
+        Serial.printf("[FlappyBird] COLLISION TYPE: BOTTOM BOUNDARY! visual_bottom_edge=%d >= %d. Game Over.\n", visual_bird_bottom_edge, FB_SCREEN_HEIGHT);
+        current_game_state = GameState::GAME_OVER;
+         if (!game_over_message_label) {
+            game_over_message_label = lv_label_create(main_container);
+            lv_obj_set_style_text_font(game_over_message_label, Style::loudNoisesFont(), 0);
+            lv_obj_set_style_text_color(game_over_message_label, lv_color_white(), 0);
+            lv_label_set_text(game_over_message_label, "Game Over!");
+            lv_obj_align(game_over_message_label, LV_ALIGN_CENTER, 0, 0); 
+        }
+        lv_obj_clear_flag(game_over_message_label, LV_OBJ_FLAG_HIDDEN);
+        if (start_message_label) lv_obj_add_flag(start_message_label, LV_OBJ_FLAG_HIDDEN);
+        return; 
+    }
+
+    // --- Pipe Collision Checks (using visual bird coordinates against visual pipe coordinates) ---
     for (int i = 0; i < PIPE_COUNT; ++i) {
         pipes[i].x_position -= PIPE_MOVE_SPEED;
-        // Serial.printf("[FlappyBird] Pipe %d moved to x=%.2f\n", i, pipes[i].x_position); // DEBUG - Noisy
-
-        int bird_left = BIRD_X_POSITION - BIRD_SIZE / 2;
+        
+        int bird_left = BIRD_X_POSITION - BIRD_SIZE / 2; // X is not affected by Y offset
         int bird_right = BIRD_X_POSITION + BIRD_SIZE / 2;
-        int bird_top = bird_y - BIRD_SIZE / 2;
-        int bird_bottom = bird_y + BIRD_SIZE / 2;
+        
         int pipe_left = (int)pipes[i].x_position;
         int pipe_right = (int)pipes[i].x_position + PIPE_WIDTH;
-        int top_pipe_bottom_edge = pipes[i].gap_y_top;
-        int bottom_pipe_top_edge = pipes[i].gap_y_top + PIPE_GAP_HEIGHT;
+        int top_pipe_visual_bottom_edge = pipes[i].gap_y_top; // This is already a visual Y coord
+        int bottom_pipe_visual_top_edge = pipes[i].gap_y_top + PIPE_GAP_HEIGHT; // Also visual
 
         if (bird_right > pipe_left && bird_left < pipe_right) {
-            // Serial.printf("[FlappyBird] X-Overlap with Pipe %d: Bird (T:%d, B:%d), PipeGap (T:%d, B:%d)\n", 
-            //               i, bird_top, bird_bottom, top_pipe_bottom_edge, bottom_pipe_top_edge); // DEBUG - Can be noisy
-            
-            if (bird_top < top_pipe_bottom_edge || bird_bottom > bottom_pipe_top_edge) {
-                Serial.printf("[FlappyBird] Pipe %d Collision! Bird(T:%d, B:%d) vs PipeGap(T:%d, B:%d). Game Over.\n", 
-                              i, bird_top, bird_bottom, top_pipe_bottom_edge, bottom_pipe_top_edge); // DEBUG
+            if (visual_bird_top_edge < top_pipe_visual_bottom_edge || visual_bird_bottom_edge > bottom_pipe_visual_top_edge) {
+                Serial.printf("[FlappyBird] COLLISION TYPE: PIPE %d! VisualBird(T:%d, B:%d) vs PipeGap(T:%d, B:%d). Game Over.\n", 
+                              i, visual_bird_top_edge, visual_bird_bottom_edge, top_pipe_visual_bottom_edge, bottom_pipe_visual_top_edge); 
                 current_game_state = GameState::GAME_OVER;
+                 if (!game_over_message_label) {
+                    game_over_message_label = lv_label_create(main_container);
+                    lv_obj_set_style_text_font(game_over_message_label, Style::loudNoisesFont(), 0);
+                    lv_obj_set_style_text_color(game_over_message_label, lv_color_white(), 0);
+                    lv_label_set_text(game_over_message_label, "Game Over!");
+                    lv_obj_align(game_over_message_label, LV_ALIGN_CENTER, 0, 0); 
+                }
+                lv_obj_clear_flag(game_over_message_label, LV_OBJ_FLAG_HIDDEN);
+                if (start_message_label) lv_obj_add_flag(start_message_label, LV_OBJ_FLAG_HIDDEN);
+                return; 
             }
-        }
-
-        if (current_game_state == GameState::GAME_OVER) {
-             if (!game_over_message_label) {
-                game_over_message_label = lv_label_create(main_container);
-                lv_obj_set_style_text_font(game_over_message_label, Style::loudNoisesFont(), 0);
-                lv_obj_set_style_text_color(game_over_message_label, lv_color_white(), 0); // Set text color to white
-                lv_label_set_text(game_over_message_label, "Game Over!");
-                lv_obj_align(game_over_message_label, LV_ALIGN_CENTER, 0, 0); 
-            }
-            lv_obj_clear_flag(game_over_message_label, LV_OBJ_FLAG_HIDDEN);
-            if (start_message_label) lv_obj_add_flag(start_message_label, LV_OBJ_FLAG_HIDDEN);
-            return; 
         }
 
         if (!pipes[i].scored && bird_left > pipe_right) {
             score++;
             pipes[i].scored = true;
-            Serial.printf("[FlappyBird] Pipe %d scored! Score: %d\n", i, score); // DEBUG
+            Serial.printf("[FlappyBird] Pipe %d scored! Score: %d\n", i, score); 
         }
 
         if (pipes[i].x_position + PIPE_WIDTH < 0) {
-            // Serial.printf("[FlappyBird] Recycling pipe %d\n", i); // DEBUG - Can be noisy
             float max_x = 0;
             for(int j=0; j < PIPE_COUNT; ++j) {
                 if (j == i) continue;
@@ -234,7 +254,6 @@ void FlappyBirdGame::update_game_state() {
             if(available_height_for_gap < 0) available_height_for_gap = 0;
             pipes[i].gap_y_top = MIN_PIPE_HEIGHT + (rand() % (available_height_for_gap + 1));
             pipes[i].scored = false;
-            // Serial.printf("[FlappyBird] Pipe %d recycled: x=%.2f, gap_top=%d\n", i, pipes[i].x_position, pipes[i].gap_y_top); // DEBUG
 
             lv_obj_set_pos(pipes[i].top_asterisk_obj, (int)pipes[i].x_position, pipes[i].gap_y_top);
             lv_obj_set_pos(pipes[i].bottom_asterisk_obj, (int)pipes[i].x_position, pipes[i].gap_y_top + PIPE_GAP_HEIGHT);
