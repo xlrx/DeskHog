@@ -68,6 +68,7 @@ AnimationCard::AnimationCard(lv_obj_t* parent)
     addMessage("I ACCEPT YOUR LIMITATIONS");
     addMessage("YOUR DREAM IS ATTAINABLE");
     addMessage("YOU WILL DO THINGS");
+    addMessage("YOU SHOULD NOT BE AFRAID");
 
     // Display the first message
     if (!_messages.empty()) {
