@@ -60,6 +60,11 @@ public:
      */
     void setText(const char* text);
     
+    /**
+     * @brief Start vertical scrolling animation
+     */
+    void startScrolling();
+    
 private:
     /**
      * @brief Create a text label with consistent styling
@@ -82,5 +87,4 @@ private:
     // State tracking
     std::vector<std::string> _questions;        ///< List of questions
     size_t _current_question_index;             ///< Index of current question
-    lv_anim_t _anim;                           ///< Animation object
 };
