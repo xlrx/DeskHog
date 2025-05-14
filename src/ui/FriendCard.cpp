@@ -30,7 +30,7 @@ AnimationCard::AnimationCard(lv_obj_t* parent)
     
     // Make green container fill parent completely
     lv_obj_set_style_radius(_background, 8, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(_background, lv_color_hex(0x0E7A00), 0);
+    lv_obj_set_style_bg_color(_background, lv_color_hex(0x8B0000), 0);
     lv_obj_set_style_border_width(_background, 0, 0);
     lv_obj_set_style_pad_all(_background, 5, 0);
     
