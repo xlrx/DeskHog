@@ -113,7 +113,7 @@ AnimationCard::~AnimationCard() {
     }
 }
 
-lv_obj_t* AnimationCard::getCard() {
+lv_obj_t* AnimationCard::getCardObject() const {
     return _card;
 }
 
@@ -173,6 +173,11 @@ bool AnimationCard::handleButtonPress(uint8_t button_index) {
     
     // We didn't handle the button press
     return false;
+}
+
+// Add empty implementation for update() from InputHandler
+void AnimationCard::update() {
+    // AnimationCard does not require continuous updates beyond LVGL animations
 }
 
 bool AnimationCard::isValidObject(lv_obj_t* obj) const {
