@@ -19,16 +19,19 @@ const int PongCard::NUM_VICTORY_PHRASES = sizeof(PongCard::VICTORY_PHRASES) / si
 
 PongCard::PongCard(lv_obj_t* parent) :
     _card_root_obj(nullptr),
-    _pong_game_instance(SCREEN_WIDTH, SCREEN_HEIGHT),
+    _pong_game_instance(SCREEN_WIDTH, SCREEN_HEIGHT), // Initialize PongGame with dimensions
     _player_paddle_obj(nullptr),
     _ai_paddle_obj(nullptr),
     _ball_obj(nullptr),
     _player_score_label_obj(nullptr),
     _ai_score_label_obj(nullptr),
     _message_label_obj(nullptr),
-    _selected_victory_phrase_index(-1),
-    _last_known_game_state(PongGame::GameState::StartScreen) {
+    _is_victory_phrase_chosen(false),
+    _previous_game_state(_pong_game_instance.getState()) { // Initialize with current game state
 
+    _chosen_victory_phrase_buffer[0] = '\0';
+
+    // Seed random number generator once
     static bool seeded = false;
     if (!seeded) {
         srand(time(nullptr));
@@ -36,7 +39,7 @@ PongCard::PongCard(lv_obj_t* parent) :
     }
 
     createUi(parent);
-    _last_known_game_state = _pong_game_instance.getState(); 
+    _pong_game_instance.setState(PongGame::GameState::StartScreen); 
     updateMessageLabel();
 }
 
@@ -92,32 +95,45 @@ void PongCard::update() {
     Bounce2::Button& center_button = buttons[Input::BUTTON_CENTER];
     Bounce2::Button& up_button = buttons[Input::BUTTON_UP];
     Bounce2::Button& down_button = buttons[Input::BUTTON_DOWN];
-    
     PongGame::GameState current_game_state = _pong_game_instance.getState();
 
-    if (current_game_state == PongGame::GameState::GameOver && _last_known_game_state != PongGame::GameState::GameOver) {
+    // --- State Transition Logic for Victory Message ---
+    if (current_game_state == PongGame::GameState::GameOver && _previous_game_state != PongGame::GameState::GameOver) {
+        // Just entered GameOver state
         if (_pong_game_instance.getPlayerWinState() == PongGame::PLAYER_WON) {
-            _selected_victory_phrase_index = rand() % NUM_VICTORY_PHRASES;
+            int random_index = rand() % NUM_VICTORY_PHRASES;
+            snprintf(_chosen_victory_phrase_buffer, sizeof(_chosen_victory_phrase_buffer), "%s\nPress Center to Restart", VICTORY_PHRASES[random_index]);
+            _is_victory_phrase_chosen = true;
         } else {
-            _selected_victory_phrase_index = -1;
+            _is_victory_phrase_chosen = false; // AI won or other, no special phrase
         }
+    } else if (current_game_state != PongGame::GameState::GameOver && _previous_game_state == PongGame::GameState::GameOver) {
+        // Just exited GameOver state (e.g., restarted)
+        _is_victory_phrase_chosen = false;
     }
 
+    // --- Center button press logic based on current state ---
     if (center_button.pressed()) {
         if (current_game_state == PongGame::GameState::StartScreen || current_game_state == PongGame::GameState::GameOver) {
-            _selected_victory_phrase_index = -1;
-            _pong_game_instance.reset();
+            _pong_game_instance.reset(); // This now sets the game to ServeDelay internally
+            // Player paddle should be reset to non-moving state immediately
             _pong_game_instance.movePlayerPaddle(true, false);
             _pong_game_instance.movePlayerPaddle(false, false);
+            // updateMessageLabel(); // PongGame state change will trigger UI update via updateUi -> updateMessageLabel
         } else if (current_game_state == PongGame::GameState::Paused) {
-            _pong_game_instance.setState(PongGame::GameState::Playing);
+            _pong_game_instance.setState(PongGame::GameState::Playing); // Resume from pause
+            // updateMessageLabel();
         } else if (current_game_state == PongGame::GameState::Playing) {
-            _pong_game_instance.setState(PongGame::GameState::Paused);
-            _pong_game_instance.movePlayerPaddle(true, false);
+            _pong_game_instance.setState(PongGame::GameState::Paused); // Pause the game
+            _pong_game_instance.movePlayerPaddle(true, false); // Stop player paddle
             _pong_game_instance.movePlayerPaddle(false, false);
+            // updateMessageLabel();
         }
+        // After any state change initiated by center button, ensure message label is current for the new state.
+        // This is now more reliably handled in updateUi()->updateMessageLabel() call at the end of this function.
     }
 
+    // Paddle movement input only if Playing
     if (current_game_state == PongGame::GameState::Playing) {
         if (down_button.isPressed()) {
             _pong_game_instance.movePlayerPaddle(false, true);
@@ -131,22 +147,25 @@ void PongCard::update() {
             _pong_game_instance.movePlayerPaddle(true, false);
         }
 
+        // Check for all three buttons for GameOver (from Playing state)
         if (up_button.isPressed() && down_button.isPressed() && center_button.isPressed()) {
             _pong_game_instance.setState(PongGame::GameState::GameOver);
-            _pong_game_instance.movePlayerPaddle(true, false);
+            _pong_game_instance.movePlayerPaddle(true, false); // Stop player paddle
             _pong_game_instance.movePlayerPaddle(false, false);
+            // updateMessageLabel(); 
         }
     }
 
+    // Call PongGame's update loop if card is valid and game is Playing or in ServeDelay
     if (lv_obj_is_valid(_card_root_obj)) {
       if (current_game_state == PongGame::GameState::Playing || 
           current_game_state == PongGame::GameState::ServeDelay) {
           _pong_game_instance.update();
       }
-      updateUi();
+      updateUi(); // This will call updateMessageLabel() internally
     }
 
-    _last_known_game_state = current_game_state;
+    _previous_game_state = current_game_state; // Update previous state for next frame
 }
 
 void PongCard::updateUi() {
@@ -180,7 +199,7 @@ void PongCard::updateUi() {
 void PongCard::updateMessageLabel() {
     if (!lv_obj_is_valid(_message_label_obj)) return;
     PongGame::GameState current_game_state = _pong_game_instance.getState();
-    char message_buffer[100];
+    // char message_buffer[100]; // No longer needed here, specific message set in _chosen_victory_phrase_buffer
 
     switch (current_game_state) {
         case PongGame::GameState::StartScreen:
@@ -188,7 +207,7 @@ void PongCard::updateMessageLabel() {
             break;
         case PongGame::GameState::Playing:
             lv_obj_add_flag(_message_label_obj, LV_OBJ_FLAG_HIDDEN);
-            return; 
+            return; // Don't clear hidden flag below
         case PongGame::GameState::Paused:
              lv_label_set_text(_message_label_obj, "PAUSED");
             break;
@@ -196,14 +215,11 @@ void PongCard::updateMessageLabel() {
             lv_label_set_text(_message_label_obj, "READY?");
             break;
         case PongGame::GameState::GameOver:
-            {
-                if (_selected_victory_phrase_index != -1 && 
-                    _pong_game_instance.getPlayerWinState() == PongGame::PLAYER_WON) {
-                    snprintf(message_buffer, sizeof(message_buffer), "%s\nPress Center to Restart", VICTORY_PHRASES[_selected_victory_phrase_index]);
-                    lv_label_set_text(_message_label_obj, message_buffer);
-                } else {
-                    lv_label_set_text(_message_label_obj, "GAME OVER\nPress Center to Restart");
-                }
+            if (_is_victory_phrase_chosen) {
+                lv_label_set_text(_message_label_obj, _chosen_victory_phrase_buffer);
+            } else {
+                // AI Won or other game over condition
+                lv_label_set_text(_message_label_obj, "GAME OVER\nPress Center to Restart");
             }
             break;
     }
@@ -214,18 +230,23 @@ bool PongCard::handleButtonPress(uint8_t button_index) {
     PongGame::GameState current_game_state = _pong_game_instance.getState();
 
     if (current_game_state == PongGame::GameState::GameOver) {
+        // In GameOver state:
+        // - Center button is still handled by PongCard (to restart)
+        // - Up/Down buttons are NOT handled, allowing CardNavigationStack to use them
         if (button_index == Input::BUTTON_CENTER) {
-            return true;
+            return true; // Center press restarts the game (handled in update())
         }
-        return false;
+        return false; // Up/Down presses are not handled by PongCard in GameOver
     } else {
+        // In other states (StartScreen, Playing, Paused):
+        // PongCard handles all three relevant buttons
         if (button_index == Input::BUTTON_CENTER ||
             button_index == Input::BUTTON_UP ||
             button_index == Input::BUTTON_DOWN) {
-            return true;
+            return true; // Event handled by PongCard (logic is in update())
         }
     }
-    return false;
+    return false; // Other buttons or unhandled cases
 }
 
 lv_obj_t* PongCard::getCardObject() const {

@@ -31,8 +31,9 @@ private:
     lv_obj_t* _ai_score_label_obj;
     lv_obj_t* _message_label_obj;
 
-    int _selected_victory_phrase_index; // Stores index of chosen phrase, -1 if none
-    PongGame::GameState _last_known_game_state; // To detect transitions into GameOver
+    char _chosen_victory_phrase_buffer[100]; // Buffer to hold the chosen victory message
+    bool _is_victory_phrase_chosen;        // Flag to indicate if a phrase has been chosen for current game over
+    PongGame::GameState _previous_game_state;  // To detect state transitions
 
     // Constants
     static constexpr int PADDLE_WIDTH = 5; // Adjusted for visibility
