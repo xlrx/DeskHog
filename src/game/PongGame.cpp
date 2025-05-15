@@ -10,7 +10,7 @@ PongGame::PongGame(int16_t play_area_width, int16_t play_area_height) :
     _play_area_height(play_area_height),
     _player_paddle_velocity_y(0),
     _serve_delay_start_time(0),
-    _player_serves_next(true) {
+    _player_serves_next(false) {
     reset();
 }
 
@@ -33,7 +33,7 @@ void PongGame::reset() {
 
     // Determine who serves. For a full game reset, player serves.
     // This value might be immediately used if going into ServeDelay.
-    _player_serves_next = true; 
+    _player_serves_next = false; // AI serves first
     resetBall(_player_serves_next); // This positions ball and sets its velocity to 0,0
                                   // and stores who will serve.
 
@@ -166,7 +166,7 @@ void PongGame::update() {
         if (_ai_score >= 5) { // Example win condition
             setState(GameState::GameOver);
         } else {
-            _player_serves_next = true; // Player serves next
+            _player_serves_next = false; // AI serves next
             resetBall(_player_serves_next);
             setState(GameState::ServeDelay);
             _serve_delay_start_time = millis();
