@@ -13,10 +13,10 @@ const int BIRD_X_POSITION = 30; // Fixed X position of the bird from the left
 // Pipe constants
 const int PIPE_COUNT = 2; // Number of pipe pairs on screen at once
 const int PIPE_WIDTH = 20;
-const int PIPE_GAP_HEIGHT = 50; // Vertical opening for the bird
+const int PIPE_GAP_HEIGHT = 75; // Vertical opening for the bird
 const int MIN_PIPE_HEIGHT = 15; // Minimum height for top or bottom pipe part
 const int HORIZONTAL_SPACING_BETWEEN_PIPES = FB_SCREEN_WIDTH / 2 + PIPE_WIDTH / 2; // Roughly half screen apart
-const float PIPE_MOVE_SPEED = 0.43125f;
+const float PIPE_MOVE_SPEED = 0.215625f;
 
 enum class GameState {
     PRE_GAME,
