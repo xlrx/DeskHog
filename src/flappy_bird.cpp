@@ -1,6 +1,46 @@
 #include "flappy_bird.h"
 #include "Arduino.h" // For random, etc.
 #include "Style.h"   // For Style::loudNoisesFont()
+#include <cmath>     // For std::pow
+
+// Define the actual global variables for current difficulty parameters
+int current_pipe_gap_height;
+float current_pipe_move_speed;
+
+// Static variables for tracking difficulty progression
+static int s_total_center_presses_for_difficulty = 0;
+static int s_current_difficulty_level = 0;
+
+// Initialize/Update difficulty parameters based on the current difficulty level
+void flappy_bird_init_difficulty_params() {
+    if (s_current_difficulty_level == 0) {
+        current_pipe_gap_height = BASE_PIPE_GAP_HEIGHT;
+        current_pipe_move_speed = BASE_PIPE_MOVE_SPEED;
+    } else {
+        current_pipe_gap_height = static_cast<int>(BASE_PIPE_GAP_HEIGHT * std::pow(0.93, s_current_difficulty_level));
+        current_pipe_move_speed = BASE_PIPE_MOVE_SPEED * std::pow(1.07, s_current_difficulty_level);
+
+        const int MINIMUM_PRACTICAL_GAP = BIRD_SIZE + 10; 
+        if (current_pipe_gap_height < MINIMUM_PRACTICAL_GAP) {
+            current_pipe_gap_height = MINIMUM_PRACTICAL_GAP;
+        }
+    }
+    Serial.printf("[FlappyBird] Difficulty params (re)set. Level: %d, Gap: %d, Speed: %.4f\n",
+                  s_current_difficulty_level, current_pipe_gap_height, current_pipe_move_speed);
+}
+
+// Called every time the center button is pressed (for starting game or flapping)
+void flappy_bird_on_center_press() {
+    s_total_center_presses_for_difficulty++;
+    // Serial.printf("[FlappyBird] Center press for difficulty. Total: %d\n", s_total_center_presses_for_difficulty); // DEBUG
+
+    if (s_total_center_presses_for_difficulty > 0 && (s_total_center_presses_for_difficulty % 5 == 0)) {
+        s_current_difficulty_level++;
+        flappy_bird_init_difficulty_params(); // Recalculate and apply new difficulty parameters
+        Serial.printf("[FlappyBird] Difficulty Increased! New Level: %d, New Gap: %d, New Speed: %.4f\n",
+                      s_current_difficulty_level, current_pipe_gap_height, current_pipe_move_speed);
+    }
+}
 
 FlappyBirdGame::FlappyBirdGame()
     : main_container(nullptr), bird_obj(nullptr), 
@@ -8,6 +48,7 @@ FlappyBirdGame::FlappyBirdGame()
       bird_y(BIRD_SIZE / 2), bird_velocity(0.0f), 
       current_game_state(GameState::PRE_GAME), score(0) {
     Serial.println("[FlappyBird] Constructor called"); // DEBUG
+    flappy_bird_init_difficulty_params(); // Initialize difficulty params on creation
     for (int i = 0; i < PIPE_COUNT; ++i) {
         // pipes[i].top_asterisk_obj = nullptr;     // Old label pointer
         // pipes[i].bottom_asterisk_obj = nullptr;  // Old label pointer
@@ -26,6 +67,7 @@ void FlappyBirdGame::setup(lv_obj_t* parent_screen) {
     Serial.println("[FlappyBird] setup() called"); // DEBUG
     current_game_state = GameState::PRE_GAME;
     score = 0;
+    flappy_bird_init_difficulty_params(); // Initialize/Refresh difficulty params on game setup/reset
     Serial.printf("[FlappyBird] Game state set to PRE_GAME, score reset to %d\n", score); // DEBUG
 
     if (!main_container) { 
@@ -109,7 +151,7 @@ void FlappyBirdGame::reset_and_initialize_pipes() {
     srand(time(NULL)); 
     for (int i = 0; i < PIPE_COUNT; ++i) {
         pipes[i].x_position = FB_SCREEN_WIDTH + (i * HORIZONTAL_SPACING_BETWEEN_PIPES);
-        int available_height_for_gap = FB_SCREEN_HEIGHT - (2 * MIN_PIPE_HEIGHT) - PIPE_GAP_HEIGHT;
+        int available_height_for_gap = FB_SCREEN_HEIGHT - (2 * MIN_PIPE_HEIGHT) - current_pipe_gap_height;
         if(available_height_for_gap < 0) available_height_for_gap = 0;
         pipes[i].gap_y_top = MIN_PIPE_HEIGHT + (rand() % (available_height_for_gap + 1));
         pipes[i].scored = false;
@@ -135,7 +177,7 @@ void FlappyBirdGame::reset_and_initialize_pipes() {
             lv_obj_set_style_border_width(pipes[i].bottom_pipe_obj, 1, LV_PART_MAIN); // 1px border
             lv_obj_set_style_border_color(pipes[i].bottom_pipe_obj, lv_color_black(), LV_PART_MAIN); // Black border
         }
-        int bottom_pipe_y = pipes[i].gap_y_top + PIPE_GAP_HEIGHT;
+        int bottom_pipe_y = pipes[i].gap_y_top + current_pipe_gap_height;
         int bottom_pipe_height = FB_SCREEN_HEIGHT - bottom_pipe_y;
         lv_obj_set_size(pipes[i].bottom_pipe_obj, PIPE_WIDTH, bottom_pipe_height);
         lv_obj_set_pos(pipes[i].bottom_pipe_obj, (int)pipes[i].x_position, bottom_pipe_y);
@@ -148,6 +190,7 @@ void FlappyBirdGame::loop() {
         case GameState::PRE_GAME:
             if (Input::isCenterPressed()) {
                 Serial.println("[FlappyBird] Center pressed in PRE_GAME - starting game"); // DEBUG
+                flappy_bird_on_center_press(); // Notify for difficulty tracking
                 current_game_state = GameState::ACTIVE;
                 if (start_message_label) {
                     lv_obj_add_flag(start_message_label, LV_OBJ_FLAG_HIDDEN);
@@ -176,6 +219,7 @@ void FlappyBirdGame::handle_input() {
     if (current_game_state != GameState::ACTIVE) return;
     if (Input::isCenterPressed()) {
         Serial.println("[FlappyBird] Flap! (Center pressed in ACTIVE state)"); // DEBUG
+        flappy_bird_on_center_press(); // Notify for difficulty tracking
         bird_velocity = -1.59375f;
     }
 }
@@ -210,6 +254,13 @@ void FlappyBirdGame::update_game_state() {
     if (visual_bird_top_edge <= 0) {
         Serial.printf("[FlappyBird] COLLISION TYPE: TOP BOUNDARY! visual_top_edge=%d <= 0. Game Over.\n", visual_bird_top_edge);
         current_game_state = GameState::GAME_OVER;
+
+        // Reset difficulty
+        s_current_difficulty_level = 0;
+        s_total_center_presses_for_difficulty = 0; // Reset press count as well
+        flappy_bird_init_difficulty_params();
+        Serial.println("[FlappyBird] Difficulty reset to initial level.");
+
         if (!game_over_message_label) {
             game_over_message_label = lv_label_create(main_container);
             lv_obj_set_style_text_font(game_over_message_label, Style::loudNoisesFont(), 0);
@@ -232,6 +283,13 @@ void FlappyBirdGame::update_game_state() {
     if (visual_bird_bottom_edge >= FB_SCREEN_HEIGHT) {
         Serial.printf("[FlappyBird] COLLISION TYPE: BOTTOM BOUNDARY! visual_bottom_edge=%d >= %d. Game Over.\n", visual_bird_bottom_edge, FB_SCREEN_HEIGHT);
         current_game_state = GameState::GAME_OVER;
+
+        // Reset difficulty
+        s_current_difficulty_level = 0;
+        s_total_center_presses_for_difficulty = 0; // Reset press count as well
+        flappy_bird_init_difficulty_params();
+        Serial.println("[FlappyBird] Difficulty reset to initial level.");
+
          if (!game_over_message_label) {
             game_over_message_label = lv_label_create(main_container);
             lv_obj_set_style_text_font(game_over_message_label, Style::loudNoisesFont(), 0);
@@ -252,7 +310,7 @@ void FlappyBirdGame::update_game_state() {
 
     // --- Pipe Collision Checks (using visual bird coordinates against visual pipe coordinates) ---
     for (int i = 0; i < PIPE_COUNT; ++i) {
-        pipes[i].x_position -= PIPE_MOVE_SPEED;
+        pipes[i].x_position -= current_pipe_move_speed;
         
         int bird_left = BIRD_X_POSITION - BIRD_SIZE / 2; 
         int bird_right = BIRD_X_POSITION + BIRD_SIZE / 2;
@@ -260,13 +318,20 @@ void FlappyBirdGame::update_game_state() {
         int pipe_left = (int)pipes[i].x_position;
         int pipe_right = (int)pipes[i].x_position + PIPE_WIDTH;
         int top_pipe_visual_bottom_edge = pipes[i].gap_y_top; 
-        int bottom_pipe_visual_top_edge = pipes[i].gap_y_top + PIPE_GAP_HEIGHT; 
+        int bottom_pipe_visual_top_edge = pipes[i].gap_y_top + current_pipe_gap_height; 
 
         if (bird_right > pipe_left && bird_left < pipe_right) {
             if (visual_bird_top_edge < top_pipe_visual_bottom_edge || visual_bird_bottom_edge > bottom_pipe_visual_top_edge) {
                 Serial.printf("[FlappyBird] COLLISION TYPE: PIPE %d! VisualBird(T:%d, B:%d) vs PipeGap(T:%d, B:%d). Game Over.\n", 
                               i, visual_bird_top_edge, visual_bird_bottom_edge, top_pipe_visual_bottom_edge, bottom_pipe_visual_top_edge); 
                 current_game_state = GameState::GAME_OVER;
+
+                // Reset difficulty
+                s_current_difficulty_level = 0;
+                s_total_center_presses_for_difficulty = 0; // Reset press count as well
+                flappy_bird_init_difficulty_params();
+                Serial.println("[FlappyBird] Difficulty reset to initial level.");
+
                  if (!game_over_message_label) {
                     game_over_message_label = lv_label_create(main_container);
                     lv_obj_set_style_text_font(game_over_message_label, Style::loudNoisesFont(), 0);
@@ -300,7 +365,7 @@ void FlappyBirdGame::update_game_state() {
             }
             pipes[i].x_position = max_x + HORIZONTAL_SPACING_BETWEEN_PIPES;
 
-            int available_height_for_gap = FB_SCREEN_HEIGHT - (2 * MIN_PIPE_HEIGHT) - PIPE_GAP_HEIGHT;
+            int available_height_for_gap = FB_SCREEN_HEIGHT - (2 * MIN_PIPE_HEIGHT) - current_pipe_gap_height;
             if(available_height_for_gap < 0) available_height_for_gap = 0;
             pipes[i].gap_y_top = MIN_PIPE_HEIGHT + (rand() % (available_height_for_gap + 1));
             pipes[i].scored = false;
@@ -310,7 +375,7 @@ void FlappyBirdGame::update_game_state() {
                  lv_obj_set_pos(pipes[i].top_pipe_obj, (int)pipes[i].x_position, 0); 
             }
              if (pipes[i].bottom_pipe_obj) {
-                 int bottom_pipe_y = pipes[i].gap_y_top + PIPE_GAP_HEIGHT;
+                 int bottom_pipe_y = pipes[i].gap_y_top + current_pipe_gap_height;
                  int bottom_pipe_height = FB_SCREEN_HEIGHT - bottom_pipe_y;
                  lv_obj_set_size(pipes[i].bottom_pipe_obj, PIPE_WIDTH, bottom_pipe_height);
                  lv_obj_set_pos(pipes[i].bottom_pipe_obj, (int)pipes[i].x_position, bottom_pipe_y);

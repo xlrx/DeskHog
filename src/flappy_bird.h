@@ -13,10 +13,22 @@ const int BIRD_X_POSITION = 30; // Fixed X position of the bird from the left
 // Pipe constants
 const int PIPE_COUNT = 2; // Number of pipe pairs on screen at once
 const int PIPE_WIDTH = 20;
-const int PIPE_GAP_HEIGHT = 75; // Vertical opening for the bird
+// const int PIPE_GAP_HEIGHT = 75; // Vertical opening for the bird // OLD - Will be replaced
+// const float PIPE_MOVE_SPEED = 0.215625f; // OLD - Will be replaced
 const int MIN_PIPE_HEIGHT = 15; // Minimum height for top or bottom pipe part
 const int HORIZONTAL_SPACING_BETWEEN_PIPES = FB_SCREEN_WIDTH / 2 + PIPE_WIDTH / 2; // Roughly half screen apart
-const float PIPE_MOVE_SPEED = 0.215625f;
+
+// Base values for difficulty scaling (previously PIPE_GAP_HEIGHT and PIPE_MOVE_SPEED)
+const int BASE_PIPE_GAP_HEIGHT = 75; 
+const float BASE_PIPE_MOVE_SPEED = 0.215625f;
+
+// Current, modifiable difficulty parameters
+extern int current_pipe_gap_height;
+extern float current_pipe_move_speed;
+
+// Functions for managing difficulty
+void flappy_bird_init_difficulty_params();
+void flappy_bird_on_center_press();
 
 enum class GameState {
     PRE_GAME,
