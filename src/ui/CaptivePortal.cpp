@@ -147,7 +147,7 @@ void CaptivePortal::performWiFiScan() {
 }
 
 String CaptivePortal::getNetworksJson() {
-    DynamicJsonDocument doc(1024);
+    DynamicJsonDocument doc(2048);
     JsonArray networksArray = doc.to<JsonArray>();
     std::vector<WiFiInterface::NetworkInfo> networks = _wifiInterface.getScannedNetworks();
     for (const auto& net : networks) { 
@@ -599,7 +599,7 @@ void CaptivePortal::handleApiStatus(AsyncWebServerRequest *request) {
     // return; 
 
     // RESTORE ORIGINAL FULL LOGIC
-    DynamicJsonDocument doc(2048); 
+    DynamicJsonDocument doc(4096); 
 
     JsonObject portalObj = doc.createNestedObject("portal");
     portalObj["action_in_progress"] = portalActionToString(_action_in_progress);
@@ -630,7 +630,7 @@ void CaptivePortal::handleApiStatus(AsyncWebServerRequest *request) {
     JsonObject wifiObj = doc.createNestedObject("wifi");
     wifiObj["is_scanning"] = (_action_in_progress == PortalAction::SCAN_WIFI); 
     if (_lastScanTime > 0 && !_cachedNetworks.isEmpty()){ 
-        DynamicJsonDocument cachedNetDoc(1024);
+        DynamicJsonDocument cachedNetDoc(4096);
         DeserializationError error = deserializeJson(cachedNetDoc, _cachedNetworks);
         if (!error) {
             wifiObj["networks"] = cachedNetDoc.as<JsonArray>(); 
