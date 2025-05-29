@@ -133,7 +133,7 @@ DeskHog was built with AI coding assistants — and we encourage agent-driven de
 
 If you're looking to get started, we recommend using [Cursor](https://www.cursor.com/en) with the [PlatformIO extenstion](https://platformio.org/install/ide?install=vscode). They work well together and you can use Cursor's chat function to start building all sorts of things with natural language.
 
-We've prepared a `tech-details-for-llms.md` file in this repo which we recommend feeding to your agent so it has broad context on the device. Still, even with that you should bear in mind the following advice:
+We've prepared a `tech-details.md` file in this repo which we optimized to give your agent broad context on the device. Still, even with that you should bear in mind the following advice:
 
 - You should encourage AI to follow existing patterns: use`EventQueue` for cross-core messaging and update the UI only on the UI task.
 - Flag any AI suggestions that touch the UI from the wrong core.
