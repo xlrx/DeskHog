@@ -33,7 +33,7 @@ A couple of basic [cards](#card-stack) (screens) are included on the firmware an
 
 ### Available games and apps
 
-The `examples` folder includes a selection of games and apps for you to play with. You just have to load them onto DeskHog like any other card. 
+We're working on adding some of the following games to an `/examples` folder which will include a selection of games and apps for you to play with. If you can't see them in the `/examples` folder it's probably because they exist as [unapproved PRs](https://github.com/PostHog/DeskHog/pulls) while we work on them. No problem, just checkout the branch!
 
 Example games include:
 
@@ -56,9 +56,9 @@ All of the example apps were built in 24 hours at [a PostHog hackathon](https://
 
 ## Developing for DeskHog
 
-Microcontrollers are a pain. They've got limited memory and, for our purposes here, you've got to write C++ - but the good news is that platforms like Cursor make that a breeze nowadays!
+Microcontrollers are a pain. They've got limited memory and, for our purposes here, you've got to write C++ - but the good news is that platforms like Cursor make that a breeze nowadays. Check out our [vibe-coding guide for tips](#-vibe-coding-with-ai-agents).
 
-We recommend using [PlatformIO](https://platformio.org/) to ship changes from your computer to DeskHog. It’s an all-in-one tool (works great with VS Code or Cursor) that handles the tricky bits of library management, building the firmware, and flashing the microcontroller. PlatformIO streamlines the workflow so you don’t have to wrangle compiler settings or board drivers manually. It's even suitable for vibe coders!
+We recommend using [PlatformIO](https://platformio.org/) to ship changes from your computer to DeskHog. It’s an all-in-one tool (works great with VS Code or Cursor) that handles the tricky bits of library management, firmware, and flashing the microcontroller. PlatformIO streamlines the workflow so you don’t have to wrangle compiler settings or board drivers manually. It's even suitable for vibe coders!
 
 If you want to get into the details, read on. If you plan on just vibe coding some ideas into reality, [skip ahead](#-vibe-coding-with-ai-agents). 
 
@@ -129,11 +129,12 @@ If you've ever written mobile code, you'll feel right at home: you can only upda
 Keep this stuff carefully isolated or you're going to crash.
 
 ## 🤖 Vibe Coding with AI Agents
-DeskHog was built with AI coding assistants—and we encourage agent-driven development with a few caveats. LLMs often struggle with multi-threaded embedded systems. DeskHog’s firmware has strict rules for core/task roles; AI might overlook them unless you guide it.
+DeskHog was built with AI coding assistants — and we encourage agent-driven development with a few caveats. LLMs often struggle with multi-threaded embedded systems. DeskHog’s firmware has strict rules for core/task roles; AI might overlook them unless you guide it.
 
-If you're looking to get started, we recommend using [Cursor](https://www.cursor.com/en) with the [Platform.io extenstion](https://platformio.org/install/ide?install=vscode). They work well together and you can use Cursor's chat function to start building all sorts of things with natural language.
+If you're looking to get started, we recommend using [Cursor](https://www.cursor.com/en) with the [PlatformIO extenstion](https://platformio.org/install/ide?install=vscode). They work well together and you can use Cursor's chat function to start building all sorts of things with natural language.
 
-Still, keep the following advice in mind: 
+We've prepared a `tech-details-for-llms.md` file in this repo which we recommend feeding to your agent so it has broad context on the device. Still, even with that you should bear in mind the following advice:
+
 - You should encourage AI to follow existing patterns: use`EventQueue` for cross-core messaging and update the UI only on the UI task.
 - Flag any AI suggestions that touch the UI from the wrong core.
 - Review and test thoroughly—watch for “LLM slop” (unused vars, odd delays) and clean it up.
