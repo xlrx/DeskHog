@@ -24,12 +24,6 @@ We've got two cores and multiple "tasks" assigned between them – task is [Free
 
 We have to keep this stuff carefully isolated or we're going to crash.
 
-#### ⚠️ Vibe coding advisory
-
-Nothing wrong with a little agent-driven coding. This project has leaned on it plenty.
-
-But beware: the LLM agents are very bad at modeling cross-thread interactions and thread-safe architectures on their own. You'll need to lead them explicitly. The existing architecture seems pretty stable and predictable at this point. Lean on it. If your robot ventures off the trail and takes *initiative* that breaks these patterns, you'll end up with crashes and your pulls will not be accepted.
-
 ### Buttons
 
 <img width="500" alt="diagram" src="https://github.com/user-attachments/assets/14ea2440-90d8-4540-bebb-045c18fbbc99" />
