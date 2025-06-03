@@ -1,60 +1,62 @@
-# DeskHog: a display for your data, a friend for building your product
+# DeskHog technical details
 
-This is a super-lean file we've prepared for you to feed your vibe-coding platform so it has more context on what DeskHog is. 
+Microcontrollers are a pain. They've got limited memory and, for our purposes here, you've got to write C++ 🫠
 
-While there's nothing wrong with a little agent-driven coding, you should still beware: LLM agents are very bad at modeling cross-thread interactions and thread-safe architectures on their own. You'll need to lead them explicitly. The existing architecture seems pretty stable and predictable at this point. Lean on it. If your robot ventures off the trail and takes *initiative* that breaks these patterns, you'll end up with crashes and your pull requests will not be accepted.
-
-## Hardware
-
-DeskHog includes the following hardware.
-
-- ESP32-S3 Reverse TFT Feather
-- Optional: PKCell 552035 350mAh 3.7V LiPoly battery 
-- 3D printed enclosure – print: [3mf file](3d-printing)
-
-## Requirements
-
-Use [PlatformIO](https://platformio.org) to open this project. It works with VSCode and Cursor, streamlining package management, builds and flashing microcontroller boards.
-
-## How it works
-
-This micro-controller is programmed in C++. 
-
-Here's what we're dealing with.
+But in exchange, our code can touch reality like no other kind of project. Here's what we're dealing with.
 
 ### Core and task isolation
 
-It's like writing code for mobile devices: we can only update the UI via the UI thread, otherwise the board crashes.
+If you've ever written mobile code, you'll feel right at home: we can only update the UI via the UI thread, otherwise the board crashes.
 
 We've got two cores and multiple "tasks" assigned between them – task is [FreeRTOS](https://github.com/espressif/arduino-esp32/tree/master/libraries/ESP32/examples/FreeRTOS/BasicMultiThreading)-speak for threads:
 
 **Core 0 (Protocol CPU) tasks:**
+
 - WiFi
 - Web portal server
 - Insight parsing
 - NeoPixel control
 
 **Core 1 (Application CPU) tasks:**
+
 - LVGL tick (maintains timing, animations, etc for the graphics library) 
 - UI: screen drawing and input handling
 
 We have to keep this stuff carefully isolated or we're going to crash.
 
+#### ⚠️ Vibe coding advisory
+
+Nothing wrong with a little agent-driven coding. This project has leaned on it plenty.
+
+But beware: the LLM agents are very bad at modeling cross-thread interactions and thread-safe architectures on their own. You'll need to lead them explicitly. The existing architecture seems pretty stable and predictable at this point. Lean on it. If your robot ventures off the trail and takes *initiative* that breaks these patterns, you'll end up with crashes and your pulls will not be accepted.
+
 ### Buttons
 
 <img width="500" alt="diagram" src="https://github.com/user-attachments/assets/14ea2440-90d8-4540-bebb-045c18fbbc99" />
 
-DeskHog has four buttons:
-
-- A reset button for turning on the device
-- A up (Page up/D2/GPIO2) and down (Page down/D0/GPIO0) button for navigating the interface
-- A center button (Action/D1/GPIO1) for interacting with cards
-
-If the board isn't responding, it can be restarted in bootloader mode and reflasahed using Platform.io. 
+If the board isn't responding:
 
 - Hold **▼ (Page down/D0)**
 - Press **Reset**
 - Release **▼ (Page down/D0)**
+
+The board will restart in bootloader mode, where it can be re-flashed using PlatformIO.
+
+### Pin definitions
+
+You don't have to guess the pin definitions. You'll find them documented here:
+
+~/.platformio/packages/framework-arduinoespressif32/variants/adafruit_feather_esp32s3_reversetft/pins_arduino.h
+
+## UI progress
+
+- Status card: working
+- WiFi provisioning card with QR Code: working
+- Friend card to give you (mild) reassurance: working
+- Numeric card for Big Number insights: working
+- Funnel card: needs a redesign; probably should be horizontal layout instead, won't display more than three steps right now
+- Line graph card: working decently, but could use more detail
+- Other insights: not yet supported
 
 ## Important components
 
