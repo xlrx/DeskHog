@@ -578,7 +578,7 @@ function requestCheckFirmwareUpdate() {
                 console.error('Failed to initiate firmware check:', data.message);
                 if(checkUpdateBtn) checkUpdateBtn.disabled = false;
                 const updateStatusTextEl = document.getElementById('update-status-text');
-                if(updateStatusTextEl) updateStatusTextEl.textContent = `Error: ${data.message || 'Could not start check.'}`;
+                if(updateStatusTextEl) updateStatusTextEl.textContent = `${data.message || 'Could not start check.'}`;
             }
         })
         .catch(error => {
