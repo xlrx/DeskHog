@@ -162,7 +162,7 @@ void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
         return;
     }
 
-    InsightParser::InsightType new_insight_type = parser->detectInsightType();
+    InsightParser::InsightType new_insight_type = parser->getInsightType();
     char title_buffer[64];
     if (!parser->getName(title_buffer, sizeof(title_buffer))) {
         strcpy(title_buffer, "Insight");
@@ -229,9 +229,16 @@ void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
         }
 
         if (_active_renderer) {
-            _active_renderer->updateDisplay(*parser, new_title);
+            char prefix_buffer[16] = "";
+            char suffix_buffer[16] = "";
+
+            if (new_insight_type == InsightParser::InsightType::NUMERIC_CARD && parser) {
+                parser->getNumericFormattingPrefix(prefix_buffer, sizeof(prefix_buffer));
+                parser->getNumericFormattingSuffix(suffix_buffer, sizeof(suffix_buffer));
+            }
+            _active_renderer->updateDisplay(*parser, new_title, prefix_buffer, suffix_buffer);
         } else if (!needs_rebuild) {
-            Serial.printf("[InsightCard-%s] No active renderer to update and no rebuild was triggered. Type: %d\n", 
+            Serial.printf("[InsightCard-%s] No active renderer to update and no rebuild was triggered. Type: %d\n",
                 id.c_str(), (int)_current_type);
         }
 

@@ -11,7 +11,7 @@ public:
     ~NumericCardRenderer() override;
 
     void createElements(lv_obj_t* parent_container) override;
-    void updateDisplay(InsightParser& parser, const String& title) override;
+    void updateDisplay(InsightParser& parser, const String& title, const char* prefix = nullptr, const char* suffix = nullptr) override;
     void clearElements() override;
     bool areElementsValid() const override;
 
