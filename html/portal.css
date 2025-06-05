@@ -191,6 +191,10 @@ select::-ms-expand {
     font-family: monospace; /* Added for fixed-width font */
 }
 
+#firmware-update-section {
+    font-family: monospace;
+}
+
 .status-message.info {
     background-color: #e7f3fe; /* Light blue for info */
     border: 1px solid #d0eaff;
