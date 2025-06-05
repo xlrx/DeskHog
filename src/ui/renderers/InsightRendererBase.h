@@ -64,8 +64,10 @@ public:
      * 
      * @param parser The InsightParser instance containing the new data.
      * @param title The title of the insight.
+     * @param prefix The prefix to prepend to the title.
+     * @param suffix The suffix to append to the title.
      */
-    virtual void updateDisplay(InsightParser& parser, const String& title) = 0;
+    virtual void updateDisplay(InsightParser& parser, const String& title, const char* prefix = nullptr, const char* suffix = nullptr) = 0;
 
     /**
      * @brief Clears/deletes all UI elements created by this renderer.

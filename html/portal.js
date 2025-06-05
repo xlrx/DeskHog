@@ -324,19 +324,56 @@ function _updateNetworksListUI(networks) {
 }
 
 function requestScanNetworks() {
+    const globalActionStatusEl = document.getElementById('global-action-status');
     fetch('/api/actions/start-wifi-scan', { method: 'POST' })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(errData => {
+                    throw new Error(errData.message || `HTTP error ${response.status}`);
+                }).catch(() => {
+                    throw new Error(`HTTP error ${response.status}`);
+                });
+            }
+            return response.json();
+        })
         .then(data => {
-            if (data.status === 'initiated') {
-                console.log("WiFi scan initiated.");
-                document.getElementById('ssid').innerHTML = '<option>Scanning...</option>';
+            if (data.status === 'queued') {
+                console.log("WiFi scan action successfully queued:", data.message);
+                const ssidSelect = document.getElementById('ssid');
+                if (globalActionStatusEl) {
+                    globalActionStatusEl.textContent = data.message || "WiFi scan requested. List will update shortly.";
+                    globalActionStatusEl.className = 'status-message info';
+                    globalActionStatusEl.style.display = 'block';
+                    setTimeout(() => {
+                        if (globalActionStatusEl.textContent === (data.message || "WiFi scan requested. List will update shortly.")) {
+                            globalActionStatusEl.style.display = 'none';
+                            globalActionStatusEl.textContent = '';
+                            globalActionStatusEl.className = 'status-message';
+                        }
+                    }, 5000);
+                }
+                if (ssidSelect && (ssidSelect.options.length <= 1 || ssidSelect.firstChild.value === "")) {
+                     ssidSelect.innerHTML = '<option>Scan requested, list updating...</option>';
+                }
+
             } else {
-                console.error("Failed to initiate WiFi scan: ", data.message);
-                 document.getElementById('ssid').innerHTML = '<option>Scan failed to start.</option>';
+                const errorMessage = `Failed to queue WiFi scan: ${data.message || 'Unexpected server response.'}`;
+                console.error(errorMessage);
+                if (globalActionStatusEl) {
+                    globalActionStatusEl.textContent = errorMessage;
+                    globalActionStatusEl.className = 'status-message error';
+                    globalActionStatusEl.style.display = 'block';
+                }
+                document.getElementById('ssid').innerHTML = '<option>Scan request issue.</option>';
             }
         })
         .catch(error => {
-            console.error('Error requesting network scan:', error);
+            console.error('Error requesting network scan:', error.message);
+            if (globalActionStatusEl) {
+                globalActionStatusEl.textContent = `Error requesting scan: ${error.message}`;
+                globalActionStatusEl.className = 'status-message error';
+                globalActionStatusEl.style.display = 'block';
+            }
             document.getElementById('ssid').innerHTML = '<option value="">Error starting scan</option>';
         });
 }
@@ -541,7 +578,7 @@ function requestCheckFirmwareUpdate() {
                 console.error('Failed to initiate firmware check:', data.message);
                 if(checkUpdateBtn) checkUpdateBtn.disabled = false;
                 const updateStatusTextEl = document.getElementById('update-status-text');
-                if(updateStatusTextEl) updateStatusTextEl.textContent = `Error: ${data.message || 'Could not start check.'}`;
+                if(updateStatusTextEl) updateStatusTextEl.textContent = `${data.message || 'Could not start check.'}`;
             }
         })
         .catch(error => {

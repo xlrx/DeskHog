@@ -57,8 +57,9 @@ void LineGraphRenderer::createElements(lv_obj_t* parent_container) {
     // InsightCard will do a global refresh after calling createElements if needed.
 }
 
-void LineGraphRenderer::updateDisplay(InsightParser& parser, const String& title) {
+void LineGraphRenderer::updateDisplay(InsightParser& parser, const String& title, const char* prefix, const char* suffix) {
     // Title is handled by InsightCard. This renderer updates the chart data.
+    // prefix and suffix are ignored for LineGraphRenderer.
     size_t point_count = parser.getSeriesPointCount();
     if (point_count == 0) {
         // No data points, maybe clear the chart or show a message?

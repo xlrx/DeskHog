@@ -40,18 +40,23 @@ void NumericCardRenderer::createElements(lv_obj_t* parent_container) {
     lv_label_set_text(_value_label, "..."); // Initial placeholder text
 }
 
-void NumericCardRenderer::updateDisplay(InsightParser& parser, const String& title) {
+void NumericCardRenderer::updateDisplay(InsightParser& parser, const String& title, const char* prefix, const char* suffix) {
     // Title is handled by InsightCard, we only update the value label here.
     double value = parser.getNumericCardValue();
 
     // Data processing (getting value) is done here.
     // LVGL operations are dispatched to the UI thread.
-    dispatchToUI([this, value]() {
+    dispatchToUI([this, value, p = String(prefix ? prefix : ""), s = String(suffix ? suffix : "")]() {
         // Serial.printf("[NumericRenderer] Updating display on UI thread. Label: %p, Core: %d\n", _value_label, xPortGetCoreID());
         if (isValidLVGLObject(_value_label)) {
-            char value_buffer[32];
-            formatNumericValue(value, value_buffer, sizeof(value_buffer));
-            lv_label_set_text(_value_label, value_buffer);
+            char numeric_buffer[32];
+            formatNumericValue(value, numeric_buffer, sizeof(numeric_buffer));
+
+            String final_value_str = p;
+            final_value_str += numeric_buffer;
+            final_value_str += s;
+
+            lv_label_set_text(_value_label, final_value_str.c_str());
         } else {
             Serial.println("[NumericRenderer-WARN] _value_label invalid in updateDisplay lambda.");
         }
