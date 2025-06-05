@@ -5,13 +5,13 @@
 ## What is DeskHog?
 DeskHog is an open-source, 3D printed, palm-sized developer toy. 
 
-It's a toy to tinker with, adapt, and to get curious with. We'll be folding in a library of simple example game and apps, including a pomodoro timer and versions of Pong, Rogue, Flappy Bird. You can see PRs for these in this repo now for inspiration!
+It's a toy to tinker with, adapt, and to get curious with. We'll be folding in a library of simple example games and apps, including a pomodoro timer and versions of Pong, Rogue, Flappy Bird. You can see PRs for these in this repo now for inspiration!
 
 We think that sounds like fun and, if you do too, then DeskHog is for you. 
 
 ## OK, but what is it?
 
-DeskHog packs an Adafruit ESP32-S3 Reverse TFT Feather in a custom-made 3D printed case. It comes complete with a 240x135 color TFT display, a 10-hour battery life, WiFi, and a cute little LED do you can find it in the dark.
+DeskHog packs an Adafruit ESP32-S3 Reverse TFT Feather in a custom-made 3D printed case. It comes complete with a 240x135 color TFT display, a 10-hour battery life, WiFi, and a cute little LED so you can find it in the dark.
 
 A [plug-and-play DeskHog hardware kit](https://posthog.com/merch) is coming soon (so you can get everything in one box). In the meantime, here’s what you’ll need if you want to make DeskHog yourself right now. 
 
@@ -63,7 +63,7 @@ We couldn't have built DeskHog without Cursor's help, and we encourage agent-dri
 
 LLMs often struggle with multi-threaded embedded systems. DeskHog’s firmware has strict rules for core/task roles; AI might overlook them unless you guide it.
 
-If you're looking to get started, we recommend using [Cursor](https://www.cursor.com/en) with the [PlatformIO extenstion](https://platformio.org/install/ide?install=vscode). They work well together and you can use Cursor's chat function to start building all sorts of things with natural language.
+If you're looking to get started, we recommend using [Cursor](https://www.cursor.com/en) with the [PlatformIO extension](https://platformio.org/install/ide?install=vscode). They work well together and you can use Cursor's chat function to start building all sorts of things with natural language.
 
 Use `tech-details.md` to give your agent broad context on the device. Still, even with that you should bear in mind the following advice:
 
