@@ -58,6 +58,14 @@ All of the example apps were built in 24 hours at [a PostHog hackathon](https://
 
 Review [tech-details.md](tech-details.md) for info on architecture, libraries and key components used in this project.
 
+## Troubleshooting
+
+### No matter what I do, flashing the board doesn't change anything! wtf??
+
+We're actually cutting the storage space in half so that over the air updates can be loaded to the unused half of storage. You can end up in a place where the board just won't boot to the correct partition.
+
+To fix this, choose **Erase Flash and Upload** from the PlatformIO Project Tasks menu.
+
 ## 🤖 Vibe Coding with AI Agents
 We couldn't have built DeskHog without Cursor's help, and we encourage agent-driven development with a few caveats.
 
