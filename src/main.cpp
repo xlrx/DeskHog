@@ -130,15 +130,15 @@ void lvglHandlerTask(void* parameter) {
             // Get current state of UP and DOWN buttons
             // BUTTON_UP is pressed when HIGH (INPUT_PULLDOWN)
             // BUTTON_DOWN is pressed when LOW (INPUT_PULLUP)
-            bool upButtonHeld = (buttons[Input::BUTTON_UP].read() == HIGH);
+            bool centerButtonHeld = (buttons[Input::BUTTON_CENTER].read() == HIGH);
             bool downButtonHeld = (buttons[Input::BUTTON_DOWN].read() == LOW);
 
-            if (upButtonHeld && downButtonHeld) {
+            if (centerButtonHeld && downButtonHeld) {
                 if (powerOffPressStartTime == 0) { // Both pressed, start timer
                     powerOffPressStartTime = millis();
                 } else {
                     if (millis() - powerOffPressStartTime >= 2000) { // Held for 2 seconds
-                        Serial.println("Simultaneous UP and DOWN hold for 2s detected. Entering deep sleep.");
+                        Serial.println("Simultaneous CENTER and DOWN hold for 2s detected. Entering deep sleep.");
                         // Optional: Turn off display backlight or other peripherals before sleep
                         // displayInterface->setBacklight(0); // Example if such a function exists
                         esp_deep_sleep_start();
