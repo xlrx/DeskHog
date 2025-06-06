@@ -81,11 +81,11 @@ Use `tech-details.md` to give your agent broad context on the device. Still, eve
 
 Think of your AI as a speedy junior dev: brilliant but prone to mistakes. You’re the senior dev keeping it on track. With that balance, AI can boost productivity while keeping DeskHog reliable.
 
-## Power modes
+## Power off
 
-If you want to turn the device off, simply press and hold the Page up and Page down buttons for 2 seconds. The device will enter deep sleep mode. 
+If you want to turn the device off, hold ● + ▼ for two seconds. The device will enter deep sleep mode. 
 
-To wake the device, simply press Reset once. 
+To wake the device, press the reset tab on the left. 
 
 ## UI progress
 - Status card: working
