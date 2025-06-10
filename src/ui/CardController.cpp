@@ -117,7 +117,7 @@ void CardController::createAnimationCard() {
     }
     
     // Create new animation card
-    animationCard = new AnimationCard(
+    animationCard = new FriendCard(
         screen
     );
     

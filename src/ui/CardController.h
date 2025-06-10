@@ -84,7 +84,7 @@ public:
      * @brief Get the animation card
      * @return Pointer to animation card
      */
-    AnimationCard* getAnimationCard() { return animationCard; }
+    FriendCard* getAnimationCard() { return animationCard; }
 
     /**
      * @brief Get all insight cards
@@ -113,7 +113,7 @@ private:
     // UI Components
     CardNavigationStack* cardStack;     ///< Navigation stack for cards
     ProvisioningCard* provisioningCard; ///< Card for device provisioning
-    AnimationCard* animationCard;       ///< Card for animations
+    FriendCard* animationCard;       ///< Card for animations
     std::vector<InsightCard*> insightCards; ///< Collection of insight cards
     
     // Display interface for thread safety
