@@ -116,3 +116,8 @@ The `CaptivePortal` will be updated with a new set of API endpoints to support t
     3. It will create new card instances for any new entries in the config using the registered factory functions.
     4. It will re-order the cards in the `CardNavigationStack` to match the new `displayOrder`. This will likely involve removing all cards from the stack and re-adding them in the correct order.
 - **Provides card definitions to the API**: It will expose a method for `CaptivePortal` to retrieve the list of `CardDefinition`s for the `GET /api/cards/definitions` endpoint.
+
+## Other notes
+
+- `ProvisioningCard` is a standard card that cannot be removed and is always at the top of the stack.
+- This refactor should avoid making any changes to the underlying architecture of the project's task/thread management, unless absolutely necessary and only if completely confident that new design will be effective
