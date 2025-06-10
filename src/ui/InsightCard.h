@@ -125,6 +125,7 @@ private:
     ConfigManager& _config;              ///< Configuration manager reference
     EventQueue& _event_queue;            ///< Event queue reference
     String _insight_id;                  ///< Unique insight identifier
+    String _current_title;               ///< Current card title
     InsightParser::InsightType _current_type; ///< Current visualization type
     
     // UI Elements

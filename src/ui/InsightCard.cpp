@@ -12,6 +12,7 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, EventQueue& ev
     : _config(config)
     , _event_queue(eventQueue)
     , _insight_id(insightId)
+    , _current_title("")
     , _card(nullptr)
     , _title_label(nullptr)
     , _content_container(nullptr)
@@ -125,8 +126,11 @@ void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
     }
     String new_title(title_buffer);
 
-    if (_config.getInsight(_insight_id).compareTo(new_title) != 0) {
-        _config.saveInsight(_insight_id, new_title);
+    // Only dispatch title update event if the title has actually changed
+    if (_current_title != new_title) {
+        _current_title = new_title;
+        _event_queue.publishEvent(Event::createTitleUpdateEvent(_insight_id, new_title));
+        Serial.printf("[InsightCard-%s] Title updated to: %s\n", _insight_id.c_str(), new_title.c_str());
     }
 
     if (globalUIDispatch) {

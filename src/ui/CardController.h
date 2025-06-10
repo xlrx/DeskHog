@@ -191,6 +191,12 @@ private:
     void handleWiFiEvent(const Event& event);
 
     /**
+     * @brief Handle card title update events
+     * @param event Event containing insight ID and new title
+     */
+    void handleCardTitleUpdated(const Event& event);
+
+    /**
      * @brief Initialize default card type registrations
      * Registers built-in card types (INSIGHT, FRIEND) with their factory functions
      */

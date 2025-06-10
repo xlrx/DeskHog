@@ -113,6 +113,8 @@ void CardController::initialize(DisplayInterface* display) {
     eventQueue.subscribe([this](const Event& event) {
         if (event.type == EventType::CARD_CONFIG_CHANGED) {
             handleCardConfigChanged();
+        } else if (event.type == EventType::CARD_TITLE_UPDATED) {
+            handleCardTitleUpdated(event);
         }
     });
     
@@ -462,5 +464,24 @@ void CardController::dispatchToLVGLTask(std::function<void()> update_func, bool 
         Serial.printf("[UI-WARN] UI queue full/error (send_to_front: %d), update discarded. Core: %d\n", 
                       to_front, xPortGetCoreID());
         delete callback;
+    }
+}
+
+void CardController::handleCardTitleUpdated(const Event& event) {
+    // Find and update the card configuration with the new title
+    for (auto& cardConfig : currentCardConfigs) {
+        if (cardConfig.type == CardType::INSIGHT && cardConfig.config == event.insightId) {
+            // Update the name with the new title
+            if (cardConfig.name != event.title) {
+                cardConfig.name = event.title;
+                
+                // Save the updated configuration to persistent storage
+                configManager.saveCardConfigs(currentCardConfigs);
+                
+                Serial.printf("Updated card title for insight %s to: %s\n", 
+                             event.insightId.c_str(), event.title.c_str());
+            }
+            break;
+        }
     }
 } 

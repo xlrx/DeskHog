@@ -39,7 +39,7 @@ This struct represents an *available type* of card that a user can choose to add
 
 struct CardDefinition {
     CardType id;
-    String name;             // "PostHog Insight", "Walking Animation"
+    String name;             // "PostHog Insight"
     bool allowMultiple;      // Can the user add more than one of this card type?
     bool needsConfigInput;   // Does this card require a config value?
     String configInputLabel; // "Insight ID", "Animation Speed"
