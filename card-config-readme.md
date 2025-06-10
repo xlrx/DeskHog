@@ -1,6 +1,6 @@
 # Enhancing card management
 
-This project will enhance DeskHog to give the user better control of the cards displayed on their screen. This will also allow developers to register new card types, which users can then switch on and use.
+This refactor will enhance DeskHog to give the user better control of the cards displayed on their screen. This will also allow developers to build and register new card types, which users can then switch on and use.
 
 ## Data Structures
 
@@ -13,7 +13,7 @@ An enum to uniquely identify each type of card available in the system.
 ```cpp
 enum class CardType {
     INSIGHT,
-    ANIMATION
+    FRIEND
     // New card types can be added here
 };
 ```
@@ -25,8 +25,8 @@ This struct represents an *instance* of a configured card. A list of these will 
 ```cpp
 struct CardConfig {
     CardType id;
-    String configValue; // e.g., insight ID, animation speed
-    int displayOrder;
+    String config; // e.g., insight ID, animation speed
+    int order;
 };
 ```
 
@@ -43,6 +43,7 @@ struct CardDefinition {
     bool allowMultiple;      // Can the user add more than one of this card type?
     bool needsConfigInput;   // Does this card require a config value?
     String configInputLabel; // "Insight ID", "Animation Speed"
+    String uiDescription;
     
     // Factory function to create an instance of the card's UI
     std::function<lv_obj_t*(const String& configValue)> factory;
@@ -65,13 +66,13 @@ The `ConfigManager` will expose new methods for card management:
 
 The only card management currently supported by the web UI (in the `html` folder) is adding and deleting insights. This section should go away. 
 
-A new tab should be added to the web UI: "Card Management."
+A new section should be added to the web UI: "Card Management."
 
-This tab enables adding new cards from a list of available types, re-ordering existing cards, editing their configuration values, and removing them.
+This section enables adding new cards from a list of available types, re-ordering existing cards, editing their configuration values, and removing them.
 
-The user can click and drag to set the order of cards in the list. They can delete a card. When a user chooses to add a new card, they will be presented with the available types defined by the backend.
+The user can click and drag to set the order of cards in the list. They can delete a card. A user can add new cards from a list of available types.
 
-Insights will be migrated to this format with these specifications: allowing multiple instances, needing config input, and `configInputLabel` being "Insight ID."
+Insights will be adapted to this format with these specifications: allowing multiple instances, needing config input, and `configInputLabel` being "Insight ID."
 
 ## API Endpoints
 
@@ -88,6 +89,7 @@ The `CaptivePortal` will be updated with a new set of API endpoints to support t
         "allowMultiple": true,
         "needsConfigInput": true,
         "configInputLabel": "Insight ID"
+        "description": "Insight cards let you keep an eye on PostHog data"
       }
     ]
     ```
