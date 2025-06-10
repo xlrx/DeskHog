@@ -3,6 +3,7 @@
 #include "hardware/WifiInterface.h"
 #include "EventQueue.h"
 #include "OtaManager.h" // Required for OtaManager interaction
+#include "ui/CardController.h" // Required for CardController interaction
 #include "html_portal.h"  // For portal HTML
 #include <ArduinoJson.h>  // For JSON responses
 #include <pgmspace.h> // For PROGMEM
@@ -37,12 +38,13 @@ const char* portalActionToString(PortalAction action) {
 }
 
 // Constructor
-CaptivePortal::CaptivePortal(ConfigManager& configManager, WiFiInterface& wifiInterface, EventQueue& eventQueue, OtaManager& otaManager)
+CaptivePortal::CaptivePortal(ConfigManager& configManager, WiFiInterface& wifiInterface, EventQueue& eventQueue, OtaManager& otaManager, CardController& cardController)
     : _server(80),
       _configManager(configManager),
       _wifiInterface(wifiInterface),
       _eventQueue(eventQueue),
       _otaManager(otaManager), // Initialize the OtaManager reference
+      _cardController(cardController), // Initialize the CardController reference
       _lastScanTime(0),
       _action_in_progress(PortalAction::NONE),
       _last_action_completed(PortalAction::NONE),
@@ -93,6 +95,11 @@ void CaptivePortal::begin() {
 
     // Insight actions
     _server.on("/get-insights", HTTP_GET, std::bind(&CaptivePortal::handleGetInsights, this, std::placeholders::_1));
+
+    // Card management actions
+    _server.on("/api/cards/definitions", HTTP_GET, std::bind(&CaptivePortal::handleGetCardDefinitions, this, std::placeholders::_1));
+    _server.on("/api/cards/configured", HTTP_GET, std::bind(&CaptivePortal::handleGetConfiguredCards, this, std::placeholders::_1));
+    _server.on("/api/cards/configured", HTTP_POST, std::bind(&CaptivePortal::handleSaveConfiguredCards, this, std::placeholders::_1));
 
     // OTA Update actions
     _server.on("/check-update", HTTP_GET, std::bind(&CaptivePortal::handleCheckUpdate, this, std::placeholders::_1));
@@ -781,4 +788,109 @@ void CaptivePortal::requestAction(PortalAction action, AsyncWebServerRequest *re
         response->addHeader("Access-Control-Allow-Origin", "*");
         request->send(response);
     }
+}
+
+void CaptivePortal::handleGetCardDefinitions(AsyncWebServerRequest *request) {
+    DynamicJsonDocument doc(2048);
+    JsonArray definitionsArray = doc.to<JsonArray>();
+
+    // Get card definitions from CardController
+    // For now, we'll manually create the definitions until CardController is updated
+    // TODO: Replace with _cardController.getCardDefinitions() once that method exists
+    
+    // INSIGHT card definition
+    JsonObject insightDef = definitionsArray.createNestedObject();
+    insightDef["id"] = "INSIGHT";
+    insightDef["name"] = "PostHog Insight";
+    insightDef["allowMultiple"] = true;
+    insightDef["needsConfigInput"] = true;
+    insightDef["configInputLabel"] = "Insight ID";
+    insightDef["description"] = "Insight cards let you keep an eye on PostHog data";
+
+    // FRIEND card definition
+    JsonObject friendDef = definitionsArray.createNestedObject();
+    friendDef["id"] = "FRIEND";
+    friendDef["name"] = "Walking Animation";
+    friendDef["allowMultiple"] = false;
+    friendDef["needsConfigInput"] = false;
+    friendDef["configInputLabel"] = "";
+    friendDef["description"] = "Get reassurance from Max the hedgehog";
+
+    String responseJson;
+    serializeJson(doc, responseJson);
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+}
+
+void CaptivePortal::handleGetConfiguredCards(AsyncWebServerRequest *request) {
+    DynamicJsonDocument doc(2048);
+    JsonArray cardsArray = doc.to<JsonArray>();
+
+    // Get configured cards from ConfigManager
+    std::vector<CardConfig> cardConfigs = _configManager.getCardConfigs();
+    for (const CardConfig& config : cardConfigs) {
+        JsonObject cardObj = cardsArray.createNestedObject();
+        cardObj["type"] = cardTypeToString(config.type);
+        cardObj["config"] = config.config;
+        cardObj["order"] = config.order;
+        cardObj["name"] = config.name;
+    }
+
+    String responseJson;
+    serializeJson(doc, responseJson);
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+}
+
+void CaptivePortal::handleSaveConfiguredCards(AsyncWebServerRequest *request) {
+    bool success = false;
+    String message = "Failed to save card configuration";
+
+    // Check if we have POST data
+    if (request->hasParam("plain", true)) {
+        String body = request->getParam("plain", true)->value();
+        
+        DynamicJsonDocument doc(2048);
+        DeserializationError error = deserializeJson(doc, body);
+        
+        if (!error && doc.is<JsonArray>()) {
+            JsonArray cardsArray = doc.as<JsonArray>();
+            std::vector<CardConfig> cardConfigs;
+            
+            // Parse each card configuration
+            for (JsonVariant v : cardsArray) {
+                JsonObject obj = v.as<JsonObject>();
+                if (obj.containsKey("type") && obj.containsKey("order")) {
+                    CardConfig config;
+                    config.type = stringToCardType(obj["type"].as<String>());
+                    config.config = obj.containsKey("config") ? obj["config"].as<String>() : "";
+                    config.order = obj["order"].as<int>();
+                    config.name = obj.containsKey("name") ? obj["name"].as<String>() : "";
+                    cardConfigs.push_back(config);
+                }
+            }
+            
+            // Save to ConfigManager
+            if (_configManager.saveCardConfigs(cardConfigs)) {
+                success = true;
+                message = "Card configuration saved successfully";
+            }
+        } else {
+            message = "Invalid JSON format";
+        }
+    } else {
+        message = "No configuration data provided";
+    }
+
+    DynamicJsonDocument responseDoc(256);
+    responseDoc["success"] = success;
+    responseDoc["message"] = message;
+    
+    String responseJson;
+    serializeJson(responseDoc, responseJson);
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", responseJson);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
 }
