@@ -61,8 +61,6 @@ The `ConfigManager` will expose new methods for card management:
 - `std::vector<CardConfig> getCardConfigs()`: Reads and deserializes the JSON array from preferences.
 - `bool saveCardConfigs(const std::vector<CardConfig>& configs)`: Serializes the vector to JSON and saves it to preferences.
 
-**Migration:** On first boot with this new system, `ConfigManager` will perform a one-time migration. It will read any existing insight IDs from the old storage format and convert them into `CardConfig` objects in the new `_cardPrefs` storage.
-
 ### Web UI:
 
 The only card management currently supported by the web UI (in the `html` folder) is adding and deleting insights. This section should go away. 
