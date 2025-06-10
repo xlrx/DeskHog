@@ -277,7 +277,7 @@ void CardController::initializeCardTypes() {
     // Register INSIGHT card type
     CardDefinition insightDef;
     insightDef.type = CardType::INSIGHT;
-    insightDef.name = "PostHog Insight";
+    insightDef.name = "PostHog insight";
     insightDef.allowMultiple = true;
     insightDef.needsConfigInput = true;
     insightDef.configInputLabel = "Insight ID";
@@ -312,7 +312,7 @@ void CardController::initializeCardTypes() {
     // Register FRIEND card type  
     CardDefinition friendDef;
     friendDef.type = CardType::FRIEND;
-    friendDef.name = "Walking Animation";
+    friendDef.name = "Friend card";
     friendDef.allowMultiple = false;
     friendDef.needsConfigInput = false;
     friendDef.configInputLabel = "";

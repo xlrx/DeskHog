@@ -7,7 +7,7 @@ function showScreen(screenId) {
     const screenToShow = document.getElementById(screenId);
     if (screenToShow) screenToShow.classList.remove('hidden');
     
-    let title = "DeskHog Configuration";
+    let title = "DeskHog configuration";
     document.getElementById('page-title').textContent = title;
 }
 
@@ -154,7 +154,7 @@ async function loadCardDefinitions() {
         }
         const definitions = await response.json();
         availableCardTypes = definitions;
-        updateCardTypeSelect();
+        updateAvailableCardsList();
         console.log('Loaded', definitions.length, 'card definitions');
     } catch (error) {
         console.error('Failed to load card definitions:', error);
@@ -173,54 +173,64 @@ async function loadConfiguredCards() {
         const cards = await response.json();
         configuredCards = cards;
         updateCardsListUI();
+        updateAvailableCardsList(); // Update availability status
         console.log('Loaded', cards.length, 'configured cards');
     } catch (error) {
         console.error('Failed to load configured cards:', error);
         // Set empty array as fallback
         configuredCards = [];
         updateCardsListUI();
+        updateAvailableCardsList(); // Update availability status
     }
 }
 
-// Update the card type select dropdown
-function updateCardTypeSelect() {
-    const select = document.getElementById('cardType');
-    if (!select) return;
+// Update the available cards list
+function updateAvailableCardsList() {
+    const container = document.getElementById('available-cards-list');
+    if (!container) return;
     
-    select.innerHTML = '<option value="">Select card type...</option>';
+    container.innerHTML = '';
     
-    availableCardTypes.forEach(def => {
-        const option = document.createElement('option');
-        option.value = def.id;
-        option.textContent = def.name;
-        option.dataset.needsConfig = def.needsConfigInput;
-        option.dataset.configLabel = def.configInputLabel;
-        option.dataset.description = def.description;
-        select.appendChild(option);
+    if (!availableCardTypes || availableCardTypes.length === 0) {
+        container.innerHTML = '<p>No card types available</p>';
+        return;
+    }
+    
+    availableCardTypes.forEach(cardDef => {
+        const cardItem = document.createElement('div');
+        cardItem.className = 'available-card-item';
+        
+        // Check if this card type is already configured and if it allows multiple instances
+        const existingCount = configuredCards.filter(card => card.type === cardDef.id).length;
+        const canAdd = cardDef.allowMultiple || existingCount === 0;
+        
+        let statusText = '';
+        if (!cardDef.allowMultiple && existingCount > 0) {
+            statusText = 'Already added (single instance)';
+        } else if (existingCount > 0) {
+            statusText = `${existingCount} instance${existingCount > 1 ? 's' : ''} configured`;
+        }
+        
+        cardItem.innerHTML = `
+            <div class="available-card-info">
+                <div class="available-card-name">${cardDef.name}</div>
+                <div class="available-card-description">${cardDef.description || cardDef.uiDescription || ''}</div>
+                ${statusText ? `<div class="available-card-status">${statusText}</div>` : ''}
+            </div>
+            <div class="available-card-actions">
+                ${cardDef.needsConfigInput ? `
+                    <input type="text" class="config-input" placeholder="${cardDef.configInputLabel}" id="config-${cardDef.id}">
+                ` : ''}
+                ${canAdd ? `
+                    <button class="add-card-btn" onclick="addCardFromList('${cardDef.id}')">
+                        + Add card
+                    </button>
+                ` : ''}
+            </div>
+        `;
+        
+        container.appendChild(cardItem);
     });
-}
-
-// Update config input visibility based on selected card type
-function updateCardConfigInput() {
-    const select = document.getElementById('cardType');
-    const configGroup = document.getElementById('card-config-group');
-    const configLabel = document.getElementById('card-config-label');
-    const configInput = document.getElementById('cardConfig');
-    
-    if (!select || !configGroup) return;
-    
-    const selectedOption = select.options[select.selectedIndex];
-    
-    if (selectedOption && selectedOption.dataset.needsConfig === 'true') {
-        configGroup.style.display = 'block';
-        configLabel.textContent = selectedOption.dataset.configLabel;
-        configInput.required = true;
-        configInput.placeholder = selectedOption.dataset.configLabel;
-    } else {
-        configGroup.style.display = 'none';
-        configInput.required = false;
-        configInput.value = '';
-    }
 }
 
 // Save card configuration to device
@@ -247,25 +257,43 @@ async function saveCardConfiguration() {
     }
 }
 
-// Add new card
-function addCard() {
-    const form = document.getElementById('add-card-form');
-    const formData = new FormData(form);
+// Add new card from the list interface
+function addCardFromList(cardTypeId) {
     const globalActionStatusEl = document.getElementById('global-action-status');
     
-    const cardType = formData.get('cardType');
-    const cardConfig = formData.get('cardConfig') || '';
-    const cardName = formData.get('cardName') || '';
+    // Find the card definition
+    const cardDef = availableCardTypes.find(def => def.id === cardTypeId);
+    if (!cardDef) {
+        console.error('Card definition not found for type:', cardTypeId);
+        return;
+    }
     
-    // Find the card definition to get the default name
-    const cardDef = availableCardTypes.find(def => def.id === cardType);
-    const finalName = cardName || (cardDef ? cardDef.name : cardType);
+    // Get config value if needed
+    let cardConfig = '';
+    if (cardDef.needsConfigInput) {
+        const configInput = document.getElementById(`config-${cardTypeId}`);
+        if (!configInput || !configInput.value.trim()) {
+            // Show error
+            if (globalActionStatusEl) {
+                globalActionStatusEl.textContent = `Please enter a value for ${cardDef.configInputLabel}`;
+                globalActionStatusEl.className = 'status-message error';
+                globalActionStatusEl.style.display = 'block';
+                setTimeout(() => {
+                    globalActionStatusEl.style.display = 'none';
+                    globalActionStatusEl.textContent = '';
+                    globalActionStatusEl.className = 'status-message';
+                }, 3000);
+            }
+            return;
+        }
+        cardConfig = configInput.value.trim();
+    }
     
     // Create new card configuration
     const newCard = {
-        type: cardType,
+        type: cardTypeId,
         config: cardConfig,
-        name: finalName,
+        name: cardDef.name,
         order: configuredCards.length // Add to end
     };
     
@@ -275,9 +303,16 @@ function addCard() {
     // Save to device
     saveCardConfiguration();
     
-    // Reset form
-    form.reset();
-    updateCardConfigInput();
+    // Clear the config input if it exists
+    if (cardDef.needsConfigInput) {
+        const configInput = document.getElementById(`config-${cardTypeId}`);
+        if (configInput) {
+            configInput.value = '';
+        }
+    }
+    
+    // Update the available cards list to reflect new state
+    updateAvailableCardsList();
     
     if (globalActionStatusEl) {
         globalActionStatusEl.textContent = "Card added successfully";
@@ -289,11 +324,9 @@ function addCard() {
             globalActionStatusEl.className = 'status-message';
         }, 3000);
     }
-    
-    return false;
 }
 
-// Update the cards list UI
+// Update the cards list UI with drag-and-drop functionality
 function updateCardsListUI() {
     const container = document.getElementById('cards-list');
     if (!container) return;
@@ -314,45 +347,113 @@ function updateCardsListUI() {
     sortedCards.forEach((card, index) => {
         const item = document.createElement('div');
         item.className = 'card-item';
-        item.style.cssText = 'border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 5px; background: #f9f9f9;';
+        item.draggable = true;
+        item.dataset.cardIndex = index;
         
         item.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <strong>${card.name}</strong>
-                    <br>
-                    <small>Type: ${card.type}${card.config ? ` • Config: ${card.config}` : ''}</small>
+                <div style="display: flex; align-items: center;">
+                    <span class="drag-handle">⋮⋮</span>
+                    <div>
+                        <strong>${card.name}</strong>
+                        <br>
+                        <small>Type: ${card.type}${card.config ? ` • Config: ${card.config}` : ''}</small>
+                    </div>
                 </div>
                 <div>
-                    <button onclick="moveCard(${index}, -1)" ${index === 0 ? 'disabled' : ''} style="margin-right: 5px;">↑</button>
-                    <button onclick="moveCard(${index}, 1)" ${index === sortedCards.length - 1 ? 'disabled' : ''} style="margin-right: 10px;">↓</button>
-                    <button onclick="deleteCard(${index})" class="button danger" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px;">Delete</button>
+                    <button onclick="deleteCard(${index})" class="delete-card-btn">Delete</button>
                 </div>
             </div>
         `;
+        
+        // Add drag event listeners
+        item.addEventListener('dragstart', handleDragStart);
+        item.addEventListener('dragover', handleDragOver);
+        item.addEventListener('drop', handleDrop);
+        item.addEventListener('dragend', handleDragEnd);
+        item.addEventListener('dragenter', handleDragEnter);
+        item.addEventListener('dragleave', handleDragLeave);
+        
         list.appendChild(item);
     });
     
     container.appendChild(list);
 }
 
-// Move card up or down in the list
-function moveCard(index, direction) {
-    const sortedCards = [...configuredCards].sort((a, b) => a.order - b.order);
-    const newIndex = index + direction;
+// Drag and drop variables
+let draggedElement = null;
+let draggedIndex = null;
+
+// Drag event handlers
+function handleDragStart(e) {
+    draggedElement = e.target;
+    draggedIndex = parseInt(e.target.dataset.cardIndex);
+    e.target.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', e.target.outerHTML);
+}
+
+function handleDragOver(e) {
+    if (e.preventDefault) {
+        e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+}
+
+function handleDragEnter(e) {
+    if (e.target !== draggedElement) {
+        e.target.classList.add('drag-over');
+    }
+}
+
+function handleDragLeave(e) {
+    e.target.classList.remove('drag-over');
+}
+
+function handleDrop(e) {
+    if (e.stopPropagation) {
+        e.stopPropagation();
+    }
     
-    if (newIndex < 0 || newIndex >= sortedCards.length) return;
+    const dropIndex = parseInt(e.target.closest('.card-item').dataset.cardIndex);
     
-    // Swap the order values
-    const temp = sortedCards[index].order;
-    sortedCards[index].order = sortedCards[newIndex].order;
-    sortedCards[newIndex].order = temp;
+    if (draggedIndex !== dropIndex) {
+        // Reorder the cards
+        const sortedCards = [...configuredCards].sort((a, b) => a.order - b.order);
+        const draggedCard = sortedCards[draggedIndex];
+        
+        // Remove the dragged card from its current position
+        sortedCards.splice(draggedIndex, 1);
+        
+        // Insert it at the new position
+        sortedCards.splice(dropIndex, 0, draggedCard);
+        
+        // Update order values
+        sortedCards.forEach((card, index) => {
+            card.order = index;
+        });
+        
+        // Update the global array
+        configuredCards = sortedCards;
+        
+        // Save and update UI
+        saveCardConfiguration();
+    }
     
-    // Update the original array
-    configuredCards = sortedCards;
+    return false;
+}
+
+function handleDragEnd(e) {
+    e.target.classList.remove('dragging');
     
-    // Save and update UI
-    saveCardConfiguration();
+    // Clean up drag-over classes from all items
+    document.querySelectorAll('.card-item').forEach(item => {
+        item.classList.remove('drag-over');
+    });
+    
+    draggedElement = null;
+    draggedIndex = null;
 }
 
 // Delete a card
