@@ -288,6 +288,11 @@ void CardController::initializeCardTypes() {
         if (newCard && newCard->getCard()) {
             // Add to our list of cards
             insightCards.push_back(newCard);
+            
+            // Request data for this insight immediately
+            posthogClient.requestInsightData(configValue);
+            Serial.printf("Requested insight data for: %s\n", configValue.c_str());
+            
             return newCard->getCard();
         }
         
@@ -333,60 +338,69 @@ void CardController::handleCardConfigChanged() {
 }
 
 void CardController::reconcileCards(const std::vector<CardConfig>& newConfigs) {
-    if (!displayInterface || !displayInterface->takeMutex(portMAX_DELAY)) {
-        Serial.println("Failed to take mutex for card reconciliation");
-        return;
-    }
+    Serial.printf("Reconciling cards from Core: %d, Task: %s\n", 
+                  xPortGetCoreID(), pcTaskGetTaskName(NULL));
     
-    // For now, implement a simple approach: remove all dynamic cards and recreate
-    // TODO: Implement smarter diffing to preserve existing cards when possible
-    
-    // Remove existing insight cards
-    for (auto* card : insightCards) {
-        if (card && card->getCard()) {
-            cardStack->removeCard(card->getCard());
+    // Dispatch the entire reconciliation to the LVGL task to ensure thread safety
+    InsightCard::dispatchToLVGLTask([this, newConfigs]() {
+        if (!displayInterface || !displayInterface->takeMutex(portMAX_DELAY)) {
+            Serial.println("Failed to take mutex for card reconciliation");
+            return;
         }
-        delete card;
-    }
-    insightCards.clear();
-    
-    // Remove existing animation card
-    if (animationCard && animationCard->getCard()) {
-        cardStack->removeCard(animationCard->getCard());
-        delete animationCard;
-        animationCard = nullptr;
-    }
-    
-    // Create cards based on new configuration, sorted by order
-    std::vector<CardConfig> sortedConfigs = newConfigs;
-    std::sort(sortedConfigs.begin(), sortedConfigs.end(), 
-              [](const CardConfig& a, const CardConfig& b) {
-                  return a.order < b.order;
-              });
-    
-    for (const CardConfig& config : sortedConfigs) {
-        // Find the registered card type
-        auto it = std::find_if(registeredCardTypes.begin(), registeredCardTypes.end(),
-                              [&config](const CardDefinition& def) {
-                                  return def.type == config.type;
-                              });
         
-        if (it != registeredCardTypes.end() && it->factory) {
-            // Create the card using the factory function
-            lv_obj_t* cardObj = it->factory(config.config);
-            if (cardObj) {
-                cardStack->addCard(cardObj);
-                Serial.printf("Created card of type %s with config: %s\n", 
-                             cardTypeToString(config.type).c_str(), config.config.c_str());
+        Serial.printf("Executing reconciliation on Core: %d, Task: %s\n", 
+                      xPortGetCoreID(), pcTaskGetTaskName(NULL));
+        
+        // For now, implement a simple approach: remove all dynamic cards and recreate
+        // TODO: Implement smarter diffing to preserve existing cards when possible
+        
+        // Remove existing insight cards
+        for (auto* card : insightCards) {
+            if (card && card->getCard()) {
+                cardStack->removeCard(card->getCard());
+            }
+            delete card;
+        }
+        insightCards.clear();
+        
+        // Remove existing animation card
+        if (animationCard && animationCard->getCard()) {
+            cardStack->removeCard(animationCard->getCard());
+            delete animationCard;
+            animationCard = nullptr;
+        }
+        
+        // Create cards based on new configuration, sorted by order
+        std::vector<CardConfig> sortedConfigs = newConfigs;
+        std::sort(sortedConfigs.begin(), sortedConfigs.end(), 
+                  [](const CardConfig& a, const CardConfig& b) {
+                      return a.order < b.order;
+                  });
+        
+        for (const CardConfig& config : sortedConfigs) {
+            // Find the registered card type
+            auto it = std::find_if(registeredCardTypes.begin(), registeredCardTypes.end(),
+                                  [&config](const CardDefinition& def) {
+                                      return def.type == config.type;
+                                  });
+            
+            if (it != registeredCardTypes.end() && it->factory) {
+                // Create the card using the factory function (now safe to call on LVGL task)
+                lv_obj_t* cardObj = it->factory(config.config);
+                if (cardObj) {
+                    cardStack->addCard(cardObj);
+                    Serial.printf("Created card of type %s with config: %s\n", 
+                                 cardTypeToString(config.type).c_str(), config.config.c_str());
+                } else {
+                    Serial.printf("Failed to create card of type %s\n", 
+                                 cardTypeToString(config.type).c_str());
+                }
             } else {
-                Serial.printf("Failed to create card of type %s\n", 
+                Serial.printf("No factory found for card type %s\n", 
                              cardTypeToString(config.type).c_str());
             }
-        } else {
-            Serial.printf("No factory found for card type %s\n", 
-                         cardTypeToString(config.type).c_str());
         }
-    }
-    
-    displayInterface->giveMutex();
+        
+        displayInterface->giveMutex();
+    });
 } 

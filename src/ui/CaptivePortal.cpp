@@ -99,7 +99,17 @@ void CaptivePortal::begin() {
     // Card management actions
     _server.on("/api/cards/definitions", HTTP_GET, std::bind(&CaptivePortal::handleGetCardDefinitions, this, std::placeholders::_1));
     _server.on("/api/cards/configured", HTTP_GET, std::bind(&CaptivePortal::handleGetConfiguredCards, this, std::placeholders::_1));
-    _server.on("/api/cards/configured", HTTP_POST, std::bind(&CaptivePortal::handleSaveConfiguredCards, this, std::placeholders::_1));
+    _server.on("/api/cards/configured", HTTP_POST, 
+              std::bind(&CaptivePortal::handleSaveConfiguredCards, this, std::placeholders::_1),
+              NULL,
+              [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+                  // Store body data as a parameter for later processing
+                  request->_tempObject = malloc(len + 1);
+                  if(request->_tempObject != NULL){
+                      memcpy(request->_tempObject, data, len);
+                      ((char*)request->_tempObject)[len] = 0;
+                  }
+              });
 
     // OTA Update actions
     _server.on("/check-update", HTTP_GET, std::bind(&CaptivePortal::handleCheckUpdate, this, std::placeholders::_1));
@@ -600,7 +610,7 @@ void CaptivePortal::processAsyncOperations() {
 
 // --- New /api/status endpoint ---
 void CaptivePortal::handleApiStatus(AsyncWebServerRequest *request) {
-    Serial.println("/api/status HANDLER CALLED"); // You can keep this line if useful
+    // Serial.println("/api/status HANDLER CALLED"); // Removed to reduce log spam
     // REMOVE SIMPLIFIED TEST BLOCK
     // request->send(200, "text/plain", "API Status OK - Simplified"); 
     // return; 
@@ -839,9 +849,13 @@ void CaptivePortal::handleSaveConfiguredCards(AsyncWebServerRequest *request) {
     bool success = false;
     String message = "Failed to save card configuration";
 
-    // Check if we have POST data
-    if (request->hasParam("plain", true)) {
-        String body = request->getParam("plain", true)->value();
+    // Check if we have body data stored by the body handler
+    if (request->_tempObject != NULL) {
+        String body = String((char*)request->_tempObject);
+        free(request->_tempObject); // Clean up the allocated memory
+        request->_tempObject = NULL;
+        
+        Serial.printf("Received card config body: %s\n", body.c_str());
         
         DynamicJsonDocument doc(2048);
         DeserializationError error = deserializeJson(doc, body);
@@ -867,12 +881,17 @@ void CaptivePortal::handleSaveConfiguredCards(AsyncWebServerRequest *request) {
             if (_configManager.saveCardConfigs(cardConfigs)) {
                 success = true;
                 message = "Card configuration saved successfully";
+                Serial.printf("Successfully saved %d card configurations\n", cardConfigs.size());
+            } else {
+                message = "Failed to save to storage";
             }
         } else {
             message = "Invalid JSON format";
+            Serial.printf("JSON parse error: %s\n", error.c_str());
         }
     } else {
         message = "No configuration data provided";
+        Serial.println("No body data received in card config save");
     }
 
     DynamicJsonDocument responseDoc(256);

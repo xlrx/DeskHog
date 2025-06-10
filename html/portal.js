@@ -141,71 +141,258 @@ function toggleApiKeyVisibility() {
     apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
 }
 
-// Add new insight
-function addInsight() {
-    const form = document.getElementById('insight-form');
+// Global variables for card management
+let availableCardTypes = [];
+let configuredCards = [];
+
+// Load card definitions from the device
+async function loadCardDefinitions() {
+    try {
+        const response = await fetch('/api/cards/definitions');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const definitions = await response.json();
+        availableCardTypes = definitions;
+        updateCardTypeSelect();
+        console.log('Loaded', definitions.length, 'card definitions');
+    } catch (error) {
+        console.error('Failed to load card definitions:', error);
+        // Set empty array as fallback
+        availableCardTypes = [];
+    }
+}
+
+// Load configured cards from the device
+async function loadConfiguredCards() {
+    try {
+        const response = await fetch('/api/cards/configured');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const cards = await response.json();
+        configuredCards = cards;
+        updateCardsListUI();
+        console.log('Loaded', cards.length, 'configured cards');
+    } catch (error) {
+        console.error('Failed to load configured cards:', error);
+        // Set empty array as fallback
+        configuredCards = [];
+        updateCardsListUI();
+    }
+}
+
+// Update the card type select dropdown
+function updateCardTypeSelect() {
+    const select = document.getElementById('cardType');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">Select card type...</option>';
+    
+    availableCardTypes.forEach(def => {
+        const option = document.createElement('option');
+        option.value = def.id;
+        option.textContent = def.name;
+        option.dataset.needsConfig = def.needsConfigInput;
+        option.dataset.configLabel = def.configInputLabel;
+        option.dataset.description = def.description;
+        select.appendChild(option);
+    });
+}
+
+// Update config input visibility based on selected card type
+function updateCardConfigInput() {
+    const select = document.getElementById('cardType');
+    const configGroup = document.getElementById('card-config-group');
+    const configLabel = document.getElementById('card-config-label');
+    const configInput = document.getElementById('cardConfig');
+    
+    if (!select || !configGroup) return;
+    
+    const selectedOption = select.options[select.selectedIndex];
+    
+    if (selectedOption && selectedOption.dataset.needsConfig === 'true') {
+        configGroup.style.display = 'block';
+        configLabel.textContent = selectedOption.dataset.configLabel;
+        configInput.required = true;
+        configInput.placeholder = selectedOption.dataset.configLabel;
+    } else {
+        configGroup.style.display = 'none';
+        configInput.required = false;
+        configInput.value = '';
+    }
+}
+
+// Save card configuration to device
+async function saveCardConfiguration() {
+    try {
+        const response = await fetch('/api/cards/configured', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(configuredCards)
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            console.log('Card configuration saved successfully');
+            // Reload to reflect changes
+            await loadConfiguredCards();
+        } else {
+            console.error('Failed to save card configuration:', result.message);
+        }
+    } catch (error) {
+        console.error('Error saving card configuration:', error);
+    }
+}
+
+// Add new card
+function addCard() {
+    const form = document.getElementById('add-card-form');
     const formData = new FormData(form);
     const globalActionStatusEl = document.getElementById('global-action-status');
-
-    fetch('/api/actions/save-insight', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data && data.status === 'queued') {
-            console.log("Add insight action successfully queued.", data.message);
-            form.reset();
-            
-            if (globalActionStatusEl) {
-                globalActionStatusEl.textContent = data.message || "Insight submission initiated. List will update shortly.";
-                globalActionStatusEl.className = 'status-message info';
-                globalActionStatusEl.style.display = 'block';
-                setTimeout(() => {
-                    if (globalActionStatusEl.textContent === (data.message || "Insight submission initiated. List will update shortly.")) {
-                        globalActionStatusEl.style.display = 'none';
-                        globalActionStatusEl.textContent = '';
-                        globalActionStatusEl.className = 'status-message';
-                    }
-                }, 5000);
-            }
-        } else {
-            const errorMessage = (data && data.message) ? data.message : "Failed to initiate save insight due to an unexpected server response.";
-            console.error("Failed to initiate save insight:", errorMessage);
-            if (globalActionStatusEl) {
-                globalActionStatusEl.textContent = errorMessage;
-                globalActionStatusEl.className = 'status-message error';
-                globalActionStatusEl.style.display = 'block';
-                setTimeout(() => {
-                    if (globalActionStatusEl.className.includes('error')) {
-                         globalActionStatusEl.style.display = 'none';
-                         globalActionStatusEl.textContent = '';
-                         globalActionStatusEl.className = 'status-message';
-                    }
-                }, 7000);
-            }
-        }
-    })
-    .catch((error) => {
-        console.error("Communication error saving insight:", error);
-        if (globalActionStatusEl) {
-            globalActionStatusEl.textContent = "Communication error saving insight.";
-            globalActionStatusEl.className = 'status-message error';
-            globalActionStatusEl.style.display = 'block';
-            setTimeout(() => {
-                if (globalActionStatusEl.className.includes('error')) {
-                    globalActionStatusEl.style.display = 'none';
-                    globalActionStatusEl.textContent = '';
-                    globalActionStatusEl.className = 'status-message';
-                }
-            }, 7000);
-        }
-    });
+    
+    const cardType = formData.get('cardType');
+    const cardConfig = formData.get('cardConfig') || '';
+    const cardName = formData.get('cardName') || '';
+    
+    // Find the card definition to get the default name
+    const cardDef = availableCardTypes.find(def => def.id === cardType);
+    const finalName = cardName || (cardDef ? cardDef.name : cardType);
+    
+    // Create new card configuration
+    const newCard = {
+        type: cardType,
+        config: cardConfig,
+        name: finalName,
+        order: configuredCards.length // Add to end
+    };
+    
+    // Add to current configuration
+    configuredCards.push(newCard);
+    
+    // Save to device
+    saveCardConfiguration();
+    
+    // Reset form
+    form.reset();
+    updateCardConfigInput();
+    
+    if (globalActionStatusEl) {
+        globalActionStatusEl.textContent = "Card added successfully";
+        globalActionStatusEl.className = 'status-message info';
+        globalActionStatusEl.style.display = 'block';
+        setTimeout(() => {
+            globalActionStatusEl.style.display = 'none';
+            globalActionStatusEl.textContent = '';
+            globalActionStatusEl.className = 'status-message';
+        }, 3000);
+    }
     
     return false;
 }
 
-// Delete insight
+// Update the cards list UI
+function updateCardsListUI() {
+    const container = document.getElementById('cards-list');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    if (!configuredCards || configuredCards.length === 0) {
+        container.innerHTML = '<p>No cards configured</p>';
+        return;
+    }
+    
+    // Sort cards by order
+    const sortedCards = [...configuredCards].sort((a, b) => a.order - b.order);
+    
+    const list = document.createElement('div');
+    list.className = 'cards-list';
+    
+    sortedCards.forEach((card, index) => {
+        const item = document.createElement('div');
+        item.className = 'card-item';
+        item.style.cssText = 'border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 5px; background: #f9f9f9;';
+        
+        item.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong>${card.name}</strong>
+                    <br>
+                    <small>Type: ${card.type}${card.config ? ` • Config: ${card.config}` : ''}</small>
+                </div>
+                <div>
+                    <button onclick="moveCard(${index}, -1)" ${index === 0 ? 'disabled' : ''} style="margin-right: 5px;">↑</button>
+                    <button onclick="moveCard(${index}, 1)" ${index === sortedCards.length - 1 ? 'disabled' : ''} style="margin-right: 10px;">↓</button>
+                    <button onclick="deleteCard(${index})" class="button danger" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px;">Delete</button>
+                </div>
+            </div>
+        `;
+        list.appendChild(item);
+    });
+    
+    container.appendChild(list);
+}
+
+// Move card up or down in the list
+function moveCard(index, direction) {
+    const sortedCards = [...configuredCards].sort((a, b) => a.order - b.order);
+    const newIndex = index + direction;
+    
+    if (newIndex < 0 || newIndex >= sortedCards.length) return;
+    
+    // Swap the order values
+    const temp = sortedCards[index].order;
+    sortedCards[index].order = sortedCards[newIndex].order;
+    sortedCards[newIndex].order = temp;
+    
+    // Update the original array
+    configuredCards = sortedCards;
+    
+    // Save and update UI
+    saveCardConfiguration();
+}
+
+// Delete a card
+function deleteCard(index) {
+    const sortedCards = [...configuredCards].sort((a, b) => a.order - b.order);
+    const cardToDelete = sortedCards[index];
+    
+    if (!confirm(`Are you sure you want to delete "${cardToDelete.name}"?`)) {
+        return;
+    }
+    
+    // Remove the card from the array
+    configuredCards = configuredCards.filter(card => 
+        card.type !== cardToDelete.type || 
+        card.config !== cardToDelete.config || 
+        card.order !== cardToDelete.order
+    );
+    
+    // Reorder remaining cards
+    configuredCards.forEach((card, idx) => {
+        card.order = idx;
+    });
+    
+    // Save and update UI
+    saveCardConfiguration();
+    
+    const globalActionStatusEl = document.getElementById('global-action-status');
+    if (globalActionStatusEl) {
+        globalActionStatusEl.textContent = "Card deleted successfully";
+        globalActionStatusEl.className = 'status-message info';
+        globalActionStatusEl.style.display = 'block';
+        setTimeout(() => {
+            globalActionStatusEl.style.display = 'none';
+            globalActionStatusEl.textContent = '';
+            globalActionStatusEl.className = 'status-message';
+        }, 3000);
+    }
+}
+
+// Delete insight (legacy function for backward compatibility)
 function deleteInsight(id) {
     if (!confirm('Are you sure you want to delete this insight?')) {
         return;
@@ -268,9 +455,14 @@ function deleteInsight(id) {
     });
 }
 
-// Load insights list - UI update part will be in pollApiStatus
+// Load insights list - UI update part will be in pollApiStatus (legacy function)
 function _updateInsightsListUI(insights) {
     const container = document.getElementById('insights-list');
+    if (!container) {
+        // Container doesn't exist in new UI, skip silently
+        return;
+    }
+    
     container.innerHTML = '';
     
     if (!insights || insights.length === 0) {
@@ -482,9 +674,18 @@ function pollApiStatus() {
                 _updateDeviceConfigUI(data.device_config);
             }
 
-            // 4. Update Insights List
+            // 4. Update Insights List (legacy - remove if cards are working)
             if (data.insights) {
                 _updateInsightsListUI(data.insights);
+            }
+            
+            // 4a. Refresh card configuration periodically
+            // Note: We refresh cards on successful completion of card-related actions
+            if (portalStatus && portalStatus.last_action_completed && 
+                (portalStatus.last_action_completed.includes('CARD') || 
+                 portalStatus.last_action_status === 'SUCCESS')) {
+                // Refresh card data when actions complete
+                loadConfiguredCards();
             }
 
             // 5. Update OTA Firmware Info & UI State
@@ -543,6 +744,14 @@ document.addEventListener('DOMContentLoaded', function() {
     if(refreshBtn) {
         refreshBtn.addEventListener('click', requestScanNetworks);
     }
+    
+    // Initialize card management with a small delay to avoid overwhelming the device
+    setTimeout(() => {
+        loadCardDefinitions();
+        setTimeout(() => {
+            loadConfiguredCards();
+        }, 500);
+    }, 1000);
 });
 
 // Enum for OtaManager::UpdateStatus::State (mirror from C++)

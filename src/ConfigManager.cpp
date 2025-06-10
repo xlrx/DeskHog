@@ -161,6 +161,11 @@ void ConfigManager::deleteInsight(const String& id) {
 std::vector<String> ConfigManager::getAllInsightIds() {
     std::vector<String> ids;
     
+    // Check if the key exists first to avoid error logs
+    if (!_insightsPrefs.isKey("_id_list")) {
+        return ids; // Return empty vector if no insights stored yet
+    }
+    
     // We'll maintain a special key that stores all insight IDs
     String idList = _insightsPrefs.getString("_id_list", "");
     
@@ -251,6 +256,11 @@ void ConfigManager::clearApiKey() {
 
 std::vector<CardConfig> ConfigManager::getCardConfigs() {
     std::vector<CardConfig> configs;
+    
+    // Check if the key exists first to avoid error logs
+    if (!_cardPrefs.isKey("config_list")) {
+        return configs; // Return empty vector if no card config stored yet
+    }
     
     // Get JSON string from preferences
     String jsonString = _cardPrefs.getString("config_list", "[]");
