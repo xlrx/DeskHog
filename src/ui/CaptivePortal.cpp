@@ -795,26 +795,17 @@ void CaptivePortal::handleGetCardDefinitions(AsyncWebServerRequest *request) {
     JsonArray definitionsArray = doc.to<JsonArray>();
 
     // Get card definitions from CardController
-    // For now, we'll manually create the definitions until CardController is updated
-    // TODO: Replace with _cardController.getCardDefinitions() once that method exists
+    std::vector<CardDefinition> definitions = _cardController.getCardDefinitions();
     
-    // INSIGHT card definition
-    JsonObject insightDef = definitionsArray.createNestedObject();
-    insightDef["id"] = "INSIGHT";
-    insightDef["name"] = "PostHog Insight";
-    insightDef["allowMultiple"] = true;
-    insightDef["needsConfigInput"] = true;
-    insightDef["configInputLabel"] = "Insight ID";
-    insightDef["description"] = "Insight cards let you keep an eye on PostHog data";
-
-    // FRIEND card definition
-    JsonObject friendDef = definitionsArray.createNestedObject();
-    friendDef["id"] = "FRIEND";
-    friendDef["name"] = "Walking Animation";
-    friendDef["allowMultiple"] = false;
-    friendDef["needsConfigInput"] = false;
-    friendDef["configInputLabel"] = "";
-    friendDef["description"] = "Get reassurance from Max the hedgehog";
+    for (const CardDefinition& def : definitions) {
+        JsonObject defObj = definitionsArray.createNestedObject();
+        defObj["id"] = cardTypeToString(def.type);
+        defObj["name"] = def.name;
+        defObj["allowMultiple"] = def.allowMultiple;
+        defObj["needsConfigInput"] = def.needsConfigInput;
+        defObj["configInputLabel"] = def.configInputLabel;
+        defObj["description"] = def.uiDescription;
+    }
 
     String responseJson;
     serializeJson(doc, responseJson);

@@ -1,4 +1,5 @@
 #include "ui/CardController.h"
+#include <algorithm>
 
 CardController::CardController(
     lv_obj_t* screen,
@@ -54,10 +55,13 @@ void CardController::initialize(DisplayInterface* display) {
     // Set the display interface first
     setDisplayInterface(display);
     
+    // Initialize card type registrations
+    initializeCardTypes();
+    
     // Create card navigation stack
     cardStack = new CardNavigationStack(screen, screenWidth, screenHeight);
     
-    // Create provision UI
+    // Create provision UI (always present, not configurable)
     provisioningCard = new ProvisioningCard(
         screen, 
         wifiInterface, 
@@ -68,25 +72,39 @@ void CardController::initialize(DisplayInterface* display) {
     // Add provisioning card to navigation stack
     cardStack->addCard(provisioningCard->getCard());
     
-    // Create animation card
-    createAnimationCard();
+    // Load current card configuration and create cards
+    currentCardConfigs = configManager.getCardConfigs();
     
-    // Get count of insights to determine card count
-    std::vector<String> insightIds = configManager.getAllInsightIds();
-    
-    // Create and add insight cards
-    for (const String& id : insightIds) {
-        createInsightCard(id);
+    // If no configuration exists, create default cards for backward compatibility
+    if (currentCardConfigs.empty()) {
+        // Create default friend card
+        createAnimationCard();
+        
+        // Create insight cards from legacy storage
+        std::vector<String> insightIds = configManager.getAllInsightIds();
+        for (const String& id : insightIds) {
+            createInsightCard(id);
+        }
+    } else {
+        // Create cards based on stored configuration
+        reconcileCards(currentCardConfigs);
     }
     
     // Connect WiFi manager to UI
     wifiInterface.setUI(provisioningCard);
     
-    // Subscribe to insight events
+    // Subscribe to insight events (legacy support)
     eventQueue.subscribe([this](const Event& event) {
         if (event.type == EventType::INSIGHT_ADDED || 
             event.type == EventType::INSIGHT_DELETED) {
             handleInsightEvent(event);
+        }
+    });
+    
+    // Subscribe to card configuration changes
+    eventQueue.subscribe([this](const Event& event) {
+        if (event.type == EventType::CARD_CONFIG_CHANGED) {
+            handleCardConfigChanged();
         }
     });
     
@@ -234,6 +252,140 @@ void CardController::handleWiFiEvent(const Event& event) {
             
         default:
             break;
+    }
+    
+    displayInterface->giveMutex();
+}
+
+std::vector<CardDefinition> CardController::getCardDefinitions() const {
+    return registeredCardTypes;
+}
+
+void CardController::registerCardType(const CardDefinition& definition) {
+    registeredCardTypes.push_back(definition);
+}
+
+void CardController::initializeCardTypes() {
+    // Register INSIGHT card type
+    CardDefinition insightDef;
+    insightDef.type = CardType::INSIGHT;
+    insightDef.name = "PostHog Insight";
+    insightDef.allowMultiple = true;
+    insightDef.needsConfigInput = true;
+    insightDef.configInputLabel = "Insight ID";
+    insightDef.uiDescription = "Insight cards let you keep an eye on PostHog data";
+    insightDef.factory = [this](const String& configValue) -> lv_obj_t* {
+        // Create new insight card using the insight ID
+        InsightCard* newCard = new InsightCard(
+            screen,
+            configManager,
+            eventQueue,
+            configValue,
+            screenWidth,
+            screenHeight
+        );
+        
+        if (newCard && newCard->getCard()) {
+            // Add to our list of cards
+            insightCards.push_back(newCard);
+            return newCard->getCard();
+        }
+        
+        delete newCard;
+        return nullptr;
+    };
+    registerCardType(insightDef);
+    
+    // Register FRIEND card type  
+    CardDefinition friendDef;
+    friendDef.type = CardType::FRIEND;
+    friendDef.name = "Walking Animation";
+    friendDef.allowMultiple = false;
+    friendDef.needsConfigInput = false;
+    friendDef.configInputLabel = "";
+    friendDef.uiDescription = "Get reassurance from Max the hedgehog";
+    friendDef.factory = [this](const String& configValue) -> lv_obj_t* {
+        // Create new friend card (ignore configValue for now)
+        animationCard = new FriendCard(screen);
+        
+        if (animationCard && animationCard->getCard()) {
+            // Register as input handler
+            cardStack->registerInputHandler(animationCard->getCard(), animationCard);
+            return animationCard->getCard();
+        }
+        
+        delete animationCard;
+        animationCard = nullptr;
+        return nullptr;
+    };
+    registerCardType(friendDef);
+}
+
+void CardController::handleCardConfigChanged() {
+    // Load new configuration from storage
+    std::vector<CardConfig> newConfigs = configManager.getCardConfigs();
+    
+    // Perform reconciliation
+    reconcileCards(newConfigs);
+    
+    // Update current configuration
+    currentCardConfigs = newConfigs;
+}
+
+void CardController::reconcileCards(const std::vector<CardConfig>& newConfigs) {
+    if (!displayInterface || !displayInterface->takeMutex(portMAX_DELAY)) {
+        Serial.println("Failed to take mutex for card reconciliation");
+        return;
+    }
+    
+    // For now, implement a simple approach: remove all dynamic cards and recreate
+    // TODO: Implement smarter diffing to preserve existing cards when possible
+    
+    // Remove existing insight cards
+    for (auto* card : insightCards) {
+        if (card && card->getCard()) {
+            cardStack->removeCard(card->getCard());
+        }
+        delete card;
+    }
+    insightCards.clear();
+    
+    // Remove existing animation card
+    if (animationCard && animationCard->getCard()) {
+        cardStack->removeCard(animationCard->getCard());
+        delete animationCard;
+        animationCard = nullptr;
+    }
+    
+    // Create cards based on new configuration, sorted by order
+    std::vector<CardConfig> sortedConfigs = newConfigs;
+    std::sort(sortedConfigs.begin(), sortedConfigs.end(), 
+              [](const CardConfig& a, const CardConfig& b) {
+                  return a.order < b.order;
+              });
+    
+    for (const CardConfig& config : sortedConfigs) {
+        // Find the registered card type
+        auto it = std::find_if(registeredCardTypes.begin(), registeredCardTypes.end(),
+                              [&config](const CardDefinition& def) {
+                                  return def.type == config.type;
+                              });
+        
+        if (it != registeredCardTypes.end() && it->factory) {
+            // Create the card using the factory function
+            lv_obj_t* cardObj = it->factory(config.config);
+            if (cardObj) {
+                cardStack->addCard(cardObj);
+                Serial.printf("Created card of type %s with config: %s\n", 
+                             cardTypeToString(config.type).c_str(), config.config.c_str());
+            } else {
+                Serial.printf("Failed to create card of type %s\n", 
+                             cardTypeToString(config.type).c_str());
+            }
+        } else {
+            Serial.printf("No factory found for card type %s\n", 
+                         cardTypeToString(config.type).c_str());
+        }
     }
     
     displayInterface->giveMutex();

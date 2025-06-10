@@ -13,6 +13,7 @@
 #include "ui/FriendCard.h"
 #include "hardware/DisplayInterface.h"
 #include "EventQueue.h"
+#include "config/CardConfig.h"
 
 /**
  * @class CardController
@@ -98,6 +99,24 @@ public:
      */
     DisplayInterface* getDisplayInterface() { return displayInterface; }
 
+    /**
+     * @brief Get available card definitions for the web UI
+     * @return Vector of CardDefinition objects representing available card types
+     */
+    std::vector<CardDefinition> getCardDefinitions() const;
+
+    /**
+     * @brief Register an available card type with its definition and factory function
+     * @param definition The card definition including metadata and factory function
+     */
+    void registerCardType(const CardDefinition& definition);
+
+    /**
+     * @brief Process card configuration changes from the web UI
+     * Called when CARD_CONFIG_CHANGED event is received
+     */
+    void handleCardConfigChanged();
+
 private:
     // Screen reference
     lv_obj_t* screen;              ///< Main LVGL screen object
@@ -119,6 +138,10 @@ private:
     // Display interface for thread safety
     DisplayInterface* displayInterface;  ///< Thread-safe display interface
     
+    // Card registration and management
+    std::vector<CardDefinition> registeredCardTypes; ///< Available card types with factory functions
+    std::vector<CardConfig> currentCardConfigs;      ///< Current card configuration from storage
+    
     /**
      * @brief Create and initialize the animation card
      */
@@ -135,4 +158,17 @@ private:
      * @param event Event containing WiFi state
      */
     void handleWiFiEvent(const Event& event);
+
+    /**
+     * @brief Initialize default card type registrations
+     * Registers built-in card types (INSIGHT, FRIEND) with their factory functions
+     */
+    void initializeCardTypes();
+
+    /**
+     * @brief Reconcile current cards with new configuration
+     * Diffs configuration, removes old cards, creates new ones, and reorders
+     * @param newConfigs New card configuration from storage
+     */
+    void reconcileCards(const std::vector<CardConfig>& newConfigs);
 }; 
