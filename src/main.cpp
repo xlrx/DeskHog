@@ -115,7 +115,7 @@ void lvglHandlerTask(void* parameter) {
         // Handle LVGL tasks
         displayInterface->handleLVGLTasks();
 
-        InsightCard::processUIQueue();
+        cardController->processUIQueue();
         
         // Poll buttons at regular intervals
         TickType_t currentTime = xTaskGetTickCount();
@@ -216,7 +216,7 @@ void setup() {
     }
     Serial.println("--------------------------");
 
-    InsightCard::initUIQueue();
+    // UI queue will be initialized by CardController
 
 
     SystemController::begin();

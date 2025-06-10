@@ -1,6 +1,11 @@
 #include "ui/CardController.h"
 #include <algorithm>
 
+QueueHandle_t CardController::uiQueue = nullptr;
+
+// Define the global UI dispatch function
+std::function<void(std::function<void()>, bool)> globalUIDispatch;
+
 CardController::CardController(
     lv_obj_t* screen,
     uint16_t screenWidth,
@@ -54,6 +59,9 @@ CardController::~CardController() {
 void CardController::initialize(DisplayInterface* display) {
     // Set the display interface first
     setDisplayInterface(display);
+    
+    // Initialize UI queue for thread-safe operations
+    initUIQueue();
     
     // Initialize card type registrations
     initializeCardTypes();
@@ -156,7 +164,7 @@ void CardController::createInsightCard(const String& insightId) {
                   pcTaskGetTaskName(NULL));
 
     // Dispatch the actual card creation and LVGL work to the LVGL task
-    InsightCard::dispatchToLVGLTask([this, insightId]() {
+    dispatchToLVGLTask([this, insightId]() {
         Serial.printf("[CardCtrl-DEBUG] LVGL Task creating card for insight: %s from Core: %d, Task: %s\n", 
                       insightId.c_str(), xPortGetCoreID(), pcTaskGetTaskName(NULL));
 
@@ -342,7 +350,7 @@ void CardController::reconcileCards(const std::vector<CardConfig>& newConfigs) {
                   xPortGetCoreID(), pcTaskGetTaskName(NULL));
     
     // Dispatch the entire reconciliation to the LVGL task to ensure thread safety
-    InsightCard::dispatchToLVGLTask([this, newConfigs]() {
+    dispatchToLVGLTask([this, newConfigs]() {
         if (!displayInterface || !displayInterface->takeMutex(portMAX_DELAY)) {
             Serial.println("Failed to take mutex for card reconciliation");
             return;
@@ -403,4 +411,56 @@ void CardController::reconcileCards(const std::vector<CardConfig>& newConfigs) {
         
         displayInterface->giveMutex();
     });
+}
+
+void CardController::initUIQueue() {
+    if (uiQueue == nullptr) {
+        uiQueue = xQueueCreate(20, sizeof(UICallback*));
+        if (uiQueue == nullptr) {
+            Serial.println("[UI-CRITICAL] Failed to create UI task queue!");
+        } else {
+            // Set the global dispatch function to point to our method
+            globalUIDispatch = [this](std::function<void()> func, bool to_front) {
+                this->dispatchToLVGLTask(std::move(func), to_front);
+            };
+        }
+    }
+}
+
+void CardController::processUIQueue() {
+    if (uiQueue == nullptr) return;
+
+    UICallback* callback_ptr = nullptr;
+    while (xQueueReceive(uiQueue, &callback_ptr, 0) == pdTRUE) {
+        if (callback_ptr) {
+            callback_ptr->execute();
+            delete callback_ptr;
+        }
+    }
+}
+
+void CardController::dispatchToLVGLTask(std::function<void()> update_func, bool to_front) {
+    if (uiQueue == nullptr) {
+        Serial.println("[UI-ERROR] UI Queue not initialized, cannot dispatch UI update.");
+        return;
+    }
+
+    UICallback* callback = new UICallback(std::move(update_func));
+    if (!callback) {
+        Serial.println("[UI-CRITICAL] Failed to allocate UICallback for dispatch!");
+        return;
+    }
+
+    BaseType_t queue_send_result;
+    if (to_front) {
+        queue_send_result = xQueueSendToFront(uiQueue, &callback, (TickType_t)0); 
+    } else {
+        queue_send_result = xQueueSend(uiQueue, &callback, (TickType_t)0);
+    }
+
+    if (queue_send_result != pdTRUE) {
+        Serial.printf("[UI-WARN] UI queue full/error (send_to_front: %d), update discarded. Core: %d\n", 
+                      to_front, xPortGetCoreID());
+        delete callback;
+    }
 } 
