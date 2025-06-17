@@ -78,6 +78,12 @@ public:
     uint8_t getCurrentIndex() const;
     
     /**
+     * @brief Get the total number of cards in the stack
+     * @return Total card count
+     */
+    uint32_t getCardCount() const;
+    
+    /**
      * @brief Set mutex for thread-safe button handling
      * @param mutex_ptr Pointer to FreeRTOS semaphore
      */
