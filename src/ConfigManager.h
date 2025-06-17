@@ -85,6 +85,18 @@ public:
     void setTeamId(int teamId);
 
     /**
+     * @brief Store region of the project
+     * @param region The region of the project
+     */
+    void setRegion(String region);
+
+        /**
+     * @brief Retrieve stored region of the project
+     * @return The region of the project
+     */
+    String getRegion();
+
+    /**
      * @brief Retrieve stored team identifier
      * @return The team ID or NO_TEAM_ID if not set
      */
@@ -188,6 +200,8 @@ private:
     // Storage keys for API configuration
     const char* _teamIdKey = "team_id";           ///< Key for stored team ID
     const char* _apiKeyKey = "api_key";           ///< Key for stored API key
+    const char* _regionKey = "region";           ///< Key for stored region
+
 
     // Storage size limits
     /** @brief Maximum length for WiFi SSID (per IEEE 802.11 spec) */

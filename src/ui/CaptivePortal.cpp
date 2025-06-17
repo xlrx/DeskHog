@@ -491,10 +491,14 @@ void CaptivePortal::processAsyncOperations() {
             case PortalAction::SAVE_DEVICE_CONFIG: {
                 String teamIdStr = current_queued_action.param1; // Use from QueuedAction
                 String apiKey = current_queued_action.param2;    // Use from QueuedAction
+                String region = current_queued_action.param3;   // Use from QueuedAction
                 if (!teamIdStr.isEmpty()) {
                     _configManager.setTeamId(teamIdStr.toInt());
                     if (!apiKey.isEmpty() && apiKey.indexOf("********") == -1) {
                         _configManager.setApiKey(apiKey);
+                    }
+                    if(!region.isEmpty()) {
+                        _configManager.setRegion(region);
                     }
                     currentActionSuccess = true;
                     currentActionMessage = "Device configuration saved.";
@@ -739,6 +743,7 @@ void CaptivePortal::requestAction(PortalAction action, AsyncWebServerRequest *re
         } else if (action == PortalAction::SAVE_DEVICE_CONFIG) {
             if (request->hasParam("teamId", true)) new_action.param1 = request->getParam("teamId", true)->value();
             if (request->hasParam("apiKey", true)) new_action.param2 = request->getParam("apiKey", true)->value();
+            if (request->hasParam("region", true)) new_action.param3 = request->getParam("region", true)->value();
         } else if (action == PortalAction::SAVE_INSIGHT) {
             if (request->hasParam("insightId", true)) new_action.param1 = request->getParam("insightId", true)->value();
             if (request->hasParam("insightTitle", true)) new_action.param2 = request->getParam("insightTitle", true)->value();
