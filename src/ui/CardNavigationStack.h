@@ -105,6 +105,14 @@ public:
      */
     void registerInputHandler(lv_obj_t* card, InputHandler* handler);
     
+    /**
+     * @brief Force update of pip indicators
+     * 
+     * Explicitly updates pip count and active indicator.
+     * Useful after bulk card operations to ensure UI consistency.
+     */
+    void forceUpdateIndicators();
+    
 private:
     /**
      * @brief LVGL scroll event callback
