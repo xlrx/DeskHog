@@ -7,7 +7,7 @@ function showScreen(screenId) {
     const screenToShow = document.getElementById(screenId);
     if (screenToShow) screenToShow.classList.remove('hidden');
     
-    let title = "DeskHog Configuration";
+    let title = "DeskHog configuration";
     document.getElementById('page-title').textContent = title;
 }
 
@@ -141,71 +141,385 @@ function toggleApiKeyVisibility() {
     apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
 }
 
-// Add new insight
-function addInsight() {
-    const form = document.getElementById('insight-form');
-    const formData = new FormData(form);
-    const globalActionStatusEl = document.getElementById('global-action-status');
+// Global variables for card management
+let availableCardTypes = [];
+let configuredCards = [];
 
-    fetch('/api/actions/save-insight', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data && data.status === 'queued') {
-            console.log("Add insight action successfully queued.", data.message);
-            form.reset();
+// Load card definitions from the device
+async function loadCardDefinitions() {
+    try {
+        const response = await fetch('/api/cards/definitions');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const definitions = await response.json();
+        availableCardTypes = definitions;
+        updateAvailableCardsList();
+        console.log('Loaded', definitions.length, 'card definitions');
+    } catch (error) {
+        console.error('Failed to load card definitions:', error);
+        // Set empty array as fallback
+        availableCardTypes = [];
+    }
+}
+
+// Load configured cards from the device
+async function loadConfiguredCards() {
+    try {
+        const response = await fetch('/api/cards/configured');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const cards = await response.json();
+        configuredCards = cards;
+        updateCardsListUI();
+        updateAvailableCardsList(); // Update availability status
+        console.log('Loaded', cards.length, 'configured cards');
+    } catch (error) {
+        console.error('Failed to load configured cards:', error);
+        // Set empty array as fallback
+        configuredCards = [];
+        updateCardsListUI();
+        updateAvailableCardsList(); // Update availability status
+    }
+}
+
+// Update the available cards list
+function updateAvailableCardsList() {
+    const container = document.getElementById('available-cards-list');
+    if (!container) return;
+    
+    // Handle empty state
+    if (!availableCardTypes || availableCardTypes.length === 0) {
+        if (container.innerHTML !== '<p>No card types available</p>') {
+            container.innerHTML = '<p>No card types available</p>';
+        }
+        return;
+    }
+    
+    // Update existing items or create new ones
+    availableCardTypes.forEach(cardDef => {
+        let cardItem = container.querySelector(`[data-card-type="${cardDef.id}"]`);
+        
+        // Check if this card type is already configured and if it allows multiple instances
+        const existingCount = configuredCards.filter(card => card.type === cardDef.id).length;
+        const canAdd = cardDef.allowMultiple || existingCount === 0;
+        
+        let statusText = '';
+        if (!cardDef.allowMultiple && existingCount > 0) {
+            statusText = 'Already added (single instance)';
+        } else if (existingCount > 0) {
+            statusText = `${existingCount} instance${existingCount > 1 ? 's' : ''} configured`;
+        }
+        
+        if (!cardItem) {
+            // Create new item only if it doesn't exist
+            cardItem = document.createElement('div');
+            cardItem.className = 'available-card-item';
+            cardItem.setAttribute('data-card-type', cardDef.id);
             
-            if (globalActionStatusEl) {
-                globalActionStatusEl.textContent = data.message || "Insight submission initiated. List will update shortly.";
-                globalActionStatusEl.className = 'status-message info';
-                globalActionStatusEl.style.display = 'block';
-                setTimeout(() => {
-                    if (globalActionStatusEl.textContent === (data.message || "Insight submission initiated. List will update shortly.")) {
-                        globalActionStatusEl.style.display = 'none';
-                        globalActionStatusEl.textContent = '';
-                        globalActionStatusEl.className = 'status-message';
-                    }
-                }, 5000);
-            }
+            cardItem.innerHTML = `
+                <div class="available-card-info">
+                    <div class="available-card-name">${cardDef.name}</div>
+                    <div class="available-card-description">${cardDef.description || cardDef.uiDescription || ''}</div>
+                    <div class="available-card-status"></div>
+                </div>
+                <div class="available-card-actions">
+                    ${cardDef.needsConfigInput ? `
+                        <input type="text" class="config-input" placeholder="${cardDef.configInputLabel}" id="config-${cardDef.id}">
+                    ` : ''}
+                    <button class="add-card-btn" onclick="addCardFromList('${cardDef.id}')" ${!canAdd ? 'style="display:none"' : ''}>
+                        + Add card
+                    </button>
+                </div>
+            `;
+            
+            container.appendChild(cardItem);
         } else {
-            const errorMessage = (data && data.message) ? data.message : "Failed to initiate save insight due to an unexpected server response.";
-            console.error("Failed to initiate save insight:", errorMessage);
+            // Update existing item without destroying input values
+            const statusEl = cardItem.querySelector('.available-card-status');
+            if (statusEl) {
+                statusEl.textContent = statusText;
+            }
+            
+            const addBtn = cardItem.querySelector('.add-card-btn');
+            if (addBtn) {
+                addBtn.style.display = canAdd ? '' : 'none';
+            }
+        }
+    });
+    
+    // Remove any cards that no longer exist in availableCardTypes
+    const existingItems = container.querySelectorAll('[data-card-type]');
+    existingItems.forEach(item => {
+        const cardType = item.getAttribute('data-card-type');
+        if (!availableCardTypes.find(def => def.id === cardType)) {
+            item.remove();
+        }
+    });
+}
+
+// Save card configuration to device
+async function saveCardConfiguration() {
+    try {
+        const response = await fetch('/api/cards/configured', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(configuredCards)
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            console.log('Card configuration saved successfully');
+            // Reload to reflect changes
+            await loadConfiguredCards();
+        } else {
+            console.error('Failed to save card configuration:', result.message);
+        }
+    } catch (error) {
+        console.error('Error saving card configuration:', error);
+    }
+}
+
+// Add new card from the list interface
+function addCardFromList(cardTypeId) {
+    const globalActionStatusEl = document.getElementById('global-action-status');
+    
+    // Find the card definition
+    const cardDef = availableCardTypes.find(def => def.id === cardTypeId);
+    if (!cardDef) {
+        console.error('Card definition not found for type:', cardTypeId);
+        return;
+    }
+    
+    // Get config value if needed
+    let cardConfig = '';
+    if (cardDef.needsConfigInput) {
+        const configInput = document.getElementById(`config-${cardTypeId}`);
+        if (!configInput || !configInput.value.trim()) {
+            // Show error
             if (globalActionStatusEl) {
-                globalActionStatusEl.textContent = errorMessage;
+                globalActionStatusEl.textContent = `Please enter a value for ${cardDef.configInputLabel}`;
                 globalActionStatusEl.className = 'status-message error';
                 globalActionStatusEl.style.display = 'block';
                 setTimeout(() => {
-                    if (globalActionStatusEl.className.includes('error')) {
-                         globalActionStatusEl.style.display = 'none';
-                         globalActionStatusEl.textContent = '';
-                         globalActionStatusEl.className = 'status-message';
-                    }
-                }, 7000);
-            }
-        }
-    })
-    .catch((error) => {
-        console.error("Communication error saving insight:", error);
-        if (globalActionStatusEl) {
-            globalActionStatusEl.textContent = "Communication error saving insight.";
-            globalActionStatusEl.className = 'status-message error';
-            globalActionStatusEl.style.display = 'block';
-            setTimeout(() => {
-                if (globalActionStatusEl.className.includes('error')) {
                     globalActionStatusEl.style.display = 'none';
                     globalActionStatusEl.textContent = '';
                     globalActionStatusEl.className = 'status-message';
-                }
-            }, 7000);
+                }, 3000);
+            }
+            return;
         }
+        cardConfig = configInput.value.trim();
+    }
+    
+    // Create new card configuration
+    const newCard = {
+        type: cardTypeId,
+        config: cardConfig,
+        name: cardDef.name,
+        order: configuredCards.length // Add to end
+    };
+    
+    // Add to current configuration
+    configuredCards.push(newCard);
+    
+    // Save to device
+    saveCardConfiguration();
+    
+    // Clear the config input if it exists
+    if (cardDef.needsConfigInput) {
+        const configInput = document.getElementById(`config-${cardTypeId}`);
+        if (configInput) {
+            configInput.value = '';
+        }
+    }
+    
+    // Update the available cards list to reflect new state
+    updateAvailableCardsList();
+    
+    if (globalActionStatusEl) {
+        globalActionStatusEl.textContent = "Card added successfully";
+        globalActionStatusEl.className = 'status-message info';
+        globalActionStatusEl.style.display = 'block';
+        setTimeout(() => {
+            globalActionStatusEl.style.display = 'none';
+            globalActionStatusEl.textContent = '';
+            globalActionStatusEl.className = 'status-message';
+        }, 3000);
+    }
+}
+
+// Update the cards list UI with drag-and-drop functionality
+function updateCardsListUI() {
+    const container = document.getElementById('cards-list');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    if (!configuredCards || configuredCards.length === 0) {
+        container.innerHTML = '<p>No cards configured</p>';
+        return;
+    }
+    
+    // Sort cards by order
+    const sortedCards = [...configuredCards].sort((a, b) => a.order - b.order);
+    
+    const list = document.createElement('div');
+    list.className = 'cards-list';
+    
+    sortedCards.forEach((card, index) => {
+        const item = document.createElement('div');
+        item.className = 'card-item';
+        item.draggable = true;
+        item.dataset.cardIndex = index;
+        
+        item.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center;">
+                    <span class="drag-handle">⋮⋮</span>
+                    <div>
+                        <strong>${card.name}</strong>
+                        <br>
+                        <small>Type: ${card.type}${card.config ? ` • Config: ${card.config}` : ''}</small>
+                    </div>
+                </div>
+                <div>
+                    <button onclick="deleteCard(${index})" class="delete-card-btn">Delete</button>
+                </div>
+            </div>
+        `;
+        
+        // Add drag event listeners
+        item.addEventListener('dragstart', handleDragStart);
+        item.addEventListener('dragover', handleDragOver);
+        item.addEventListener('drop', handleDrop);
+        item.addEventListener('dragend', handleDragEnd);
+        item.addEventListener('dragenter', handleDragEnter);
+        item.addEventListener('dragleave', handleDragLeave);
+        
+        list.appendChild(item);
     });
+    
+    container.appendChild(list);
+}
+
+// Drag and drop variables
+let draggedElement = null;
+let draggedIndex = null;
+
+// Drag event handlers
+function handleDragStart(e) {
+    draggedElement = e.target;
+    draggedIndex = parseInt(e.target.dataset.cardIndex);
+    e.target.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', e.target.outerHTML);
+}
+
+function handleDragOver(e) {
+    if (e.preventDefault) {
+        e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+}
+
+function handleDragEnter(e) {
+    if (e.target !== draggedElement) {
+        e.target.classList.add('drag-over');
+    }
+}
+
+function handleDragLeave(e) {
+    e.target.classList.remove('drag-over');
+}
+
+function handleDrop(e) {
+    if (e.stopPropagation) {
+        e.stopPropagation();
+    }
+    
+    const dropIndex = parseInt(e.target.closest('.card-item').dataset.cardIndex);
+    
+    if (draggedIndex !== dropIndex) {
+        // Reorder the cards
+        const sortedCards = [...configuredCards].sort((a, b) => a.order - b.order);
+        const draggedCard = sortedCards[draggedIndex];
+        
+        // Remove the dragged card from its current position
+        sortedCards.splice(draggedIndex, 1);
+        
+        // Insert it at the new position
+        sortedCards.splice(dropIndex, 0, draggedCard);
+        
+        // Update order values
+        sortedCards.forEach((card, index) => {
+            card.order = index;
+        });
+        
+        // Update the global array
+        configuredCards = sortedCards;
+        
+        // Save and update UI
+        saveCardConfiguration();
+    }
     
     return false;
 }
 
-// Delete insight
+function handleDragEnd(e) {
+    e.target.classList.remove('dragging');
+    
+    // Clean up drag-over classes from all items
+    document.querySelectorAll('.card-item').forEach(item => {
+        item.classList.remove('drag-over');
+    });
+    
+    draggedElement = null;
+    draggedIndex = null;
+}
+
+// Delete a card
+function deleteCard(index) {
+    const sortedCards = [...configuredCards].sort((a, b) => a.order - b.order);
+    const cardToDelete = sortedCards[index];
+    
+    if (!confirm(`Are you sure you want to delete "${cardToDelete.name}"?`)) {
+        return;
+    }
+    
+    // Remove the card from the array
+    configuredCards = configuredCards.filter(card => 
+        card.type !== cardToDelete.type || 
+        card.config !== cardToDelete.config || 
+        card.order !== cardToDelete.order
+    );
+    
+    // Reorder remaining cards
+    configuredCards.forEach((card, idx) => {
+        card.order = idx;
+    });
+    
+    // Save and update UI
+    saveCardConfiguration();
+    
+    const globalActionStatusEl = document.getElementById('global-action-status');
+    if (globalActionStatusEl) {
+        globalActionStatusEl.textContent = "Card deleted successfully";
+        globalActionStatusEl.className = 'status-message info';
+        globalActionStatusEl.style.display = 'block';
+        setTimeout(() => {
+            globalActionStatusEl.style.display = 'none';
+            globalActionStatusEl.textContent = '';
+            globalActionStatusEl.className = 'status-message';
+        }, 3000);
+    }
+}
+
+// Delete insight (legacy function for backward compatibility)
 function deleteInsight(id) {
     if (!confirm('Are you sure you want to delete this insight?')) {
         return;
@@ -268,9 +582,14 @@ function deleteInsight(id) {
     });
 }
 
-// Load insights list - UI update part will be in pollApiStatus
+// Load insights list - UI update part will be in pollApiStatus (legacy function)
 function _updateInsightsListUI(insights) {
     const container = document.getElementById('insights-list');
+    if (!container) {
+        // Container doesn't exist in new UI, skip silently
+        return;
+    }
+    
     container.innerHTML = '';
     
     if (!insights || insights.length === 0) {
@@ -382,6 +701,8 @@ function requestScanNetworks() {
 let lastProcessedAction = null;
 let lastProcessedActionMessage = "";
 let initialDeviceConfigLoaded = false;
+let lastWifiUpdateTime = 0;
+const WIFI_UPDATE_INTERVAL = 10000; // Update WiFi list every 10 seconds
 
 function pollApiStatus() {
     fetch('/api/status')
@@ -464,7 +785,14 @@ function pollApiStatus() {
 
             // 2. Update WiFi Info
             if (data.wifi) {
-                _updateNetworksListUI(data.wifi.networks);
+                // Update WiFi networks list only if enough time has passed
+                const currentTime = Date.now();
+                if (currentTime - lastWifiUpdateTime >= WIFI_UPDATE_INTERVAL) {
+                    _updateNetworksListUI(data.wifi.networks);
+                    lastWifiUpdateTime = currentTime;
+                }
+                
+                // Always update connection status
                 const wifiStatusEl = document.getElementById('wifi-connection-status');
                 if (wifiStatusEl) {
                     if (data.wifi.is_connected) {
@@ -482,9 +810,18 @@ function pollApiStatus() {
                 _updateDeviceConfigUI(data.device_config);
             }
 
-            // 4. Update Insights List
+            // 4. Update Insights List (legacy - remove if cards are working)
             if (data.insights) {
                 _updateInsightsListUI(data.insights);
+            }
+            
+            // 4a. Refresh card configuration periodically
+            // Note: We refresh cards on successful completion of card-related actions
+            if (portalStatus && portalStatus.last_action_completed && 
+                (portalStatus.last_action_completed.includes('CARD') || 
+                 portalStatus.last_action_status === 'SUCCESS')) {
+                // Refresh card data when actions complete
+                loadConfiguredCards();
             }
 
             // 5. Update OTA Firmware Info & UI State
@@ -508,10 +845,18 @@ function pollApiStatus() {
 function _updateDeviceConfigUI(config) {
     if (!initialDeviceConfigLoaded) {
         if (config.team_id !== undefined) {
-            document.getElementById('teamId').value = config.team_id;
+            const teamIdField = document.getElementById('teamId');
+            // Only set value if field exists and is empty
+            if (teamIdField && !teamIdField.value) {
+                teamIdField.value = config.team_id;
+            }
         }
         if (config.api_key_display !== undefined) { 
-            document.getElementById('apiKey').value = config.api_key_display;
+            const apiKeyField = document.getElementById('apiKey');
+            // Only set value if field exists and is empty
+            if (apiKeyField && !apiKeyField.value) {
+                apiKeyField.value = config.api_key_display;
+            }
         }
         if (config.region !== undefined) {
             // Handle region - set radio button or dropdown depending on UI
@@ -551,12 +896,20 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     pollApiStatus();
-    setInterval(pollApiStatus, 5000);
+    setInterval(pollApiStatus, 3000); // Poll every 3 seconds for responsiveness
 
     const refreshBtn = document.getElementById('refresh-networks-btn');
     if(refreshBtn) {
         refreshBtn.addEventListener('click', requestScanNetworks);
     }
+    
+    // Initialize card management with a small delay to avoid overwhelming the device
+    setTimeout(() => {
+        loadCardDefinitions();
+        setTimeout(() => {
+            loadConfiguredCards();
+        }, 500);
+    }, 1000);
 });
 
 // Enum for OtaManager::UpdateStatus::State (mirror from C++)
