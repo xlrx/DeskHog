@@ -1,7 +1,7 @@
 #include "PostHogClient.h"
 #include "../ConfigManager.h"
 
-const char* PostHogClient::BASE_URL = "https://us.posthog.com/api/projects/";
+
 
 PostHogClient::PostHogClient(ConfigManager& config, EventQueue& eventQueue) 
     : _config(config)
@@ -9,6 +9,10 @@ PostHogClient::PostHogClient(ConfigManager& config, EventQueue& eventQueue)
     , has_active_request(false)
     , last_refresh_check(0) {
     _http.setReuse(true);
+}
+
+String PostHogClient::buildBaseUrl() const {
+    return "https://" + _config.getRegion() + ".posthog.com/api/projects/";
 }
 
 void PostHogClient::requestInsightData(const String& insight_id) {
@@ -127,7 +131,7 @@ void PostHogClient::checkRefreshes() {
 }
 
 String PostHogClient::buildInsightUrl(const String& insight_id, const char* refresh_mode) const {
-    String url = String(BASE_URL);
+    String url = buildBaseUrl();
     url += String(_config.getTeamId());
     url += "/insights/?refresh=";
     url += refresh_mode;
