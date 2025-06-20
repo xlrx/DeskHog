@@ -651,6 +651,7 @@ void CaptivePortal::handleApiStatus(AsyncWebServerRequest *request) {
     String apiKey = _configManager.getApiKey();
     deviceConfigObj["api_key_display"] = apiKey.length() > 0 ? "********" + apiKey.substring(apiKey.length() - 4) : "";
     deviceConfigObj["api_key_present"] = apiKey.length() > 0;
+    deviceConfigObj["region"] = _configManager.getRegion();
 
     JsonArray insightsArray = doc.createNestedArray("insights");
     std::vector<String> insightIds = _configManager.getAllInsightIds();

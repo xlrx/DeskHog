@@ -513,6 +513,20 @@ function _updateDeviceConfigUI(config) {
         if (config.api_key_display !== undefined) { 
             document.getElementById('apiKey').value = config.api_key_display;
         }
+        if (config.region !== undefined) {
+            // Handle region - set radio button or dropdown depending on UI
+            const regionRadios = document.querySelectorAll('input[name="region"]');
+            regionRadios.forEach(radio => {
+                if (radio.value === config.region) {
+                    radio.checked = true;
+                }
+            });
+            // Also handle dropdown if it exists
+            const regionSelect = document.getElementById('region');
+            if (regionSelect) {
+                regionSelect.value = config.region;
+            }
+        }
         initialDeviceConfigLoaded = true;
     }
 }
