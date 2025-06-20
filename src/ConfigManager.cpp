@@ -217,6 +217,22 @@ int ConfigManager::getTeamId() {
     return _preferences.getInt(_teamIdKey);
 }
 
+void ConfigManager::setRegion(String region) {
+    _preferences.putString(_regionKey, region);
+    
+    // Commit changes
+    commit();
+    
+    updateApiConfigurationState();
+}
+
+String ConfigManager::getRegion() {
+    if (!_preferences.isKey(_regionKey)) {
+        return "us";
+    }
+    return _preferences.getString(_regionKey);
+}
+
 void ConfigManager::clearTeamId() {
     _preferences.remove(_teamIdKey);
     

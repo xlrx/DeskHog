@@ -94,6 +94,13 @@ private:
     static const uint8_t MAX_RETRIES = 3;              ///< Max retry attempts
     static const unsigned long RETRY_DELAY = 1000;      ///< Delay between retries
     
+
+
+        /**
+     * @brief Build Base API URL based on project region
+     */
+    String buildBaseUrl() const;
+
     /**
      * @brief Handle system state changes
      * @param state New system state

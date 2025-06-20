@@ -1,7 +1,7 @@
 #include "PostHogClient.h"
 #include "../ConfigManager.h"
 
-const char* PostHogClient::BASE_URL = "https://us.posthog.com/api/projects/";
+
 
 PostHogClient::PostHogClient(ConfigManager& config, EventQueue& eventQueue) 
     : _config(config)
@@ -11,6 +11,10 @@ PostHogClient::PostHogClient(ConfigManager& config, EventQueue& eventQueue)
     // Configure secure client for HTTPS
     _secureClient.setInsecure(); // TODO: get proper cert baked into the firmware to verify these connections
     _http.setReuse(true);
+}
+
+String PostHogClient::buildBaseUrl() const {
+    return "https://" + _config.getRegion() + ".posthog.com/api/projects/";
 }
 
 void PostHogClient::requestInsightData(const String& insight_id) {
@@ -129,7 +133,7 @@ void PostHogClient::checkRefreshes() {
 }
 
 String PostHogClient::buildInsightUrl(const String& insight_id, const char* refresh_mode) const {
-    String url = String(BASE_URL);
+    String url = buildBaseUrl();
     url += String(_config.getTeamId());
     url += "/insights/?refresh=";
     url += refresh_mode;
