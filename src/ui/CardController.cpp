@@ -83,31 +83,19 @@ void CardController::initialize(DisplayInterface* display) {
     // Load current card configuration and create cards
     currentCardConfigs = configManager.getCardConfigs();
     
-    // If no configuration exists, create default cards for backward compatibility
+    // If no configuration exists, create a default friend card
     if (currentCardConfigs.empty()) {
-        // Create default friend card
         createAnimationCard();
-        
-        // Create insight cards from legacy storage
-        std::vector<String> insightIds = configManager.getAllInsightIds();
-        for (const String& id : insightIds) {
-            createInsightCard(id);
-        }
-    } else {
-        // Create cards based on stored configuration
+    }
+    
+    // If we have card configurations now, reconcile them
+    if (!currentCardConfigs.empty()) {
         reconcileCards(currentCardConfigs);
     }
     
     // Connect WiFi manager to UI
     wifiInterface.setUI(provisioningCard);
     
-    // Subscribe to insight events (legacy support)
-    eventQueue.subscribe([this](const Event& event) {
-        if (event.type == EventType::INSIGHT_ADDED || 
-            event.type == EventType::INSIGHT_DELETED) {
-            handleInsightEvent(event);
-        }
-    });
     
     // Subscribe to card configuration changes
     eventQueue.subscribe([this](const Event& event) {
@@ -158,83 +146,7 @@ void CardController::createAnimationCard() {
     displayInterface->giveMutex();
 }
 
-// Create an insight card and add it to the UI
-void CardController::createInsightCard(const String& insightId) {
-    // Log current task and core
-    Serial.printf("[CardCtrl-DEBUG] createInsightCard called from Core: %d, Task: %s\n", 
-                  xPortGetCoreID(), 
-                  pcTaskGetTaskName(NULL));
 
-    // Dispatch the actual card creation and LVGL work to the LVGL task
-    dispatchToLVGLTask([this, insightId]() {
-        Serial.printf("[CardCtrl-DEBUG] LVGL Task creating card for insight: %s from Core: %d, Task: %s\n", 
-                      insightId.c_str(), xPortGetCoreID(), pcTaskGetTaskName(NULL));
-
-        if (!displayInterface || !displayInterface->takeMutex(portMAX_DELAY)) {
-            Serial.println("[CardCtrl-ERROR] Failed to take mutex in LVGL task for card creation.");
-            return;
-        }
-
-        // Create new insight card using full screen dimensions
-        InsightCard* newCard = new InsightCard(
-            screen,         // LVGL parent object
-            configManager,  // Dependencies
-            eventQueue,
-            insightId,
-            screenWidth,    // Dimensions
-            screenHeight
-        );
-
-        if (!newCard || !newCard->getCard()) {
-            Serial.printf("[CardCtrl-ERROR] Failed to create InsightCard or its LVGL object for ID: %s\n", insightId.c_str());
-            displayInterface->giveMutex();
-            delete newCard; // Clean up if partially created
-            return;
-        }
-
-        // Add to navigation stack
-        cardStack->addCard(newCard->getCard());
-
-        // Add to our list of cards (ensure this is thread-safe if accessed elsewhere)
-        // The mutex taken above should protect this operation too.
-        insightCards.push_back(newCard);
-        
-        Serial.printf("[CardCtrl-DEBUG] InsightCard for ID: %s created and added to stack.\n", insightId.c_str());
-
-        displayInterface->giveMutex();
-
-        // Request immediate data for this insight now that it's set up
-        posthogClient.requestInsightData(insightId);
-    });
-}
-
-// Handle insight events
-void CardController::handleInsightEvent(const Event& event) {
-    if (event.type == EventType::INSIGHT_ADDED) {
-        createInsightCard(event.insightId);
-    } 
-    else if (event.type == EventType::INSIGHT_DELETED) {
-        if (!displayInterface || !displayInterface->takeMutex(portMAX_DELAY)) {
-            return;
-        }
-        
-        // Find and remove the card
-        for (auto it = insightCards.begin(); it != insightCards.end(); ++it) {
-            InsightCard* card = *it;
-            if (card->getInsightId() == event.insightId) {
-                // Remove from card stack
-                cardStack->removeCard(card->getCard());
-                
-                // Remove from vector and delete
-                insightCards.erase(it);
-                delete card;
-                break;
-            }
-        }
-        
-        displayInterface->giveMutex();
-    }
-}
 
 // Handle WiFi events
 void CardController::handleWiFiEvent(const Event& event) {
