@@ -76,6 +76,7 @@ InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, EventQueue& ev
 }
 
 InsightCard::~InsightCard() {
+    Serial.printf("[InsightCard-%s] DESTRUCTOR called\n", _insight_id.c_str());
     std::shared_ptr<InsightRendererBase> renderer_for_lambda = std::move(_active_renderer);
     if (globalUIDispatch) {
         globalUIDispatch([card_obj = _card, renderer = renderer_for_lambda]() mutable {
@@ -148,8 +149,8 @@ void InsightCard::handleParsedData(std::shared_ptr<InsightParser> parser) {
         }
 
         if (needs_rebuild) {
-            Serial.printf("[InsightCard-%s] Rebuilding renderer. Old type: %d, New type: %d. Core: %d\n", 
-                id.c_str(), (int)_current_type, (int)new_insight_type, xPortGetCoreID());
+            Serial.printf("[InsightCard-%s] Rebuilding renderer START. Old type: %d, New type: %d. Core: %d, Card: %p, Container: %p\n", 
+                id.c_str(), (int)_current_type, (int)new_insight_type, xPortGetCoreID(), _card, _content_container);
 
             if (_active_renderer) {
                 _active_renderer->clearElements();
