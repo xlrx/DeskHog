@@ -5,6 +5,7 @@
 #include "renderers/NumericCardRenderer.h"
 #include "renderers/LineGraphRenderer.h"
 #include "renderers/FunnelRenderer.h"
+#include "hardware/Input.h"
 
 
 InsightCard::InsightCard(lv_obj_t* parent, ConfigManager& config, EventQueue& eventQueue,
@@ -216,4 +217,29 @@ void InsightCard::clearContentContainer() {
 
 bool InsightCard::isValidObject(lv_obj_t* obj) const {
     return obj && lv_obj_is_valid(obj);
+}
+
+bool InsightCard::handleButtonPress(uint8_t button_index) {
+    // Check if it's the center button
+    if (button_index == Input::BUTTON_CENTER) {
+        // Publish event to request a forced refresh
+        Event refreshEvent;
+        refreshEvent.type = EventType::INSIGHT_FORCE_REFRESH;
+        refreshEvent.insightId = _insight_id;
+        _event_queue.publishEvent(refreshEvent);
+        
+        // Update UI to show we're refreshing
+        if (globalUIDispatch) {
+            globalUIDispatch([this]() {
+                if (isValidObject(_title_label)) {
+                    lv_label_set_text(_title_label, "Refreshing...");
+                }
+            }, true);
+        }
+        
+        Serial.printf("[InsightCard-%s] Force refresh requested\n", _insight_id.c_str());
+        return true; // Event handled
+    }
+    
+    return false; // Not handled, pass to default handler
 }

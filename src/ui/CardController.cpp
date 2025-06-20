@@ -211,6 +211,9 @@ void CardController::initializeCardTypes() {
             // Add to our list of cards
             insightCards.push_back(newCard);
             
+            // Register as input handler
+            cardStack->registerInputHandler(newCard->getCard(), newCard);
+            
             // Request data for this insight immediately
             posthogClient.requestInsightData(configValue);
             Serial.printf("Requested insight data for: %s\n", configValue.c_str());
