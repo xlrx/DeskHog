@@ -426,6 +426,10 @@ void CardController::reconcileCards(const std::vector<CardConfig>& newConfigs) {
         // Force another LVGL refresh to ensure everything is properly laid out
         lv_refr_now(NULL);
         
+        // Force the card stack to update its pip indicators
+        // This ensures the indicators are correct after bulk card operations
+        cardStack->forceUpdateIndicators();
+        
         // Restore card position if possible (accounting for provisioning card at index 0)
         // If we had cards before and still have cards now, try to maintain position
         if (savedCardIndex > 0 && cardsCreated > 0) {

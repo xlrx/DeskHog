@@ -236,6 +236,17 @@ void CardNavigationStack::registerInputHandler(lv_obj_t* card, InputHandler* han
     _input_handlers.push_back(std::make_pair(card, handler));
 }
 
+void CardNavigationStack::forceUpdateIndicators() {
+    // Force update pip count
+    _update_pip_count();
+    
+    // Force update active indicator
+    _update_scroll_indicator(_current_card);
+    
+    // Force LVGL to redraw the indicator container
+    lv_obj_invalidate(_scroll_indicator);
+}
+
 void CardNavigationStack::_scroll_event_cb(lv_event_t* e) {
     lv_obj_t* cont = static_cast<lv_obj_t*>(lv_event_get_target(e));
     lv_area_t cont_a;
