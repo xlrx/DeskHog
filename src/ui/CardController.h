@@ -11,6 +11,7 @@
 #include "ui/ProvisioningCard.h"
 #include "ui/InsightCard.h"
 #include "ui/FriendCard.h"
+#include "ui/examples/HelloWorldCard.h"
 #include "hardware/DisplayInterface.h"
 #include "EventQueue.h"
 #include "config/CardConfig.h"
@@ -173,6 +174,11 @@ private:
      * @brief Create and initialize the animation card
      */
     void createAnimationCard();
+    
+    /**
+     * @brief Create and initialize the hello world card
+     */
+    void createHelloWorldCard();
     
 
     /**

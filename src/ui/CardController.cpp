@@ -83,9 +83,10 @@ void CardController::initialize(DisplayInterface* display) {
     // Load current card configuration and create cards
     currentCardConfigs = configManager.getCardConfigs();
     
-    // If no configuration exists, create a default friend card
+    // If no configuration exists, create default cards
     if (currentCardConfigs.empty()) {
         createAnimationCard();
+        createHelloWorldCard();
     }
     
     // If we have card configurations now, reconcile them
@@ -142,6 +143,25 @@ void CardController::createAnimationCard() {
     
     // Register the animation card as an input handler
     cardStack->registerInputHandler(animationCard->getCard(), animationCard);
+    
+    displayInterface->giveMutex();
+}
+
+void CardController::createHelloWorldCard() {
+    if (!displayInterface || !displayInterface->takeMutex(portMAX_DELAY)) {
+        return;
+    }
+    
+    // Create new hello world card
+    HelloWorldCard* helloCard = new HelloWorldCard(screen);
+    
+    if (helloCard && helloCard->getCard()) {
+        // Add to navigation stack
+        cardStack->addCard(helloCard->getCard());
+        
+        // Register as an input handler
+        cardStack->registerInputHandler(helloCard->getCard(), helloCard);
+    }
     
     displayInterface->giveMutex();
 }
@@ -249,6 +269,28 @@ void CardController::initializeCardTypes() {
         return nullptr;
     };
     registerCardType(friendDef);
+    
+    // Register HELLO_WORLD card type
+    CardDefinition helloDef;
+    helloDef.type = CardType::HELLO_WORLD;
+    helloDef.name = "Hello World";
+    helloDef.allowMultiple = true;
+    helloDef.needsConfigInput = false;
+    helloDef.configInputLabel = "";
+    helloDef.uiDescription = "A simple greeting card";
+    helloDef.factory = [this](const String& configValue) -> lv_obj_t* {
+        HelloWorldCard* newCard = new HelloWorldCard(screen);
+        
+        if (newCard && newCard->getCard()) {
+            // Register as input handler
+            cardStack->registerInputHandler(newCard->getCard(), newCard);
+            return newCard->getCard();
+        }
+        
+        delete newCard;
+        return nullptr;
+    };
+    registerCardType(helloDef);
 }
 
 void CardController::handleCardConfigChanged() {
