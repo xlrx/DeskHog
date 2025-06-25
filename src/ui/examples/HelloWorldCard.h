@@ -1,7 +1,7 @@
 #pragma once
 
 #include <lvgl.h>
-#include "InputHandler.h"
+#include "../InputHandler.h"
 
 class HelloWorldCard : public InputHandler {
 public:
