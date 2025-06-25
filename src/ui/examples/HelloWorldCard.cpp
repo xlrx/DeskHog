@@ -13,15 +13,6 @@ HelloWorldCard::HelloWorldCard(lv_obj_t* parent) : _card(nullptr), _label(nullpt
     lv_obj_center(_label); // Center the label on the card
 }
 
-HelloWorldCard::~HelloWorldCard() {
-    // Card deletion is managed by CardNavigationStack
-    // Only delete if we still own it (not managed by stack)
-    if (_card) {
-        lv_obj_del_async(_card);
-        _card = nullptr;
-    }
-}
-
 bool HelloWorldCard::handleButtonPress(uint8_t button_index) {
     // Toggle between black and white backgrounds
     static bool isBlack = true;
@@ -37,4 +28,14 @@ bool HelloWorldCard::handleButtonPress(uint8_t button_index) {
     isBlack = !isBlack; // Toggle the state
     
     return true; // We handled the button press
+}
+
+HelloWorldCard::~HelloWorldCard() {
+    // This function cleans up the card object when it's no longer needed
+    // Card deletion is managed by CardNavigationStack
+    // If the card happens to still exist, we'll delete it here
+    if (_card) {
+        lv_obj_del_async(_card);
+        _card = nullptr;
+    }
 }
