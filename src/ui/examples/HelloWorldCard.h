@@ -11,6 +11,7 @@ public:
     lv_obj_t* getCard() const { return _card; }
     
     bool handleButtonPress(uint8_t button_index) override;
+    void prepareForRemoval() override { _card = nullptr; }
 
 private:
     lv_obj_t* _card;

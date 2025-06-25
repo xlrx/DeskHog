@@ -14,6 +14,8 @@ HelloWorldCard::HelloWorldCard(lv_obj_t* parent) : _card(nullptr), _label(nullpt
 }
 
 HelloWorldCard::~HelloWorldCard() {
+    // Card deletion is managed by CardNavigationStack
+    // Only delete if we still own it (not managed by stack)
     if (_card) {
         lv_obj_del_async(_card);
         _card = nullptr;

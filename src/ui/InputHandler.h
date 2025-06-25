@@ -17,4 +17,13 @@ public:
      * @return true if the event was handled, false to pass to default handler
      */
     virtual bool handleButtonPress(uint8_t button_index) = 0;
+    
+    /**
+     * @brief Called when the card's LVGL object is being managed externally
+     * 
+     * This method is called when the card's LVGL object will be deleted
+     * by an external manager (like CardNavigationStack). The card should
+     * not delete its LVGL object in its destructor after this is called.
+     */
+    virtual void prepareForRemoval() {}
 }; 

@@ -348,6 +348,9 @@ void CardController::reconcileCards(const std::vector<CardConfig>& newConfigs) {
         for (auto& [cardType, cards] : dynamicCards) {
             for (auto& cardInstance : cards) {
                 if (cardInstance.lvglCard) {
+                    // Notify the card that its LVGL object will be managed externally
+                    cardInstance.handler->prepareForRemoval();
+                    // Remove from navigation stack (this deletes the LVGL object)
                     cardStack->removeCard(cardInstance.lvglCard);
                 }
                 delete cardInstance.handler;
