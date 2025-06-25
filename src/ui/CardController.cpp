@@ -24,7 +24,8 @@ CardController::CardController(
     cardStack(nullptr),
     provisioningCard(nullptr),
     animationCard(nullptr),
-    displayInterface(nullptr)
+    displayInterface(nullptr),
+    dynamicCards()
 {
 }
 
@@ -39,16 +40,18 @@ CardController::~CardController() {
     delete animationCard;
     animationCard = nullptr;
     
-    // Use mutex if available before cleaning up insight cards
+    // Use mutex if available before cleaning up dynamic cards
     if (displayInterface && displayInterface->getMutexPtr()) {
         xSemaphoreTake(*(displayInterface->getMutexPtr()), portMAX_DELAY);
     }
     
-    // Clean up insight cards
-    for (auto* card : insightCards) {
-        delete card;
+    // Clean up all dynamic cards using unified system
+    for (auto& [cardType, cards] : dynamicCards) {
+        for (auto& cardInstance : cards) {
+            delete cardInstance.handler;
+        }
     }
-    insightCards.clear();
+    dynamicCards.clear();
     
     // Release mutex if we took it
     if (displayInterface && displayInterface->getMutexPtr()) {
@@ -228,8 +231,9 @@ void CardController::initializeCardTypes() {
         );
         
         if (newCard && newCard->getCard()) {
-            // Add to our list of cards
-            insightCards.push_back(newCard);
+            // Add to unified tracking system
+            CardInstance instance{newCard, newCard->getCard()};
+            dynamicCards[CardType::INSIGHT].push_back(instance);
             
             // Register as input handler
             cardStack->registerInputHandler(newCard->getCard(), newCard);
@@ -256,16 +260,22 @@ void CardController::initializeCardTypes() {
     friendDef.uiDescription = "Get reassurance from Max the hedgehog";
     friendDef.factory = [this](const String& configValue) -> lv_obj_t* {
         // Create new friend card (ignore configValue for now)
-        animationCard = new FriendCard(screen);
+        FriendCard* newCard = new FriendCard(screen);
         
-        if (animationCard && animationCard->getCard()) {
+        if (newCard && newCard->getCard()) {
+            // Add to unified tracking system
+            CardInstance instance{newCard, newCard->getCard()};
+            dynamicCards[CardType::FRIEND].push_back(instance);
+            
+            // Keep legacy pointer for backwards compatibility
+            animationCard = newCard;
+            
             // Register as input handler
-            cardStack->registerInputHandler(animationCard->getCard(), animationCard);
-            return animationCard->getCard();
+            cardStack->registerInputHandler(newCard->getCard(), newCard);
+            return newCard->getCard();
         }
         
-        delete animationCard;
-        animationCard = nullptr;
+        delete newCard;
         return nullptr;
     };
     registerCardType(friendDef);
@@ -273,7 +283,7 @@ void CardController::initializeCardTypes() {
     // Register HELLO_WORLD card type
     CardDefinition helloDef;
     helloDef.type = CardType::HELLO_WORLD;
-    helloDef.name = "Hello World";
+    helloDef.name = "Hello, world!";
     helloDef.allowMultiple = true;
     helloDef.needsConfigInput = false;
     helloDef.configInputLabel = "";
@@ -282,6 +292,10 @@ void CardController::initializeCardTypes() {
         HelloWorldCard* newCard = new HelloWorldCard(screen);
         
         if (newCard && newCard->getCard()) {
+            // Add to unified tracking system
+            CardInstance instance{newCard, newCard->getCard()};
+            dynamicCards[CardType::HELLO_WORLD].push_back(instance);
+            
             // Register as input handler
             cardStack->registerInputHandler(newCard->getCard(), newCard);
             return newCard->getCard();
@@ -308,8 +322,12 @@ void CardController::reconcileCards(const std::vector<CardConfig>& newConfigs) {
         return;
     }
     
+    
     // Track the number of cards before reconciliation
-    size_t oldCardCount = insightCards.size() + (animationCard ? 1 : 0);
+    size_t oldCardCount = 0;
+    for (const auto& [cardType, cards] : dynamicCards) {
+        oldCardCount += cards.size();
+    }
     
     reconcileInProgress = true;
     
@@ -326,22 +344,19 @@ void CardController::reconcileCards(const std::vector<CardConfig>& newConfigs) {
         // Simple approach: Clear everything and rebuild from scratch
         // This avoids complex diffing logic that can cause sync issues
         
-        // First, remove all existing dynamic cards
-        // Remove insight cards
-        for (auto* card : insightCards) {
-            if (card && card->getCard()) {
-                cardStack->removeCard(card->getCard());
+        // Remove all existing dynamic cards using unified system
+        for (auto& [cardType, cards] : dynamicCards) {
+            for (auto& cardInstance : cards) {
+                if (cardInstance.lvglCard) {
+                    cardStack->removeCard(cardInstance.lvglCard);
+                }
+                delete cardInstance.handler;
             }
-            delete card;
         }
-        insightCards.clear();
+        dynamicCards.clear();
         
-        // Remove animation/friend card
-        if (animationCard && animationCard->getCard()) {
-            cardStack->removeCard(animationCard->getCard());
-            delete animationCard;
-            animationCard = nullptr;
-        }
+        // Clear legacy pointer
+        animationCard = nullptr;
         
         // Force LVGL to process all pending operations
         lv_refr_now(NULL);
