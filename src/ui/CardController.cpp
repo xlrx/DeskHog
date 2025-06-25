@@ -86,11 +86,8 @@ void CardController::initialize(DisplayInterface* display) {
     // Load current card configuration and create cards
     currentCardConfigs = configManager.getCardConfigs();
     
-    // If no configuration exists, create default cards
-    if (currentCardConfigs.empty()) {
-        createAnimationCard();
-        createHelloWorldCard();
-    }
+    // Don't create any default cards when no configuration exists
+    // Only the provisioning card will be shown
     
     // If we have card configurations now, reconcile them
     if (!currentCardConfigs.empty()) {
