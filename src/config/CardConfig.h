@@ -8,8 +8,9 @@
  * @brief Enum to uniquely identify each type of card available in the system
  */
 enum class CardType {
-    INSIGHT,    ///< PostHog insight visualization card
-    FRIEND      ///< Walking animation/encouragement card
+    INSIGHT,      ///< PostHog insight visualization card
+    FRIEND,       ///< Walking animation/encouragement card
+    HELLO_WORLD   ///< Simple hello world card
     // New card types can be added here
 };
 
@@ -77,6 +78,7 @@ inline String cardTypeToString(CardType type) {
     switch (type) {
         case CardType::INSIGHT: return "INSIGHT";
         case CardType::FRIEND: return "FRIEND";
+        case CardType::HELLO_WORLD: return "HELLO_WORLD";
         default: return "UNKNOWN";
     }
 }
@@ -89,5 +91,6 @@ inline String cardTypeToString(CardType type) {
 inline CardType stringToCardType(const String& str) {
     if (str == "INSIGHT") return CardType::INSIGHT;
     if (str == "FRIEND") return CardType::FRIEND;
+    if (str == "HELLO_WORLD") return CardType::HELLO_WORLD;
     return CardType::INSIGHT; // Default fallback
 }
