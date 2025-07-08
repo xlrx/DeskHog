@@ -49,7 +49,7 @@ From here, attach the battery to the board and attempt to lay the board into its
 
 Once assembled, you can scan DeskHog’s QR code to access its configuration portal. You can also connect directly from any computer by choosing the WiFi SSID shown under the QR code from your machine’s WiFi menu.
 
-After you give DeskHog WiFi credentials, you can access the portal again anytime by visiting its IP in your web browser. DeskHog’s status card, always shown at the top of the stack, will show its IP.
+After you give DeskHog WiFi credentials, you can access the portal again anytime by visiting its IP in your web browser. DeskHog’s status card, always shown at the top of the stack, will show its IP. You should also update to the latest firmware via the portal.
 
 The project includes a `Hello, world!` card in `src/ui/examples`. You can start noodling with it immediately. To add or remove the card, visit DeskHog’s configuration portal.
 
