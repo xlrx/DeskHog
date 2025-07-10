@@ -162,7 +162,7 @@ This project relies on the powerful [LVGL project](https://docs.lvgl.io/9.2/intr
 
 ### PNG sprite system
 
-The project includes a `png2c.py` script that automatically converts PNG images into LVGL-compatible C arrays. This makes it easy to add sprite-based animations and graphics to DeskHog. The script runs before each build, so your sprites are always up to date.
+The project includes a `png2c.py` script that automatically converts PNG images into LVGL-compatible C arrays. This makes it easy to add sprite-based animations and graphics to DeskHog. The script runs before each build, so your sprites are always up to date. Beware: the board has limited storage and we already use most of it. Optimize your images aggressively and use PNG files sparingly.
 
 #### How it works
 
