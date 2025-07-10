@@ -18,6 +18,7 @@
 #include "EventQueue.h"
 #include "config/CardConfig.h"
 #include "UICallback.h"
+#include "ui/QuestionCard.h"
 
 /**
  * @class CardController

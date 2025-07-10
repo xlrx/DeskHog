@@ -328,6 +328,32 @@ void CardController::initializeCardTypes() {
         return nullptr;
     };
     registerCardType(flappyDef);
+    
+    // Register QUESTION card type
+    CardDefinition questionDef;
+    questionDef.type = CardType::QUESTION;
+    questionDef.name = "Question Card";
+    questionDef.allowMultiple = false;  // Only one question card at a time
+    questionDef.needsConfigInput = false;
+    questionDef.configInputLabel = "";
+    questionDef.uiDescription = "Break the ice with your coworkers.";
+    questionDef.factory = [this](const String& configValue) -> lv_obj_t* {
+        QuestionCard* newCard = new QuestionCard(screen);
+        
+        if (newCard && newCard->getCard()) {
+            // Add to unified tracking system
+            CardInstance instance{newCard, newCard->getCard()};
+            dynamicCards[CardType::QUESTION].push_back(instance);
+            
+            // Register as input handler
+            cardStack->registerInputHandler(newCard->getCard(), newCard);
+            return newCard->getCard();
+        }
+        
+        delete newCard;
+        return nullptr;
+    };
+    registerCardType(questionDef);
 }
 
 void CardController::handleCardConfigChanged() {
