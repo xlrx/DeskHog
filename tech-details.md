@@ -166,9 +166,9 @@ The project includes a `png2c.py` script that automatically converts PNG images 
 
 #### How it works
 
-1. **Place PNG files in subdirectories** under `sprites/`:
+1. **Place PNG files in subdirectories** under `raw-png/`:
    ```
-   sprites/
+   raw-png/
    ├── walking/
    │   ├── frame_01.png
    │   ├── frame_02.png

@@ -240,10 +240,11 @@ extern "C" {
 
 # When run as a PlatformIO script
 try:
-    Import("env")
+    # PlatformIO's Import function is only available in their environment
+    Import("env")  # noqa: F821
     # Run the conversion when called by PlatformIO
     main()
-except:
+except NameError:
     # When run standalone
     if __name__ == "__main__":
         main() 
