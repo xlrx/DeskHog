@@ -481,6 +481,11 @@ void CardController::processUIQueue() {
             delete callback_ptr;
         }
     }
+    
+    // Update active card (for games and other interactive cards)
+    if (cardStack) {
+        cardStack->updateActiveCard();
+    }
 }
 
 void CardController::dispatchToLVGLTask(std::function<void()> update_func, bool to_front) {

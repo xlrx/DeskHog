@@ -46,15 +46,12 @@ public:
     void prepareForRemoval() override;
     
     /**
-     * @brief Main game loop - should be called regularly when card is active
+     * @brief Update the game state
+     * 
+     * Called regularly when the card is active/visible.
+     * @return true to continue receiving updates
      */
-    void loop();
-    
-    /**
-     * @brief Check if this card is currently active
-     * @return true if the card is the currently visible card
-     */
-    bool isActive() const;
+    bool update() override;
 
 private:
     FlappyBirdGame* game;           ///< The actual game instance

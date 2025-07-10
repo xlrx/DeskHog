@@ -247,6 +247,21 @@ void CardNavigationStack::forceUpdateIndicators() {
     lv_obj_invalidate(_scroll_indicator);
 }
 
+void CardNavigationStack::updateActiveCard() {
+    // Get the current card
+    lv_obj_t* currentCard = lv_obj_get_child(_main_container, _current_card);
+    if (!currentCard) return;
+    
+    // Find the input handler for this card
+    for (const auto& handler_pair : _input_handlers) {
+        if (handler_pair.first == currentCard) {
+            // Call update on the handler
+            handler_pair.second->update();
+            break;
+        }
+    }
+}
+
 void CardNavigationStack::_scroll_event_cb(lv_event_t* e) {
     lv_obj_t* cont = static_cast<lv_obj_t*>(lv_event_get_target(e));
     lv_area_t cont_a;
