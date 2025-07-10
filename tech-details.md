@@ -159,3 +159,63 @@ This project relies on the powerful [LVGL project](https://docs.lvgl.io/9.2/intr
 ### Config manager and captive portal
 
 `ConfigManager` handles persistent storage and retrieval of credentials and insights. `CaptivePortal` provides the web server and interacts with `ConfigManager` to read and write to persistent storage.
+
+### PNG sprite system
+
+The project includes a `png2c.py` script that automatically converts PNG images into LVGL-compatible C arrays. This makes it easy to add sprite-based animations and graphics to DeskHog.
+
+#### How it works
+
+1. **Place PNG files in subdirectories** under `sprites/`:
+   ```
+   sprites/
+   ├── walking/
+   │   ├── frame_01.png
+   │   ├── frame_02.png
+   │   └── frame_03.png
+   ├── idle/
+   │   ├── idle_01.png
+   │   └── idle_02.png
+   └── attack/
+       └── attack_01.png
+   ```
+
+2. **Run the conversion script**:
+   ```bash
+   python3 png2c.py
+   ```
+
+3. **Generated output**:
+   - Individual header/source files for each sprite in `include/sprites/`
+   - Filenames are preserved (e.g., `frame_01.png` → `sprite_frame_01.h/c`)
+   - A master `sprites.h` and `sprites.c` containing arrays for each subdirectory
+
+#### Using sprites in your code
+
+```cpp
+#include "sprites/sprites.h"
+
+// Access the walking animation array
+lv_obj_t* img = lv_img_create(parent);
+lv_img_set_src(img, &walking_sprites[0]);  // First frame
+
+// Animate through frames
+for (int i = 0; i < walking_sprites_count; i++) {
+    lv_img_set_src(img, walking_sprites[i]);
+    // Add delay or use LVGL animation
+}
+```
+
+#### Features
+
+- **Automatic grouping**: Each subdirectory gets its own array (e.g., `walking_sprites[]`, `idle_sprites[]`)
+- **Count variables**: Each array has a corresponding count (e.g., `walking_sprites_count`)
+- **LVGL compatible**: Generates ARGB8888 format data structures that work directly with LVGL 9.x
+
+#### Requirements
+
+- Python 3
+- Pillow and numpy (required):
+  ```bash
+  pip install Pillow numpy
+  ```
