@@ -148,6 +148,54 @@ The web UI automatically displays available card types with:
 
 No web UI changes are needed when adding new card types - everything is driven by the card registration system.
 
+#### Creating game-like cards
+
+Cards that need regular updates (games, animations, real-time visualizations) can use the `InputHandler::update()` method:
+
+```cpp
+// 1. Your card class should inherit from InputHandler
+class FlappyHogCard : public InputHandler {
+public:
+    // Handle button presses (required by InputHandler)
+    bool handleButtonPress(uint8_t button_index) override {
+        // Return false to allow navigation, true if you handled it
+        return false;
+    }
+    
+    // Update method for game logic (called ~60 times per second)
+    bool update() override {
+        if (game) {
+            game->loop();  // Update game state
+            return true;   // Continue receiving updates
+        }
+        return false;      // Stop updates
+    }
+    
+    // Required for proper cleanup
+    void prepareForRemoval() override {
+        // Called before LVGL object deletion
+    }
+};
+
+// 2. Register the card with an InputHandler
+helloDef.factory = [this](const String& configValue) -> lv_obj_t* {
+    FlappyHogCard* newCard = new FlappyHogCard(screen);
+    if (newCard && newCard->getCard()) {
+        // Register as InputHandler to receive updates
+        cardStack->registerInputHandler(newCard->getCard(), newCard);
+        return newCard->getCard();
+    }
+    delete newCard;
+    return nullptr;
+};
+```
+
+The `update()` method is automatically called by the UI system when your card is active/visible. This approach:
+- Works within the existing task/core architecture
+- Doesn't require creating new tasks or timers
+- Automatically stops updates when the card isn't visible
+- Maintains proper thread safety through the existing UI queue system
+
 ### Insight parser and PostHog client
 
 `InsightParser` ingests PostHog API responses and makes them available to the UI. `PostHogClient` constructs requests and dispatches responses.
