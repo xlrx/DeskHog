@@ -75,7 +75,7 @@ lv_obj_t* QuestionCard::createStyledLabel(lv_obj_t* parent,
     if (x_offset == -1)  _cont        = cont;
     else                 _shadow_cont = cont;
 
-    lv_obj_set_size(cont, lv_pct(90), lv_pct(80));
+    lv_obj_set_size(cont, lv_pct(90), lv_pct(100));
     lv_obj_set_style_bg_opa   (cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(cont, 0, 0);
     lv_obj_set_scroll_dir     (cont, LV_DIR_VER);
