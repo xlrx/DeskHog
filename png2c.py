@@ -8,9 +8,20 @@ try:
     from PIL import Image
     import numpy as np
 except ImportError:
-    print("Error: PIL (Pillow) and numpy are required for sprite conversion.")
-    print("Install with: pip install Pillow numpy")
-    sys.exit(1)
+    print("\n" + "="*60)
+    print("WARNING: Sprite conversion skipped - PIL/Pillow not available")
+    print("="*60)
+    print("\nThe png2c.py script requires PIL (Pillow) and numpy to convert sprites.")
+    print("PlatformIO uses its own Python environment, separate from your system Python.")
+    print("\nTo install in PlatformIO's Python environment:")
+    print("  ~/.platformio/penv/bin/pip install Pillow numpy")
+    print("\nOr on Windows:")
+    print("  %USERPROFILE%\\.platformio\\penv\\Scripts\\pip install Pillow numpy")
+    print("\nAlternatively, you can run the script manually before building:")
+    print("  python3 png2c.py")
+    print("\nContinuing build without sprite conversion...")
+    print("="*60 + "\n")
+    sys.exit(0)  # Exit gracefully to allow build to continue
 
 def png_to_c_array(png_file, output_dir, var_name_override=None):
     """Convert PNG file to LVGL compatible C array"""
@@ -227,5 +238,12 @@ extern "C" {
     for subdir in sorted(all_sprite_groups.keys()):
         print(f"  - {subdir}: {len(all_sprite_groups[subdir])} sprites")
 
-if __name__ == "__main__":
-    main() 
+# When run as a PlatformIO script
+try:
+    Import("env")
+    # Run the conversion when called by PlatformIO
+    main()
+except:
+    # When run standalone
+    if __name__ == "__main__":
+        main() 
