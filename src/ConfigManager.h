@@ -4,6 +4,7 @@
 #include <Preferences.h>
 #include <vector>
 #include "EventQueue.h"
+#include "config/CardConfig.h"
 
 /**
  * @class ConfigManager
@@ -85,6 +86,18 @@ public:
     void setTeamId(int teamId);
 
     /**
+     * @brief Store region of the project
+     * @param region The region of the project
+     */
+    void setRegion(String region);
+
+        /**
+     * @brief Retrieve stored region of the project
+     * @return The region of the project
+     */
+    String getRegion();
+
+    /**
      * @brief Retrieve stored team identifier
      * @return The team ID or NO_TEAM_ID if not set
      */
@@ -113,45 +126,21 @@ public:
      */
     void clearApiKey();
 
+
     /**
-     * @brief Store insight configuration
-     * @param id Unique insight identifier
-     * @param title Insight title/configuration
+     * @brief Get all configured cards from persistent storage
+     * @return Vector of CardConfig objects representing enabled cards
+     */
+    std::vector<CardConfig> getCardConfigs();
+
+    /**
+     * @brief Save card configurations to persistent storage
+     * @param configs Vector of CardConfig objects to save
      * @return true if saved successfully, false otherwise
      */
-    bool saveInsight(const String& id, const String& title);
-
-    /**
-     * @brief Retrieve stored insight configuration
-     * @param id Insight identifier to retrieve
-     * @return The insight configuration or empty string if not found
-     */
-    String getInsight(const String& id);
-
-    /**
-     * @brief Remove stored insight configuration
-     * @param id Insight identifier to remove
-     */
-    void deleteInsight(const String& id);
-
-    /**
-     * @brief Get all stored insight identifiers
-     * @return Vector of insight IDs
-     */
-    std::vector<String> getAllInsightIds();
+    bool saveCardConfigs(const std::vector<CardConfig>& configs);
 
 private:
-    /**
-     * @brief Updates the internal list of insight IDs in preferences
-     * 
-     * Maintains a special "_id_list" key in preferences that stores all insight IDs
-     * as a comma-separated string. This list is used by getAllInsightIds() to track
-     * which insights are currently stored.
-     * 
-     * @param ids Vector of insight IDs to store
-     * @note Calls commit() after updating the list
-     */
-    void updateIdList(const std::vector<String>& ids);
     
     /**
      * @brief Validates and updates the API configuration state
@@ -175,10 +164,12 @@ private:
     // Preferences instances for persistent storage
     Preferences _preferences;      ///< Main preferences storage instance
     Preferences _insightsPrefs;   ///< Separate storage for insight data
+    Preferences _cardPrefs;       ///< Separate storage for card configurations
 
     // Namespace constants for preferences organization
     const char* _namespace = "wifi_config";        ///< Namespace for WiFi and general config
     const char* _insightsNamespace = "insights";   ///< Namespace for insight data
+    const char* _cardNamespace = "cards";          ///< Namespace for card configurations
 
     // Storage keys for WiFi configuration
     const char* _ssidKey = "ssid";                ///< Key for stored WiFi SSID
@@ -188,6 +179,8 @@ private:
     // Storage keys for API configuration
     const char* _teamIdKey = "team_id";           ///< Key for stored team ID
     const char* _apiKeyKey = "api_key";           ///< Key for stored API key
+    const char* _regionKey = "region";           ///< Key for stored region
+
 
     // Storage size limits
     /** @brief Maximum length for WiFi SSID (per IEEE 802.11 spec) */

@@ -98,7 +98,8 @@ void FunnelRenderer::createElements(lv_obj_t* parent_container) {
     // Serial.println("[FunnelRenderer] Funnel elements created successfully.");
 }
 
-void FunnelRenderer::updateDisplay(InsightParser& parser, const String& title_str) {
+void FunnelRenderer::updateDisplay(InsightParser& parser, const String& title_str, const char* prefix, const char* suffix) {
+    // prefix and suffix are ignored for FunnelRenderer.
     Serial.printf("[FunnelRenderer] updateDisplay for title: %s\n", title_str.c_str()); // Verify this is called
 
     size_t raw_step_count = parser.getFunnelStepCount();

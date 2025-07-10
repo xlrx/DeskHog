@@ -6,4 +6,4 @@ alwaysApply: false
 
 Do not reinvent pin names or redefine them. Refer to the board definition's pins file whenever a pin is needed:
 
-.platformio/packages/framework-arduinoespressif32/variants/adafruit_feather_esp32s3_reversetft/pins_arduino.h
+~/.platformio/packages/framework-arduinoespressif32/variants/adafruit_feather_esp32s3_reversetft/pins_arduino.h

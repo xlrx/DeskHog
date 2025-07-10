@@ -8,6 +8,7 @@
 #include "EventQueue.h"
 #include "posthog/parsers/InsightParser.h"
 #include "UICallback.h"
+#include "ui/InputHandler.h"
 
 // Forward declaration for the renderer base class
 class InsightRendererBase;
@@ -27,7 +28,7 @@ class InsightRendererBase;
  * - Memory-safe LVGL object management
  * - Smart number formatting with unit scaling (K, M)
  */
-class InsightCard {
+class InsightCard : public InputHandler {
 public:
     /**
      * @brief Constructor
@@ -70,32 +71,15 @@ public:
     String getInsightId() const { return _insight_id; }
 
     /**
-     * @brief Initialize the UI update queue
+     * @brief Handle button press events
      * 
-     * Creates a FreeRTOS queue for handling UI updates across threads.
-     * Must be called once before any InsightCards are created.
+     * @param button_index The index of the button that was pressed
+     * @return true if the event was handled, false otherwise
+     * 
+     * Handles center button (button 1) to force refresh insight data
      */
-    static void initUIQueue();
-
-    /**
-     * @brief Process pending UI updates
-     * 
-     * Processes all queued UI updates in the LVGL task context.
-     * Should be called regularly from the LVGL handler task.
-     * Forces immediate screen refresh after processing updates.
-     */
-    static void processUIQueue();
-    
-    /**
-     * @brief Thread-safe method to dispatch UI updates to the LVGL task
-     * 
-     * @param update Lambda function containing UI operations
-     * @param to_front If true, tries to add the callback to the front of the queue
-     * 
-     * Queues UI operations to be executed on the LVGL thread.
-     * Handles queue overflow by discarding updates if queue is full.
-     */
-    static void dispatchToLVGLTask(std::function<void()> update_func, bool to_front = false);
+    bool handleButtonPress(uint8_t button_index) override;
+    void prepareForRemoval() override { _card = nullptr; }
 
 private:
     // Constants for UI layout and limits
@@ -108,7 +92,6 @@ private:
     static constexpr int FUNNEL_LEFT_MARGIN = 0;   ///< Left margin for funnel bars
     static constexpr int FUNNEL_LABEL_HEIGHT = 20; ///< Height of funnel step labels
 
-    static QueueHandle_t uiQueue;  ///< Queue for thread-safe UI updates
     
     /**
      * @brief Handle events from the event queue
@@ -153,6 +136,7 @@ private:
     ConfigManager& _config;              ///< Configuration manager reference
     EventQueue& _event_queue;            ///< Event queue reference
     String _insight_id;                  ///< Unique insight identifier
+    String _current_title;               ///< Current card title
     InsightParser::InsightType _current_type; ///< Current visualization type
     
     // UI Elements

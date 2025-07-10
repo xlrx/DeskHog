@@ -14,9 +14,8 @@
  * @brief Event types in the system
  */
 enum class EventType {
-    INSIGHT_ADDED,
-    INSIGHT_DELETED,
     INSIGHT_DATA_RECEIVED,
+    INSIGHT_FORCE_REFRESH,
     WIFI_CREDENTIALS_FOUND,
     NEED_WIFI_CREDENTIALS,
     WIFI_CONNECTING,
@@ -24,7 +23,9 @@ enum class EventType {
     WIFI_CONNECTION_FAILED,
     WIFI_AP_STARTED,
     OTA_PROCESS_START,
-    OTA_PROCESS_END
+    OTA_PROCESS_END,
+    CARD_CONFIG_CHANGED,
+    CARD_TITLE_UPDATED
 };
 
 /**
@@ -35,6 +36,7 @@ struct Event {
     String insightId;                       // ID of the insight related to the event
     std::shared_ptr<InsightParser> parser;  // Optional parsed insight data
     String jsonData;                        // Raw JSON data for insights
+    String title;                           // Title/name for card title updates
     
     Event() {}
     
@@ -45,6 +47,15 @@ struct Event {
         
     Event(EventType t, const String& id, const String& json)
         : type(t), insightId(id), parser(nullptr), jsonData(json) {}
+        
+    // Constructor for title update events
+    static Event createTitleUpdateEvent(const String& id, const String& title_text) {
+        Event e;
+        e.type = EventType::CARD_TITLE_UPDATED;
+        e.insightId = id;
+        e.title = title_text;
+        return e;
+    }
 };
 
 /**
