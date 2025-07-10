@@ -13,6 +13,7 @@
 #include "ui/InsightCard.h"
 #include "ui/FriendCard.h"
 #include "ui/examples/HelloWorldCard.h"
+#include "ui/FlappyHogCard.h"
 #include "hardware/DisplayInterface.h"
 #include "EventQueue.h"
 #include "config/CardConfig.h"

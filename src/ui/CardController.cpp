@@ -302,6 +302,32 @@ void CardController::initializeCardTypes() {
         return nullptr;
     };
     registerCardType(helloDef);
+    
+    // Register FLAPPY_HOG card type
+    CardDefinition flappyDef;
+    flappyDef.type = CardType::FLAPPY_HOG;
+    flappyDef.name = "Flappy Hog";
+    flappyDef.allowMultiple = false;  // Only one game instance at a time
+    flappyDef.needsConfigInput = false;
+    flappyDef.configInputLabel = "";
+    flappyDef.uiDescription = "One button. Endless frustration. Infinite glory.";
+    flappyDef.factory = [this](const String& configValue) -> lv_obj_t* {
+        FlappyHogCard* newCard = new FlappyHogCard(screen);
+        
+        if (newCard && newCard->getCard()) {
+            // Add to unified tracking system
+            CardInstance instance{newCard, newCard->getCard()};
+            dynamicCards[CardType::FLAPPY_HOG].push_back(instance);
+            
+            // Register as input handler
+            cardStack->registerInputHandler(newCard->getCard(), newCard);
+            return newCard->getCard();
+        }
+        
+        delete newCard;
+        return nullptr;
+    };
+    registerCardType(flappyDef);
 }
 
 void CardController::handleCardConfigChanged() {
@@ -454,6 +480,11 @@ void CardController::processUIQueue() {
             callback_ptr->execute();
             delete callback_ptr;
         }
+    }
+    
+    // Update active card (for games and other interactive cards)
+    if (cardStack) {
+        cardStack->updateActiveCard();
     }
 }
 

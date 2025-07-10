@@ -26,4 +26,14 @@ public:
      * not delete its LVGL object in its destructor after this is called.
      */
     virtual void prepareForRemoval() {}
+    
+    /**
+     * @brief Update method for cards that need regular updates (e.g., games)
+     * 
+     * This method is called regularly when the card is active/visible.
+     * Cards that don't need updates can use the default empty implementation.
+     * 
+     * @return true if the card needs continuous updates, false to stop updates
+     */
+    virtual bool update() { return false; }
 }; 
