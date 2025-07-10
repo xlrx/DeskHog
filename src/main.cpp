@@ -34,6 +34,8 @@
 #include "EventQueue.h"
 #include "esp_partition.h" // Include for partition functions
 #include "OtaManager.h"
+#include <esp_sleep.h> // Added for deep sleep functionality
+#include <esp_pm.h> // Added for power management
 
 // Display dimensions
 #define SCREEN_WIDTH 240
@@ -106,24 +108,61 @@ void lvglHandlerTask(void* parameter) {
     TickType_t lastButtonCheck = xTaskGetTickCount();
     const TickType_t buttonCheckInterval = pdMS_TO_TICKS(50); // Check buttons every 50ms
     
+    static unsigned long powerOffPressStartTime = 0;
+    // static bool upPressedState = false; // Unused
+    // static bool downPressedState = false; // Unused
+
     while (1) {
         // Handle LVGL tasks
         displayInterface->handleLVGLTasks();
 
-        InsightCard::processUIQueue();
+        cardController->processUIQueue();
         
         // Poll buttons at regular intervals
         TickType_t currentTime = xTaskGetTickCount();
         if ((currentTime - lastButtonCheck) >= buttonCheckInterval) {
             lastButtonCheck = currentTime;
             
-            // Poll all buttons
+            // Update all buttons first
             for (int i = 0; i < NUM_BUTTONS; i++) {
                 buttons[i].update();
-                
-                if (buttons[i].pressed()) {
-                    // Process button directly in LVGL context
-                    cardController->getCardStack()->handleButtonPress(i);
+            }
+
+            // Get current state of UP and DOWN buttons
+            // BUTTON_UP is pressed when HIGH (INPUT_PULLDOWN)
+            // BUTTON_DOWN is pressed when LOW (INPUT_PULLUP)
+            bool centerButtonHeld = (buttons[Input::BUTTON_CENTER].read() == HIGH);
+            bool downButtonHeld = (buttons[Input::BUTTON_DOWN].read() == LOW);
+
+            if (centerButtonHeld && downButtonHeld) {
+                if (powerOffPressStartTime == 0) { // Both pressed, start timer
+                    powerOffPressStartTime = millis();
+                } else {
+                    if (millis() - powerOffPressStartTime >= 2000) { // Held for 2 seconds
+                        Serial.println("Simultaneous CENTER and DOWN hold for 2s detected. Entering deep sleep.");
+                        // Optional: Turn off display backlight or other peripherals before sleep
+                        // displayInterface->setBacklight(0); // Example if such a function exists
+                        esp_deep_sleep_start();
+                    }
+                }
+            } else {
+                // If either button is released or not simultaneously pressed, reset the timer
+                powerOffPressStartTime = 0;
+
+                // Process individual button presses if power-off sequence is not active or completed.
+                // Check .pressed() for single press actions (triggers on state change).
+                // This ensures that navigation still works if the power-off combo isn't fully executed.
+                if (buttons[Input::BUTTON_UP].pressed()) {
+                    // Ensure this doesn't trigger if it was part of the combo that just got released
+                    // However, .pressed() fires on the transition, so if it was held and released, 
+                    // it won't fire again here unless pressed again separately.
+                    cardController->getCardStack()->handleButtonPress(Input::BUTTON_UP);
+                }
+                if (buttons[Input::BUTTON_DOWN].pressed()) {
+                    cardController->getCardStack()->handleButtonPress(Input::BUTTON_DOWN);
+                }
+                if (buttons[Input::BUTTON_CENTER].pressed()) {
+                    cardController->getCardStack()->handleButtonPress(Input::BUTTON_CENTER);
                 }
             }
         }
@@ -157,6 +196,20 @@ void setup() {
         while(1); // Stop here if PSRAM init fails
     }
 
+    // Configure power management for automatic light sleep
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = 240,  // Maximum CPU frequency
+        .min_freq_mhz = 10,   // Minimum CPU frequency when idle
+        .light_sleep_enable = true  // Enable automatic light sleep
+    };
+    
+    esp_err_t pm_result = esp_pm_configure(&pm_config);
+    if (pm_result == ESP_OK) {
+        Serial.println("Power management configured: Light sleep enabled");
+    } else {
+        Serial.printf("Failed to configure power management: %s\n", esp_err_to_name(pm_result));
+    }
+    
     // Add Partition Logging Here
     Serial.println("--- Partition Table Info ---");
     esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
@@ -178,7 +231,7 @@ void setup() {
     }
     Serial.println("--------------------------");
 
-    InsightCard::initUIQueue();
+    // UI queue will be initialized by CardController
 
 
     SystemController::begin();
@@ -215,6 +268,13 @@ void setup() {
     // Initialize buttons
     Input::configureButtons();
     
+    // Configure GPIO wakeup for buttons to wake from light sleep
+    gpio_wakeup_enable((gpio_num_t)Input::BUTTON_UP, GPIO_INTR_HIGH_LEVEL);
+    gpio_wakeup_enable((gpio_num_t)Input::BUTTON_DOWN, GPIO_INTR_LOW_LEVEL);  
+    gpio_wakeup_enable((gpio_num_t)Input::BUTTON_CENTER, GPIO_INTR_HIGH_LEVEL);
+    esp_sleep_enable_gpio_wakeup();
+    Serial.println("GPIO wakeup configured for buttons");
+    
     // Create and initialize card controller
     cardController = new CardController(
         lv_scr_act(),
@@ -233,7 +293,7 @@ void setup() {
     otaManager = new OtaManager(CURRENT_FIRMWARE_VERSION, "PostHog", "DeskHog");
     
     // Initialize captive portal
-    captivePortal = new CaptivePortal(*configManager, *wifiInterface, *eventQueue, *otaManager);
+    captivePortal = new CaptivePortal(*configManager, *wifiInterface, *eventQueue, *otaManager, *cardController);
     captivePortal->begin();
     
     // Create task for WiFi operations

@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <queue>
 #include <vector>
 #include <set>
@@ -41,11 +42,12 @@ public:
      * @brief Queue an insight for immediate fetch
      * 
      * @param insight_id ID of insight to fetch
+     * @param forceRefresh If true, force recalculation instead of using cache
      * 
      * Adds insight to request queue with retry count of 0.
      * Will be processed in FIFO order.
      */
-    void requestInsightData(const String& insight_id);
+    void requestInsightData(const String& insight_id, bool forceRefresh = false);
     
     /**
      * @brief Check if client is ready for operation
@@ -73,6 +75,7 @@ private:
     struct QueuedRequest {
         String insight_id;     ///< ID of insight to fetch
         uint8_t retry_count;   ///< Number of retry attempts
+        bool force_refresh;    ///< Force recalculation instead of cache
     };
     
     // Configuration
@@ -83,15 +86,23 @@ private:
     std::set<String> requested_insights;  ///< All known insight IDs
     std::queue<QueuedRequest> request_queue; ///< Queue of pending requests
     bool has_active_request;               ///< Request in progress flag
+    WiFiClientSecure _secureClient;        ///< Secure WiFi client for HTTPS
     HTTPClient _http;                      ///< HTTP client instance
     unsigned long last_refresh_check;       ///< Last refresh timestamp
     
     // Constants
     static const char* BASE_URL;                        ///< PostHog API base URL
-    static const unsigned long REFRESH_INTERVAL = 30000; ///< Refresh every 30s
+    static const unsigned long REFRESH_INTERVAL = 60000 * 30; ///< Refresh every 30 minutes
     static const uint8_t MAX_RETRIES = 3;              ///< Max retry attempts
     static const unsigned long RETRY_DELAY = 1000;      ///< Delay between retries
     
+
+
+        /**
+     * @brief Build Base API URL based on project region
+     */
+    String buildBaseUrl() const;
+
     /**
      * @brief Handle system state changes
      * @param state New system state
@@ -117,9 +128,10 @@ private:
      * 
      * @param insight_id ID of insight to fetch
      * @param response String to store response
+     * @param forceRefresh If true, force recalculation instead of using cache
      * @return true if fetch was successful
      */
-    bool fetchInsight(const String& insight_id, String& response);
+    bool fetchInsight(const String& insight_id, String& response, bool forceRefresh = false);
     
     /**
      * @brief Build insight API URL
