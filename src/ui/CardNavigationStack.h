@@ -78,17 +78,10 @@ public:
     uint8_t getCurrentIndex() const;
     
     /**
-     * @brief Get LVGL object of a specific card
-     * @param index Zero-based index of target card
-     * @return LVGL object of the specified card
+     * @brief Get the total number of cards in the stack
+     * @return Total card count
      */
-    lv_obj_t* getCardObjectByIndex(uint8_t index) const;
-    
-    /**
-     * @brief Get number of cards in the stack
-     * @return Number of cards in the stack
-     */
-    uint8_t getCardCount() const;
+    uint32_t getCardCount() const;
     
     /**
      * @brief Set mutex for thread-safe button handling
@@ -111,6 +104,14 @@ public:
      * @param handler InputHandler implementation
      */
     void registerInputHandler(lv_obj_t* card, InputHandler* handler);
+    
+    /**
+     * @brief Force update of pip indicators
+     * 
+     * Explicitly updates pip count and active indicator.
+     * Useful after bulk card operations to ensure UI consistency.
+     */
+    void forceUpdateIndicators();
     
 private:
     /**
