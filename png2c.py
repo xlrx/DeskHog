@@ -129,11 +129,11 @@ def main():
     output_dir = "include/sprites"
     os.makedirs(output_dir, exist_ok=True)
     
-    # Find all PNG files in the sprites directory (including subdirectories)
-    png_files = sorted(glob.glob("sprites/**/*.png", recursive=True))
+    # Find all PNG files in the raw-png directory (including subdirectories)
+    png_files = sorted(glob.glob("raw-png/**/*.png", recursive=True))
     
     if not png_files:
-        print("No PNG files found in sprites directory!")
+        print("No PNG files found in raw-png directory!")
         sys.exit(1)
     
     print(f"Found {len(png_files)} PNG files to process")
@@ -141,8 +141,8 @@ def main():
     # Group files by subdirectory
     sprites_by_dir = {}
     for png_file in png_files:
-        # Get the relative path from sprites/
-        rel_path = os.path.relpath(png_file, 'sprites')
+        # Get the relative path from raw-png/
+        rel_path = os.path.relpath(png_file, 'raw-png')
         # Get the subdirectory (or 'root' if in sprites/ directly)
         parts = rel_path.split(os.sep)
         if len(parts) > 1:
