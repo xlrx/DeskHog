@@ -230,7 +230,8 @@ void PongCard::updateMessageLabel() {
 bool PongCard::handleButtonPress(uint8_t button_index) {
     PongGame::GameState current_game_state = _pong_game_instance.getState();
 
-    if (current_game_state == PongGame::GameState::GameOver) {
+    if (current_game_state == PongGame::GameState::GameOver ||
+    current_game_state == PongGame::GameState::StartScreen) {
         // In GameOver state:
         // - Center button is still handled by PongCard (to restart)
         // - Up/Down buttons are NOT handled, allowing CardNavigationStack to use them
