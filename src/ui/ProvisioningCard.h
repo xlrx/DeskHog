@@ -3,7 +3,7 @@
 #include <lvgl.h>  // LVGL core library
 #include <string>  // For String class (or could be Arduino's String)
 #include "hardware/WiFiInterface.h"  // Custom WiFi interface class
-#include "ui/InputHandler.h"
+#include "SystemController.h" // Added for ApiState, ControllerState
 
 /**
  * @class ProvisioningCard
@@ -15,7 +15,7 @@
  * - WiFi status table with custom fonts and styling
  * - QR code generation for WiFi network connection
  */
-class ProvisioningCard : public InputHandler {
+class ProvisioningCard {
 public:
     /**
      * @brief Construct a new WiFi provisioning card UI component
@@ -36,7 +36,7 @@ public:
      * 
      * @return lv_obj_t* Pointer to the LVGL card container
      */
-    lv_obj_t* getCardObject() const override;
+    lv_obj_t* getCard() const;
     
     /**
      * @brief Updates connection status text and shows status screen
@@ -79,15 +79,6 @@ public:
      * Thread-safe screen transition.
      */
     void showWiFiStatus();
-
-    // InputHandler interface
-    bool handleButtonPress(uint8_t button_index) override {
-        // Provisioning card doesn't handle direct button presses for now
-        return false; 
-    }
-    void update() override {
-        // No continuous update needed for ProvisioningCard
-    }
     
 private:
     /**
@@ -121,7 +112,6 @@ private:
      * @brief Creates a table row with label and value
      * 
      * @param table Parent table object
-     * @param row Row index (0-based)
      * @param title Label text
      * @param valueLabel Pointer to store created value label
      * @param labelColor Color for the title label
@@ -129,9 +119,9 @@ private:
      * Creates a row with:
      * - Left-aligned title using label font
      * - Right-aligned value using value font
-     * - 5px line spacing
+     * Automatically positioned by parent layout.
      */
-    void createTableRow(lv_obj_t* table, uint16_t row, const char* title, 
+    void createTableRow(lv_obj_t* table, const char* title, 
                       lv_obj_t** valueLabel, lv_color_t labelColor);
     
     /**
@@ -191,4 +181,9 @@ private:
     lv_obj_t* _signalLabel;       ///< Signal strength text
     lv_obj_t* _versionLabel;      ///< Firmware version text
     lv_obj_t* _topLeftVersionLabel; ///< Firmware version text (on card top-left)
+    lv_obj_t* _apiStatusLabel = nullptr; ///< API Status text label
+
+    // Helper methods for SystemController integration
+    void handleSystemStateChange(const ControllerState& newState);
+    String apiStateToString(ApiState state);
 };

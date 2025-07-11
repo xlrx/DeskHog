@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <lvgl.h>
 #include <vector>
+#include <unordered_map>
 
 #include "ConfigManager.h"
 #include "hardware/WifiInterface.h"
@@ -11,9 +12,13 @@
 #include "ui/ProvisioningCard.h"
 #include "ui/InsightCard.h"
 #include "ui/FriendCard.h"
-#include "ui/PongCard.h"
+#include "ui/examples/HelloWorldCard.h"
+#include "ui/FlappyHogCard.h"
 #include "hardware/DisplayInterface.h"
 #include "EventQueue.h"
+#include "config/CardConfig.h"
+#include "UICallback.h"
+#include "ui/QuestionCard.h"
 
 /**
  * @class CardController
@@ -63,11 +68,6 @@ public:
      */
     void setDisplayInterface(DisplayInterface* display);
     
-    /**
-     * @brief Create and add a new insight card to the UI
-     * @param insightId Unique identifier for the insight
-     */
-    void createInsightCard(const String& insightId);
     
     /**
      * @brief Get the card navigation stack
@@ -85,13 +85,23 @@ public:
      * @brief Get the animation card
      * @return Pointer to animation card
      */
-    AnimationCard* getAnimationCard() { return animationCard; }
+    FriendCard* getAnimationCard() { return animationCard; }
 
     /**
      * @brief Get all insight cards
-     * @return Reference to vector of insight card pointers
+     * @return Vector of insight card pointers
      */
-    std::vector<InsightCard*>& getInsightCards() { return insightCards; }
+    std::vector<InsightCard*> getInsightCards() {
+        std::vector<InsightCard*> result;
+        auto it = dynamicCards.find(CardType::INSIGHT);
+        if (it != dynamicCards.end()) {
+            for (const auto& instance : it->second) {
+                // Cast the handler to InsightCard*
+                result.push_back(static_cast<InsightCard*>(instance.handler));
+            }
+        }
+        return result;
+    }
 
     /**
      * @brief Get the display interface
@@ -100,9 +110,49 @@ public:
     DisplayInterface* getDisplayInterface() { return displayInterface; }
 
     /**
-     * @brief Update the active card and UI components
+     * @brief Get available card definitions for the web UI
+     * @return Vector of CardDefinition objects representing available card types
      */
-    void update();
+    std::vector<CardDefinition> getCardDefinitions() const;
+
+    /**
+     * @brief Register an available card type with its definition and factory function
+     * @param definition The card definition including metadata and factory function
+     */
+    void registerCardType(const CardDefinition& definition);
+
+    /**
+     * @brief Process card configuration changes from the web UI
+     * Called when CARD_CONFIG_CHANGED event is received
+     */
+    void handleCardConfigChanged();
+
+    /**
+     * @brief Initialize the UI update queue
+     * 
+     * Creates a FreeRTOS queue for handling UI updates across threads.
+     * Must be called once during CardController initialization.
+     */
+    void initUIQueue();
+
+    /**
+     * @brief Process pending UI updates
+     * 
+     * Processes all queued UI updates in the LVGL task context.
+     * Should be called regularly from the LVGL handler task.
+     */
+    void processUIQueue();
+    
+    /**
+     * @brief Thread-safe method to dispatch UI updates to the LVGL task
+     * 
+     * @param update_func Lambda function containing UI operations
+     * @param to_front If true, tries to add the callback to the front of the queue
+     * 
+     * Queues UI operations to be executed on the LVGL thread.
+     * Handles queue overflow by discarding updates if queue is full.
+     */
+    void dispatchToLVGLTask(std::function<void()> update_func, bool to_front = false);
 
 private:
     // Screen reference
@@ -119,12 +169,27 @@ private:
     // UI Components
     CardNavigationStack* cardStack;     ///< Navigation stack for cards
     ProvisioningCard* provisioningCard; ///< Card for device provisioning
-    AnimationCard* animationCard;       ///< Card for animations
-    PongCard* pongCard;                ///< Card for Pong game
-    std::vector<InsightCard*> insightCards; ///< Collection of insight cards
+    
+    // Unified card tracking system
+    struct CardInstance {
+        InputHandler* handler;  ///< The card as an InputHandler
+        lv_obj_t* lvglCard;    ///< The LVGL card object
+    };
+    std::unordered_map<CardType, std::vector<CardInstance>> dynamicCards; ///< All dynamic cards by type
+    
+    // Legacy single instance tracking (for backwards compatibility during transition)
+    FriendCard* animationCard;       ///< Card for animations
     
     // Display interface for thread safety
     DisplayInterface* displayInterface;  ///< Thread-safe display interface
+    
+    // UI Threading
+    static QueueHandle_t uiQueue;  ///< Queue for thread-safe UI updates
+    
+    // Card registration and management
+    std::vector<CardDefinition> registeredCardTypes; ///< Available card types with factory functions
+    std::vector<CardConfig> currentCardConfigs;      ///< Current card configuration from storage
+    bool reconcileInProgress = false;                ///< Flag to prevent concurrent reconciliations
     
     /**
      * @brief Create and initialize the animation card
@@ -132,10 +197,10 @@ private:
     void createAnimationCard();
     
     /**
-     * @brief Handle insight-related events
-     * @param event Event containing insight data
+     * @brief Create and initialize the hello world card
      */
-    void handleInsightEvent(const Event& event);
+    void createHelloWorldCard();
+    
 
     /**
      * @brief Handle WiFi-related events
@@ -144,7 +209,21 @@ private:
     void handleWiFiEvent(const Event& event);
 
     /**
-     * @brief Create and initialize the Pong card
+     * @brief Handle card title update events
+     * @param event Event containing insight ID and new title
      */
-    void createPongCard();
+    void handleCardTitleUpdated(const Event& event);
+
+    /**
+     * @brief Initialize default card type registrations
+     * Registers built-in card types (INSIGHT, FRIEND) with their factory functions
+     */
+    void initializeCardTypes();
+
+    /**
+     * @brief Reconcile current cards with new configuration
+     * Diffs configuration, removes old cards, creates new ones, and reorders
+     * @param newConfigs New card configuration from storage
+     */
+    void reconcileCards(const std::vector<CardConfig>& newConfigs);
 }; 

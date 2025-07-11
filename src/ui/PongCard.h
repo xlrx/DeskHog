@@ -11,9 +11,10 @@ public:
     PongCard(lv_obj_t* parent);
     ~PongCard() override; // Marking as override
 
-    void update() override; // This might not be from InputHandler, but useful for game updates
+    bool update() override; // Returns true to keep receiving updates
     bool handleButtonPress(uint8_t button_index) override;
-    lv_obj_t* getCardObject() const override; // MODIFIED: Added const and override
+    lv_obj_t* getCard() const; // Matches main's architecture
+    void prepareForRemoval() override { markedForRemoval = true; } // Prevent double deletion
 
 private:
     void createUi(lv_obj_t* parent);
@@ -34,6 +35,7 @@ private:
     char _chosen_victory_phrase_buffer[100]; // Buffer to hold the chosen victory message
     bool _is_victory_phrase_chosen;        // Flag to indicate if a phrase has been chosen for current game over
     PongGame::GameState _previous_game_state;  // To detect state transitions
+    bool markedForRemoval = false;  // Track if card is being removed
 
     // Constants
     static constexpr int PADDLE_WIDTH = 5; // Adjusted for visibility

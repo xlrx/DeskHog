@@ -6,30 +6,32 @@
 #include <Arduino.h>
 #endif
 
-// Define constant to match the one in InsightCard.h
-#define MAX_BREAKDOWNS 5
-
 // Filter to dramatically reduce memory usage by filtering out unused fields
-static StaticJsonDocument<128> createFilter() {
-    StaticJsonDocument<128> filter;
-    filter["results"][0]["name"] = true;
-    filter["results"][0]["result"] = true;
-    filter["results"][0]["query"]["display"] = true;
-    filter["results"][0]["filters"]["insight"] = true;
-    filter["results"][0]["compare"] = true;
+static StaticJsonDocument<256> createFilter() {
+    StaticJsonDocument<256> filter;
+    filter[JSON_KEY_RESULTS][0][JSON_KEY_NAME] = true;
+    filter[JSON_KEY_RESULTS][0][JSON_KEY_RESULT] = true;
+    filter[JSON_KEY_RESULTS][0][JSON_KEY_QUERY][JSON_KEY_DISPLAY] = true;
+    filter[JSON_KEY_RESULTS][0][JSON_KEY_QUERY][JSON_KEY_CHART_SETTINGS] = true;
+    filter[JSON_KEY_RESULTS][0][JSON_KEY_QUERY][JSON_KEY_TABLE_SETTINGS] = true;
+    filter[JSON_KEY_RESULTS][0][JSON_KEY_FILTERS][JSON_KEY_INSIGHT] = true; // <--- FIX: Used JSON_KEY_INSIGHT
+    filter[JSON_KEY_RESULTS][0][JSON_KEY_FILTERS][JSON_KEY_EVENTS] = true;
+    filter[JSON_KEY_RESULTS][0][JSON_KEY_FILTERS][JSON_KEY_ACTIONS] = true;
+    filter[JSON_KEY_RESULTS][0][JSON_KEY_FILTERS][JSON_KEY_FUNNEL_WINDOW_INTERVAL] = true;
+    filter[JSON_KEY_RESULTS][0][JSON_KEY_FILTERS][JSON_KEY_FUNNEL_WINDOW_INTERVAL_UNIT] = true;
+    filter[JSON_KEY_RESULTS][0][JSON_KEY_COMPARE] = true; // Filter for "compare" at the results[0] level
     return filter;
 }
 
-InsightParser::InsightParser(const char* json) : doc(65536), valid(false) {  // Reduced size from 256KB to 64KB
-    static StaticJsonDocument<128> filter = createFilter();
-    
-    // Initialize PSRAM if available
+InsightParser::InsightParser(const char* json) : doc(65536), valid(false) { // DynamicJsonDocument will allocate 64KB
+    static StaticJsonDocument<256> filter = createFilter(); // Static filter for efficiency
+
 #ifdef ARDUINO
     if (psramFound()) {
         size_t psramSize = ESP.getPsramSize();
         size_t psramFree = ESP.getFreePsram();
         Serial.printf("PSRAM available: %zu bytes, free: %zu bytes\n", psramSize, psramFree);
-        
+
         if (psramFree < 65536) {
             Serial.println("Warning: Less than 64KB PSRAM free, parsing may fail");
         }
@@ -37,73 +39,170 @@ InsightParser::InsightParser(const char* json) : doc(65536), valid(false) {  // 
         Serial.println("Warning: PSRAM not found, using SRAM for JSON parsing");
     }
 #endif
-    
+
     DeserializationError error = deserializeJson(doc, json, DeserializationOption::Filter(filter));
     if (error) {
         printf("JSON Deserialization failed: %s\n", error.c_str());
         return;
     }
-    valid = true;
+
+    // --- Centralized m_insightDataRoot initialization and initial validation ---
+    m_insightDataRoot = doc.as<JsonObjectConst>(); // Assuming the main insight object is at the root
+
+    // Basic validation: ensure it's an object and contains a "results" key
+    if (m_insightDataRoot.isNull() || !m_insightDataRoot.containsKey(JSON_KEY_RESULTS)) {
+        printf("Insight JSON root is not an object or lacks the '%s' key.\n", JSON_KEY_RESULTS);
+        return;
+    }
+
+    JsonArrayConst resultsArray = m_insightDataRoot[JSON_KEY_RESULTS];
+    if (resultsArray.isNull() || resultsArray.size() == 0) {
+        printf("'%s' array is null or empty.\n", JSON_KEY_RESULTS);
+        return;
+    }
+
+    // Validate the first element of 'results' to ensure it's a typical insight object.
+    // This is a "signature" check based on common, essential fields expected in an insight.
+    JsonObjectConst firstInsightObject = resultsArray[0];
+    if (firstInsightObject.isNull() ||
+        // REMOVED: !firstInsightObject.is<JsonObjectConst>() || // <--- FIX: Redundant and incorrect syntax for JsonObjectConst
+        !firstInsightObject.containsKey(JSON_KEY_NAME) ||
+        !firstInsightObject.containsKey(JSON_KEY_RESULT) ||
+        !firstInsightObject.containsKey(JSON_KEY_QUERY))
+    {
+        printf("First item in '%s' array lacks expected insight signature (e.g., %s, %s, or %s).\n",
+               JSON_KEY_RESULTS, JSON_KEY_NAME, JSON_KEY_RESULT, JSON_KEY_QUERY);
+        return;
+    }
+    // --- End m_insightDataRoot initialization and validation ---
+
+    valid = true; // If we reached here, parsing and initial structure validation passed.
 }
 
-bool InsightParser::getName(char* buffer, size_t bufferSize) {
+bool InsightParser::getName(char* buffer, size_t bufferSize) const {
     if (!valid || bufferSize == 0) {
         return false;
     }
-    
-    const char* name = doc["results"][0]["name"];
+
+    // Use m_insightDataRoot
+    const char* name = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_NAME];
     if (!name) {
         return false;
     }
-    
+
     strncpy(buffer, name, bufferSize - 1);
     buffer[bufferSize - 1] = '\0';
     return true;
 }
 
-double InsightParser::getNumericCardValue() {
+double InsightParser::getNumericCardValue() const {
     if (!valid) {
         return 0.0;
     }
-    
-    // Get the first result's aggregated_value
-    return doc["results"][0]["result"][0]["aggregated_value"] | 0.0;
+
+    // Use m_insightDataRoot
+    JsonArrayConst results = m_insightDataRoot[JSON_KEY_RESULTS];
+    if (results.isNull() || results.size() == 0) return 0.0;
+
+    JsonObjectConst firstResultItem = results[0];
+    if (firstResultItem.isNull()) return 0.0;
+
+    JsonVariantConst resultField = firstResultItem[JSON_KEY_RESULT];
+    if (resultField.isNull() || !resultField.is<JsonArrayConst>()) return 0.0;
+
+    JsonArrayConst resultArray = resultField.as<JsonArrayConst>();
+    if (resultArray.size() == 0) return 0.0;
+
+    JsonVariantConst firstElementOfResultArray = resultArray[0];
+    if (firstElementOfResultArray.isNull()) return 0.0;
+
+    // Try old structure: results[0].result[0].aggregated_value
+    if (firstElementOfResultArray.is<JsonObjectConst>()) {
+        JsonObjectConst resultObject = firstElementOfResultArray.as<JsonObjectConst>();
+        if (resultObject.containsKey(JSON_KEY_AGGREGATED_VALUE) && resultObject[JSON_KEY_AGGREGATED_VALUE].is<double>()) {
+            return resultObject[JSON_KEY_AGGREGATED_VALUE].as<double>();
+        }
+    }
+
+    // Try new structure: results[0].result[0][0]
+    if (firstElementOfResultArray.is<JsonArrayConst>()) {
+        JsonArrayConst innerArray = firstElementOfResultArray.as<JsonArrayConst>();
+        if (innerArray.size() > 0 && innerArray[0].is<double>()) {
+            return innerArray[0].as<double>();
+        }
+    }
+
+    return 0.0; // Default if neither structure matches or value is not a double
 }
 
 bool InsightParser::isValid() const {
     return valid;
 }
 
-bool InsightParser::hasNumericCardStructure() const {
+// Renamed and made private. All accessors must now use m_insightDataRoot
+bool InsightParser::private_hasNumericCardStructure() const {
     if (!valid) return false;
-    
-    // Check if we have the basic numeric card structure:
-    // - results array exists
-    // - first result has an aggregated_value
-    JsonArrayConst results = doc["results"];
+
+    // Use m_insightDataRoot
+    JsonArrayConst results = m_insightDataRoot[JSON_KEY_RESULTS];
     if (results.isNull() || results.size() == 0) return false;
+
+    JsonObjectConst firstResultItem = results[0];
+    if (firstResultItem.isNull()) return false;
+
+    JsonVariantConst resultField = firstResultItem[JSON_KEY_RESULT];
+    if (resultField.isNull() || !resultField.is<JsonArrayConst>()) return false;
+
+    JsonArrayConst resultArray = resultField.as<JsonArrayConst>();
+    if (resultArray.size() == 0) return false;
+
+    JsonVariantConst firstElementOfResultArray = resultArray[0];
+    if (firstElementOfResultArray.isNull()) return false;
+
+    // Old structure: results[0].result[0].aggregated_value
+    if (firstElementOfResultArray.is<JsonObjectConst>()) {
+        JsonObjectConst resultObject = firstElementOfResultArray.as<JsonObjectConst>();
+        return resultObject.containsKey(JSON_KEY_AGGREGATED_VALUE) && resultObject[JSON_KEY_AGGREGATED_VALUE].is<double>();
+    }
+
+    // New structure: results[0].result[0][0]
+    if (firstElementOfResultArray.is<JsonArrayConst>()) {
+        JsonArrayConst innerArray = firstElementOfResultArray.as<JsonArrayConst>();
+        if (innerArray.size() > 0 && innerArray[0].is<double>()) {
+            return true;
+        }
+    }
     
-    JsonArrayConst result = results[0]["result"];
-    if (result.isNull() || result.size() == 0) return false;
-    
-    return !result[0]["aggregated_value"].isNull();
+    // Also check for "BoldNumber" display type if present, as an explicit hint
+    const char* displayType = firstResultItem[JSON_KEY_QUERY][JSON_KEY_DISPLAY];
+    if (displayType && strcmp(displayType, JSON_VAL_DISPLAY_BOLD_NUMBER) == 0) {
+        // If display is BoldNumber, it's highly likely a numeric card, even if result structure is minimal
+        return true;
+    }
+
+    return false;
 }
 
-bool InsightParser::hasLineGraphStructure() const {
+// Renamed and made private. All accessors must now use m_insightDataRoot
+bool InsightParser::private_hasLineGraphStructure() const {
     if (!valid) return false;
+
+    // Use m_insightDataRoot
+    JsonArrayConst results = m_insightDataRoot[JSON_KEY_RESULTS];
+    if (results.isNull() || results.size() == 0) return false;
+
+    JsonObjectConst firstResult = results[0];
+    if (firstResult.isNull()) return false;
     
     // Check for line graph structure:
     // - results array exists
     // - first result has result array with multiple points
-    JsonArrayConst results = doc["results"];
-    if (results.isNull() || results.size() == 0) return false;
-    
-    JsonArrayConst timeseriesData = results[0]["result"];
-    if (timeseriesData.isNull() || timeseriesData.size() <= 1) return false;
-    
+    JsonArrayConst timeseriesData = firstResult[JSON_KEY_RESULT];
+    if (timeseriesData.isNull() || timeseriesData.size() <= 1) return false; // Needs at least 2 points for a line graph
+
     // Additional check: verify it's explicitly a line graph if display type is present
-    const char* displayType = results[0]["query"]["display"];
-    if (displayType && strcmp(displayType, "ActionsLineGraph") == 0) {
+    const char* displayType = firstResult[JSON_KEY_QUERY][JSON_KEY_DISPLAY];
+    if (displayType && strcmp(displayType, JSON_VAL_DISPLAY_ACTIONS_LINE_GRAPH) == 0) {
         return true;
     }
     
@@ -119,87 +218,149 @@ bool InsightParser::hasLineGraphStructure() const {
     return firstPoint[1].is<double>();
 }
 
-bool InsightParser::hasAreaChartStructure() const {
+// Renamed and made private. All accessors must now use m_insightDataRoot
+bool InsightParser::private_hasAreaChartStructure() const {
     if (!valid) return false;
     
     // Area charts are similar to line graphs but typically have
-    // an additional "compare" property
-    JsonArrayConst results = doc["results"];
+    // an additional "compare" property or explicit display type.
+
+    // Use m_insightDataRoot
+    JsonArrayConst results = m_insightDataRoot[JSON_KEY_RESULTS];
     if (results.isNull() || results.size() == 0) return false;
     
-    return !results[0]["compare"].isNull();
+    JsonObjectConst firstResult = results[0];
+    if (firstResult.isNull()) return false;
+
+    // Primary check: explicit display type
+    const char* displayType = firstResult[JSON_KEY_QUERY][JSON_KEY_DISPLAY];
+    if (displayType && strcmp(displayType, JSON_VAL_DISPLAY_ACTIONS_AREA_GRAPH) == 0) {
+        // If the display type is explicitly AreaGraph, ensure it also has line graph data structure
+        return private_hasLineGraphStructure(); 
+    }
+
+    // Secondary check: presence of "compare" flag AND line graph structure.
+    // Note: The `compare` flag can also be in `filters`. Check both for robustness.
+    bool hasCompareFlag = !firstResult[JSON_KEY_COMPARE].isNull(); // Directly in insight object
+    if (!hasCompareFlag) {
+        JsonObjectConst filters = firstResult[JSON_KEY_FILTERS];
+        if (!filters.isNull()) {
+            hasCompareFlag = filters.containsKey(JSON_KEY_COMPARE); // Check if key exists
+        }
+    }
+
+    if (hasCompareFlag) {
+        return private_hasLineGraphStructure(); // If compare is present and it looks like a line graph, treat as area
+    }
+
+    return false;
 }
 
-InsightParser::InsightType InsightParser::detectInsightType() const {
+// Renamed from detectInsightType, added const
+InsightParser::InsightType InsightParser::getInsightType() const {
     if (!valid) return InsightType::INSIGHT_NOT_SUPPORTED;
     
-    // Check each type in order of specificity
-    if (hasNumericCardStructure()) return InsightType::NUMERIC_CARD;
-    if (hasLineGraphStructure()) return InsightType::LINE_GRAPH;
-    if (hasAreaChartStructure()) return InsightType::AREA_CHART;
-    if (hasFunnelStructure()) return InsightType::FUNNEL;
+    // Order of checks: from most specific/unique identifier to more general.
+    // Funnel is often uniquely identified by filters.insight="FUNNELS"
+    if (private_hasFunnelStructure()) return InsightType::FUNNEL;
+    
+    // Numeric card has a distinct result structure or "BoldNumber" display type
+    if (private_hasNumericCardStructure()) return InsightType::NUMERIC_CARD;
+
+    // Area charts are a specific type of line graph, often with "compare" data or explicit display.
+    // Check this before generic line graph.
+    if (private_hasAreaChartStructure()) return InsightType::AREA_CHART;
+    
+    // Line graphs are more generic time series.
+    if (private_hasLineGraphStructure()) return InsightType::LINE_GRAPH;
     
     return InsightType::INSIGHT_NOT_SUPPORTED;
 }
 
-bool InsightParser::hasFunnelStructure() const {
+// Renamed and made private. All accessors must now use m_insightDataRoot
+bool InsightParser::private_hasFunnelStructure() const {
     if (!valid) return false;
     
+    // Use m_insightDataRoot
+    JsonObjectConst firstResult = m_insightDataRoot[JSON_KEY_RESULTS][0];
+    if (firstResult.isNull()) return false; // Should be handled by constructor validation, but defensiveness
+
+    JsonObjectConst filters = firstResult[JSON_KEY_FILTERS];
+    if (filters.isNull()) return false;
+
     // Check if the insight type is explicitly set to FUNNELS
-    const char* insightType = doc["results"][0]["filters"]["insight"];
-    if (insightType && strcmp(insightType, "FUNNELS") == 0) {
+    const char* insightType = filters[JSON_KEY_INSIGHT]; // <--- FIX: Used JSON_KEY_INSIGHT
+    if (insightType && strcmp(insightType, JSON_VAL_INSIGHT_FUNNELS) == 0) {
         return true;
     }
     
     return false;
 }
 
-bool InsightParser::hasFunnelResultData() const {
-    if (!valid || !hasFunnelStructure()) return false;
+// Renamed and made private. All accessors must now use m_insightDataRoot
+bool InsightParser::private_hasFunnelResultData() const {
+    if (!valid || !private_hasFunnelStructure()) return false;
     
-    // Check if result is populated with actual data
-    JsonVariantConst result = doc["results"][0]["result"];
+    // Use m_insightDataRoot
+    JsonVariantConst result = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_RESULT];
     if (result.isNull() || result.size() == 0) return false;
     
     // Try to access the first element
     JsonVariantConst firstElement = result[0];
     if (firstElement.isNull()) return false;
     
-    // For non-nested structure, check if the first element has expected properties
-    if (firstElement.containsKey("count") && firstElement.containsKey("order")) {
-        return true;
+    // For non-nested (flat) structure, check if the first element has expected properties (count, order)
+    if (firstElement.is<JsonObjectConst>()) {
+        JsonObjectConst firstObject = firstElement.as<JsonObjectConst>();
+        if (firstObject.containsKey(JSON_KEY_COUNT) && firstObject.containsKey(JSON_KEY_ORDER)) {
+            return true;
+        }
     }
-    
-    // For nested structure, check the first item as an array
+
+    // For nested structure, check the first item as an array, then its first element
     if (firstElement.is<JsonArrayConst>()) {
-        JsonArrayConst firstBreakdown = firstElement;
+        JsonArrayConst firstBreakdown = firstElement.as<JsonArrayConst>(); // Ensure it's treated as array
         if (firstBreakdown.isNull() || firstBreakdown.size() == 0) return false;
         
         JsonObjectConst firstStep = firstBreakdown[0];
-        return !firstStep["order"].isNull() && !firstStep["count"].isNull();
-    }
-    
-    // If we made it this far, check if the structure has breakdown_value (nested)
-    if (!firstElement["breakdown_value"].isNull()) {
-        return !firstElement["order"].isNull() && !firstElement["count"].isNull();
+        // Ensure first step is an object and has count/order
+        return !firstStep.isNull() && !firstStep[JSON_KEY_ORDER].isNull() && !firstStep[JSON_KEY_COUNT].isNull();
     }
     
     return false;
 }
 
-size_t InsightParser::getSeriesPointCount() const {
-    if (!valid || !hasLineGraphStructure()) return 0;
+// Renamed and made private. All accessors must now use m_insightDataRoot
+bool InsightParser::private_hasFunnelNestedStructure() const {
+    if (!valid || !private_hasFunnelStructure() || !private_hasFunnelResultData()) return false;
     
-    JsonArrayConst results = doc["results"];
-    JsonArrayConst timeseriesData = results[0]["result"];
+    // Use m_insightDataRoot
+    JsonVariantConst result = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_RESULT];
+    JsonVariantConst firstElement = result[0];
+    
+    // If first element is an array, it's a nested structure (e.g., [[step1], [step2]])
+    if (firstElement.is<JsonArrayConst>()) {
+        return true;
+    }
+    
+    return false; // For flat structure, result[0] is typically an object directly.
+}
+
+size_t InsightParser::getSeriesPointCount() const {
+    if (!valid || !private_hasLineGraphStructure()) return 0;
+    
+    // Use m_insightDataRoot
+    JsonArrayConst results = m_insightDataRoot[JSON_KEY_RESULTS];
+    JsonArrayConst timeseriesData = results[0][JSON_KEY_RESULT];
     return timeseriesData.size();
 }
 
 bool InsightParser::getSeriesYValues(double* yValues) const {
-    if (!valid || !hasLineGraphStructure() || !yValues) return false;
+    if (!valid || !private_hasLineGraphStructure() || !yValues) return false;
     
-    JsonArrayConst results = doc["results"];
-    JsonArrayConst timeseriesData = results[0]["result"];
+    // Use m_insightDataRoot
+    JsonArrayConst results = m_insightDataRoot[JSON_KEY_RESULTS];
+    JsonArrayConst timeseriesData = results[0][JSON_KEY_RESULT];
     size_t pointCount = timeseriesData.size();
     
     // Extract y-values directly - format is consistent with [date_string, numeric_value]
@@ -211,10 +372,11 @@ bool InsightParser::getSeriesYValues(double* yValues) const {
 }
 
 bool InsightParser::getSeriesXLabel(size_t index, char* buffer, size_t bufferSize) const {
-    if (!valid || !hasLineGraphStructure() || !buffer || bufferSize == 0) return false;
+    if (!valid || !private_hasLineGraphStructure() || !buffer || bufferSize == 0) return false;
     
-    JsonArrayConst results = doc["results"];
-    JsonArrayConst timeseriesData = results[0]["result"];
+    // Use m_insightDataRoot
+    JsonArrayConst results = m_insightDataRoot[JSON_KEY_RESULTS];
+    JsonArrayConst timeseriesData = results[0][JSON_KEY_RESULT];
     
     if (index >= timeseriesData.size()) return false;
     
@@ -223,25 +385,32 @@ bool InsightParser::getSeriesXLabel(size_t index, char* buffer, size_t bufferSiz
     
     // Copy just the year and month (YYYY-MM) to keep labels compact
     size_t len = strlen(dateStr);
-    if (len < 7) return false;  // Ensure we have at least YYYY-MM
+    if (len < 7) return false;
     
-    size_t copyLen = (7 < bufferSize) ? 7 : bufferSize - 1;
+    size_t copyLen = std::min((size_t)7, bufferSize - 1);
     strncpy(buffer, dateStr, copyLen);
-    buffer[copyLen] = '\0';
+    buffer[copyLen] = '\0'; // Always null-terminate
     
     return true;
 }
 
 void InsightParser::getSeriesRange(double* minValue, double* maxValue) const {
-    if (!valid || !hasLineGraphStructure() || !minValue || !maxValue) {
+    if (!valid || !private_hasLineGraphStructure() || !minValue || !maxValue) {
         if (minValue) *minValue = 0.0;
         if (maxValue) *maxValue = 0.0;
         return;
     }
     
-    JsonArrayConst results = doc["results"];
-    JsonArrayConst timeseriesData = results[0]["result"];
+    // Use m_insightDataRoot
+    JsonArrayConst results = m_insightDataRoot[JSON_KEY_RESULTS];
+    JsonArrayConst timeseriesData = results[0][JSON_KEY_RESULT];
     
+    if (timeseriesData.size() == 0) {
+        *minValue = 0.0;
+        *maxValue = 0.0;
+        return;
+    }
+
     *minValue = timeseriesData[0][1].as<double>();
     *maxValue = *minValue;
     
@@ -253,40 +422,45 @@ void InsightParser::getSeriesRange(double* minValue, double* maxValue) const {
 }
 
 size_t InsightParser::getFunnelBreakdownCount() const {
-    if (!valid || !hasFunnelStructure()) return 0;
+    if (!valid || !private_hasFunnelStructure()) return 0;
     
     // Check if we have a nested or flat structure
-    bool isNested = hasFunnelNestedStructure();
+    bool isNested = private_hasFunnelNestedStructure();
     
     if (isNested) {
-        // Original implementation for nested structure
-        JsonArrayConst result = doc["results"][0]["result"];
+        // Use m_insightDataRoot
+        JsonArrayConst result = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_RESULT];
         
         // Ensure the result is an array
         if (result.isNull()) {
             return 0;
         }
         
-        return std::min(result.size(), (size_t)MAX_BREAKDOWNS);
+        // Use literal 5 instead of MAX_BREAKDOWNS macro
+        return std::min(result.size(), (size_t)5);
     } else {
-        // For flat structure, we always have exactly one breakdown
+        // For flat structure, we always have exactly one breakdown ("All users")
         return 1;
     }
 }
 
 size_t InsightParser::getFunnelStepCount() const {
-    if (!valid || !hasFunnelStructure()) return 0;
+    if (!valid || !private_hasFunnelStructure()) return 0;
     
     // For unpopulated funnels, count events and actions from filters
-    if (!hasFunnelResultData()) {
+    if (!private_hasFunnelResultData()) {
         size_t count = 0;
         
-        JsonArrayConst events = doc["results"][0]["filters"]["events"];
+        // Use m_insightDataRoot
+        JsonObjectConst filters = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_FILTERS];
+        if (filters.isNull()) return 0;
+
+        JsonArrayConst events = filters[JSON_KEY_EVENTS];
         if (!events.isNull()) {
             count += events.size();
         }
         
-        JsonArrayConst actions = doc["results"][0]["filters"]["actions"];
+        JsonArrayConst actions = filters[JSON_KEY_ACTIONS];
         if (!actions.isNull()) {
             count += actions.size();
         }
@@ -294,10 +468,12 @@ size_t InsightParser::getFunnelStepCount() const {
         return count;
     }
     
-    JsonArrayConst result = doc["results"][0]["result"];
+    // Use m_insightDataRoot
+    JsonArrayConst result = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_RESULT];
+    if (result.isNull()) return 0;
     
     // For flat structure, count the items in the result array
-    if (!hasFunnelNestedStructure()) {
+    if (!private_hasFunnelNestedStructure()) {
         return result.size();
     }
     
@@ -314,17 +490,20 @@ bool InsightParser::getFunnelStepData(
     uint32_t* count,
     double* conversion_time_avg,
     double* conversion_time_median
-) {
-    if (!valid || !hasFunnelStructure()) return false;
+) const {
+    if (!valid || !private_hasFunnelStructure()) return false;
     
     // Handle unpopulated funnels
-    if (!hasFunnelResultData()) {
-        // Handle null result case by retrieving metadata from filters
-        if (breakdown_index > 0) return false; // Only support single breakdown for null result
+    if (!private_hasFunnelResultData()) {
+        if (breakdown_index > 0) return false;
         
+        // Use m_insightDataRoot
+        JsonObjectConst filters = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_FILTERS];
+        if (filters.isNull()) return false;
+
         // Get combined list of events and actions
-        JsonArrayConst events = doc["results"][0]["filters"]["events"];
-        JsonArrayConst actions = doc["results"][0]["filters"]["actions"];
+        JsonArrayConst events = filters[JSON_KEY_EVENTS];
+        JsonArrayConst actions = filters[JSON_KEY_ACTIONS];
         
         size_t total_steps = 0;
         if (!events.isNull()) total_steps += events.size();
@@ -334,23 +513,27 @@ bool InsightParser::getFunnelStepData(
         
         // Determine if we need to get from events or actions
         JsonObjectConst step;
-        if (step_index < (events.isNull() ? 0 : events.size())) {
+        if (!events.isNull() && step_index < events.size()) {
             step = events[step_index];
-        } else {
+        } else if (!actions.isNull()) {
             step = actions[step_index - (events.isNull() ? 0 : events.size())];
+        } else {
+            return false;
         }
         
         // Get step name if buffer provided
         if (name_buffer && name_buffer_size > 0) {
-            const char* custom_name = step["custom_name"];
+            const char* custom_name = step[JSON_KEY_CUSTOM_NAME];
             if (custom_name) {
                 strncpy(name_buffer, custom_name, name_buffer_size - 1);
                 name_buffer[name_buffer_size - 1] = '\0';
             } else {
-                const char* name = step["name"];
+                const char* name = step[JSON_KEY_NAME];
                 if (name) {
                     strncpy(name_buffer, name, name_buffer_size - 1);
                     name_buffer[name_buffer_size - 1] = '\0';
+                } else {
+                    name_buffer[0] = '\0';
                 }
             }
         }
@@ -363,11 +546,14 @@ bool InsightParser::getFunnelStepData(
         return true;
     }
     
-    JsonArrayConst result = doc["results"][0]["result"];
+    // Use m_insightDataRoot
+    JsonArrayConst result = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_RESULT];
+    if (result.isNull()) return false;
+    
     JsonObjectConst step;
     
     // Handle flat structure
-    if (!hasFunnelNestedStructure()) {
+    if (!private_hasFunnelNestedStructure()) {
         // For flat structure, ignore breakdown_index (except 0)
         if (breakdown_index > 0) return false;
         
@@ -379,56 +565,50 @@ bool InsightParser::getFunnelStepData(
     } else {
         // Handle nested structure
         // Check breakdown_index is valid
-        if (breakdown_index >= result.size()) return false;
-        
+        if (breakdown_index >= result.size() || breakdown_index >= 5) return false; // Use literal 5
+
         JsonArrayConst breakdown = result[breakdown_index];
+        if (breakdown.isNull()) return false;
+        
         // Check step_index is valid
         if (step_index >= breakdown.size()) return false;
         
         // Get step from appropriate breakdown
         step = breakdown[step_index];
     }
+
+    if (step.isNull()) return false;
     
     // Extract data from step (same for both structures)
     // Get step name if buffer provided
     if (name_buffer && name_buffer_size > 0) {
-        const char* custom_name = step["custom_name"];
+        const char* custom_name = step[JSON_KEY_CUSTOM_NAME];
         if (custom_name) {
             strncpy(name_buffer, custom_name, name_buffer_size - 1);
             name_buffer[name_buffer_size - 1] = '\0';
         } else {
-            const char* name = step["name"];
+            const char* name = step[JSON_KEY_NAME];
             if (name) {
                 strncpy(name_buffer, name, name_buffer_size - 1);
                 name_buffer[name_buffer_size - 1] = '\0';
+            } else {
+                name_buffer[0] = '\0';
             }
         }
     }
     
     // Get count
     if (count) {
-        if (step["count"].isNull()) {
-            *count = 0;
-        } else {
-            *count = step["count"].as<uint32_t>();
-        }
+        *count = step[JSON_KEY_COUNT].as<uint32_t>();
     }
     
     // Get conversion times
     if (conversion_time_avg) {
-        if (step["average_conversion_time"].isNull()) {
-            *conversion_time_avg = 0.0;
-        } else {
-            *conversion_time_avg = step["average_conversion_time"].as<double>();
-        }
+        *conversion_time_avg = step[JSON_KEY_AVERAGE_CONVERSION_TIME].as<double>();
     }
     
     if (conversion_time_median) {
-        if (step["median_conversion_time"].isNull()) {
-            *conversion_time_median = 0.0; 
-        } else {
-            *conversion_time_median = step["median_conversion_time"].as<double>();
-        }
+        *conversion_time_median = step[JSON_KEY_MEDIAN_CONVERSION_TIME].as<double>();
     }
     
     return true;
@@ -438,37 +618,38 @@ bool InsightParser::getFunnelBreakdownName(
     size_t breakdown_index,
     char* name_buffer,
     size_t buffer_size
-) {
-    if (!valid || !hasFunnelStructure()) return false;
+) const {
+    if (!valid || !private_hasFunnelStructure() || !name_buffer || buffer_size == 0) return false;
 
     // Check if we have a nested or flat structure
-    bool isNested = hasFunnelNestedStructure();
+    bool isNested = private_hasFunnelNestedStructure();
 
     if (isNested) {
-        // Original implementation for nested structure
-        JsonArrayConst result = doc["results"][0]["result"];
+        // Use m_insightDataRoot
+        JsonArrayConst result = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_RESULT];
 
         // Ensure the result is an array
         if (result.isNull()) {
             return false;
         }
 
-        if (breakdown_index >= result.size() || breakdown_index >= MAX_BREAKDOWNS) {
+        if (breakdown_index >= result.size() || breakdown_index >= 5) { // Use literal 5
             return false;
         }
 
         // Get the breakdown name from the first step's breakdown field
         JsonArrayConst breakdown_array = result[breakdown_index];
-        if (!breakdown_array.isNull() && breakdown_array.size() > 0 && 
-            !breakdown_array[0]["breakdown"].isNull()) {
-            
-            JsonArrayConst breakdown = breakdown_array[0]["breakdown"];
-            if (breakdown.size() > 0) {
-                const char* value = breakdown[0].as<const char*>();
-                if (value) {
-                    strncpy(name_buffer, value, buffer_size);
-                    name_buffer[buffer_size - 1] = '\0';
-                    return true;
+        if (!breakdown_array.isNull() && breakdown_array.size() > 0) {
+            JsonObjectConst firstStepInBreakdown = breakdown_array[0];
+            if (!firstStepInBreakdown.isNull() && firstStepInBreakdown.containsKey(JSON_KEY_BREAKDOWN)) {
+                JsonArrayConst breakdown_data = firstStepInBreakdown[JSON_KEY_BREAKDOWN];
+                if (!breakdown_data.isNull() && breakdown_data.size() > 0) {
+                    const char* value = breakdown_data[0].as<const char*>();
+                    if (value) {
+                        strncpy(name_buffer, value, buffer_size - 1);
+                        name_buffer[buffer_size - 1] = '\0';
+                        return true;
+                    }
                 }
             }
         }
@@ -479,11 +660,12 @@ bool InsightParser::getFunnelBreakdownName(
         }
         
         // In flat structure, default to "All users"
-        strncpy(name_buffer, "All users", buffer_size);
+        strncpy(name_buffer, "All users", buffer_size - 1);
         name_buffer[buffer_size - 1] = '\0';
         return true;
     }
 
+    name_buffer[0] = '\0';
     return false;
 }
 
@@ -491,71 +673,62 @@ bool InsightParser::getFunnelTotalCounts(
     size_t breakdown_index,
     uint32_t* counts,
     double* conversion_rates
-) {
-    if (!valid || !hasFunnelStructure()) return false;
+) const {
+    if (!valid || !private_hasFunnelStructure() || !counts) return false;
     
     // Check if this is a flat or nested structure
-    bool isNested = hasFunnelNestedStructure();
+    bool isNested = private_hasFunnelNestedStructure();
     size_t stepCount = getFunnelStepCount();
     
     if (stepCount == 0) {
         return false;
     }
     
-    // For nested structure, we need to sum across all breakdowns for each step
+    // Clear the buffer first
+    for (size_t i = 0; i < stepCount; i++) {
+        counts[i] = 0;
+    }
+
+    // Use m_insightDataRoot
+    JsonArrayConst result = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_RESULT];
+    if (result.isNull()) {
+        return false;
+    }
+    
+    // For nested structure, we sum counts across all breakdowns for each step
     if (isNested) {
-        // Handle nested structure
-        JsonArrayConst result = doc["results"][0]["result"];
-        
-        if (result.isNull()) {
-            return false;
-        }
-        
-        // Clear the buffer first
-        for (size_t i = 0; i < stepCount; i++) {
-            counts[i] = 0;
-        }
-        
-        // Go through each breakdown
-        size_t breakdownCount = std::min(result.size(), (size_t)MAX_BREAKDOWNS);
-        for (size_t breakdown = 0; breakdown < breakdownCount; breakdown++) {
-            JsonArrayConst breakdown_array = result[breakdown];
+        size_t breakdownCount = std::min(result.size(), (size_t)5); // Use literal 5
+        for (size_t bd_idx = 0; bd_idx < breakdownCount; bd_idx++) {
+            JsonArrayConst breakdown_array = result[bd_idx];
             if (!breakdown_array.isNull()) {
                 // For each step in this breakdown
                 size_t stepsInBreakdown = std::min(breakdown_array.size(), stepCount);
-                for (size_t step = 0; step < stepsInBreakdown; step++) {
-                    if (!breakdown_array[step]["count"].isNull()) {
-                        counts[step] += breakdown_array[step]["count"] | 0;
-                    }
+                for (size_t step_idx = 0; step_idx < stepsInBreakdown; step_idx++) {
+                    counts[step_idx] += breakdown_array[step_idx][JSON_KEY_COUNT].as<uint32_t>();
                 }
             }
         }
     } else {
-        // Simply copy from the flat structure directly
-        JsonArrayConst result = doc["results"][0]["result"];
-        
-        if (result.isNull()) {
-            return false;
-        }
-        
-        // For each step
-        for (size_t step = 0; step < stepCount; step++) {
-            if (step < result.size() && !result[step]["count"].isNull()) {
-                counts[step] = result[step]["count"] | 0;
-            } else {
-                counts[step] = 0;
-            }
+        // Simply copy from the flat structure directly (only one breakdown)
+        for (size_t step_idx = 0; step_idx < stepCount; step_idx++) {
+            counts[step_idx] = result[step_idx][JSON_KEY_COUNT].as<uint32_t>();
         }
     }
     
     // Calculate conversion rates if requested
     if (conversion_rates && counts[0] > 0) {
-        for (size_t i = 0; i < stepCount - 1; i++) {
-            if (counts[i] > 0) {
-                conversion_rates[i] = (double)counts[i+1] / counts[i];
+        for (size_t i = 0; i < stepCount; i++) {
+            if (i == 0) {
+                conversion_rates[i] = 1.0;
+            } else if (counts[i-1] > 0) {
+                conversion_rates[i] = (double)counts[i] / counts[i-1];
             } else {
                 conversion_rates[i] = 0.0;
             }
+        }
+    } else if (conversion_rates) {
+        for (size_t i = 0; i < stepCount; i++) {
+            conversion_rates[i] = 0.0;
         }
     }
     
@@ -567,42 +740,40 @@ bool InsightParser::getFunnelConversionTimes(
     size_t step_index,
     double* avg_time,
     double* median_time
-) {
-    if (!valid || !hasFunnelStructure()) return false;
-    if (step_index == 0) return false; // First step has no conversion time
+) const {
+    if (!valid || !private_hasFunnelStructure()) return false;
+    if (step_index == 0) return false;
     
     // For unpopulated funnels, we can't provide conversion times
-    if (!hasFunnelResultData()) return false;
+    if (!private_hasFunnelResultData()) return false;
     
+    // Use m_insightDataRoot
+    JsonArrayConst result = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_RESULT];
+    if (result.isNull()) return false;
+
     // For flat structure
-    if (!hasFunnelNestedStructure()) {
+    if (!private_hasFunnelNestedStructure()) {
         // Only support breakdown_index 0 for flat structure
         if (breakdown_index > 0) return false;
         
         // Check step_index is valid
-        JsonArrayConst result = doc["results"][0]["result"];
         if (step_index >= result.size()) return false;
         
         // Get conversion times directly from step
+        JsonObjectConst step = result[step_index];
+        if (step.isNull()) return false;
+
         if (avg_time) {
-            if (result[step_index]["average_conversion_time"].isNull()) {
-                *avg_time = 0.0;
-            } else {
-                *avg_time = result[step_index]["average_conversion_time"].as<double>();
-            }
+            *avg_time = step[JSON_KEY_AVERAGE_CONVERSION_TIME].as<double>();
         }
         if (median_time) {
-            if (result[step_index]["median_conversion_time"].isNull()) {
-                *median_time = 0.0;
-            } else {
-                *median_time = result[step_index]["median_conversion_time"].as<double>();
-            }
+            *median_time = step[JSON_KEY_MEDIAN_CONVERSION_TIME].as<double>();
         }
         
         return true;
     }
     
-    // For nested structure, use existing function
+    // For nested structure, call getFunnelStepData which handles it
     return getFunnelStepData(
         breakdown_index,
         step_index,
@@ -620,13 +791,17 @@ bool InsightParser::getFunnelStepMetadata(
     size_t name_buffer_size,
     char* action_id_buffer,
     size_t action_buffer_size
-) {
-    if (!valid || !hasFunnelStructure()) return false;
+) const {
+    if (!valid || !private_hasFunnelStructure()) return false;
     
     // For unpopulated funnels, get metadata from filters
-    if (!hasFunnelResultData()) {
-        JsonArrayConst events = doc["results"][0]["filters"]["events"];
-        JsonArrayConst actions = doc["results"][0]["filters"]["actions"];
+    if (!private_hasFunnelResultData()) {
+        // Use m_insightDataRoot
+        JsonObjectConst filters = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_FILTERS];
+        if (filters.isNull()) return false;
+
+        JsonArrayConst events = filters[JSON_KEY_EVENTS];
+        JsonArrayConst actions = filters[JSON_KEY_ACTIONS];
         
         size_t total_steps = 0;
         if (!events.isNull()) total_steps += events.size();
@@ -636,62 +811,78 @@ bool InsightParser::getFunnelStepMetadata(
         
         // Determine if we need to get from events or actions
         JsonObjectConst step;
-        if (step_index < (events.isNull() ? 0 : events.size())) {
+        if (!events.isNull() && step_index < events.size()) {
             step = events[step_index];
-        } else {
+        } else if (!actions.isNull()) {
             step = actions[step_index - (events.isNull() ? 0 : events.size())];
+        } else {
+            return false;
         }
         
         // Get custom name
         if (custom_name_buffer && name_buffer_size > 0) {
-            const char* custom_name = step["custom_name"];
+            const char* custom_name = step[JSON_KEY_CUSTOM_NAME];
             if (custom_name) {
                 strncpy(custom_name_buffer, custom_name, name_buffer_size - 1);
                 custom_name_buffer[name_buffer_size - 1] = '\0';
+            } else {
+                custom_name_buffer[0] = '\0';
             }
         }
         
-        // Get action ID
+        // Get action ID (or event ID, typically "id" field in filters)
         if (action_id_buffer && action_buffer_size > 0) {
-            const char* action_id = step["id"];
-            if (action_id) {
-                strncpy(action_id_buffer, action_id, action_buffer_size - 1);
+            const char* id = step[JSON_KEY_ID];
+            if (id) {
+                strncpy(action_id_buffer, id, action_buffer_size - 1);
                 action_id_buffer[action_buffer_size - 1] = '\0';
+            } else {
+                action_id_buffer[0] = '\0';
             }
         }
         
         return true;
     }
     
-    JsonVariantConst result = doc["results"][0]["result"];
+    // For populated funnels
+    // Use m_insightDataRoot
+    JsonVariantConst result = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_RESULT];
+    if (result.isNull()) return false;
+
     JsonObjectConst step;
     
     // For flat structure
-    if (!hasFunnelNestedStructure()) {
+    if (!private_hasFunnelNestedStructure()) {
         if (step_index >= result.size()) return false;
         step = result[step_index];
     } else {
-        // For nested structure, use the first breakdown
+        // For nested structure, use the first breakdown to get step metadata (names/IDs are consistent)
         JsonArrayConst firstBreakdown = result[0];
-        if (step_index >= firstBreakdown.size()) return false;
+        if (firstBreakdown.isNull() || step_index >= firstBreakdown.size()) return false;
         step = firstBreakdown[step_index];
     }
+
+    if (step.isNull()) return false;
     
     // Get custom name
     if (custom_name_buffer && name_buffer_size > 0) {
-        const char* custom_name = step["custom_name"];
+        const char* custom_name = step[JSON_KEY_CUSTOM_NAME];
         if (custom_name) {
             strncpy(custom_name_buffer, custom_name, name_buffer_size - 1);
             custom_name_buffer[name_buffer_size - 1] = '\0';
+        } else {
+            custom_name_buffer[0] = '\0';
         }
     }
     
-    // Get action ID
+    // Get action ID (for result data, it's typically "action_id")
     if (action_id_buffer && action_buffer_size > 0) {
-        const char* action_id = step["action_id"];
+        const char* action_id = step[JSON_KEY_ACTION_ID];
         if (action_id) {
             strncpy(action_id_buffer, action_id, action_buffer_size - 1);
             action_id_buffer[action_buffer_size - 1] = '\0';
+        } else {
+            action_id_buffer[0] = '\0';
         }
     }
     
@@ -702,91 +893,66 @@ bool InsightParser::getFunnelBreakdownComparison(
     size_t step_index,
     uint32_t* counts,
     double* conversion_rates
-) {
-    if (!valid || !hasFunnelStructure()) return false;
+) const {
+    if (!valid || !private_hasFunnelStructure() || !counts) return false;
 
     // Check if this is a flat or nested structure
-    bool isNested = hasFunnelNestedStructure();
+    bool isNested = private_hasFunnelNestedStructure();
+
+    // Use m_insightDataRoot
+    JsonArrayConst result = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_RESULT];
+    if (result.isNull()) {
+        return false;
+    }
+
+    size_t breakdownCount = getFunnelBreakdownCount();
+    if (breakdownCount == 0) {
+        return false;
+    }
+
+    // Initialize counts and conversion_rates. Use literal 5 for MAX_BREAKDOWNS limit.
+    for (size_t i = 0; i < 5; i++) {
+        counts[i] = 0;
+        if (conversion_rates) conversion_rates[i] = 0.0;
+    }
 
     if (isNested) {
-        // Original implementation for nested structure
-        JsonArrayConst result = doc["results"][0]["result"];
-
-        // Ensure the result is an array
-        if (result.isNull()) {
-            return false;
-        }
-
-        size_t breakdownCount = result.size();
-        if (breakdownCount == 0) {
-            return false;
-        }
-
         // For each breakdown, get the count for this step
-        for (size_t breakdown_index = 0; breakdown_index < breakdownCount; breakdown_index++) {
-            if (breakdown_index >= MAX_BREAKDOWNS) break;
-
-            JsonArrayConst breakdown_array = result[breakdown_index];
+        for (size_t bd_idx = 0; bd_idx < breakdownCount; bd_idx++) {
+            JsonArrayConst breakdown_array = result[bd_idx];
             if (!breakdown_array.isNull() && step_index < breakdown_array.size()) {
-                
                 JsonObjectConst stepObj = breakdown_array[step_index];
-                
-                // Extract count
-                if (!stepObj["count"].isNull()) {
-                    counts[breakdown_index] = stepObj["count"] | 0;
-                } else {
-                    counts[breakdown_index] = 0;
-                }
-                
-                // Calculate conversion rate compared to first step
-                if (conversion_rates && breakdown_index < result.size() && 
-                    breakdown_array.size() > 0 && 
-                    !breakdown_array[0]["count"].isNull()) {
+                if (!stepObj.isNull()) {
+                    // Extract count
+                    counts[bd_idx] = stepObj[JSON_KEY_COUNT].as<uint32_t>();
                     
-                    uint32_t firstStepCount = breakdown_array[0]["count"] | 0;
-                    if (firstStepCount > 0) {
-                        conversion_rates[breakdown_index] = (double)counts[breakdown_index] / firstStepCount;
-                    } else {
-                        conversion_rates[breakdown_index] = 0.0;
+                    // Calculate conversion rate compared to first step of THIS breakdown
+                    if (conversion_rates && breakdown_array.size() > 0) {
+                        uint32_t firstStepCount = breakdown_array[0][JSON_KEY_COUNT].as<uint32_t>();
+                        if (firstStepCount > 0) {
+                            conversion_rates[bd_idx] = (double)counts[bd_idx] / firstStepCount;
+                        } else {
+                            conversion_rates[bd_idx] = 0.0;
+                        }
                     }
-                } else if (conversion_rates) {
-                    conversion_rates[breakdown_index] = 0.0;
-                }
-            } else {
-                counts[breakdown_index] = 0;
-                if (conversion_rates) {
-                    conversion_rates[breakdown_index] = 0.0;
                 }
             }
         }
     } else {
-        // Flat structure implementation
-        JsonArrayConst result = doc["results"][0]["result"];
-        
-        if (result.isNull() || step_index >= result.size()) {
+        // Flat structure implementation (only one breakdown at index 0)
+        if (step_index >= result.size()) {
             return false;
         }
         
-        // In flat structure, we only have one breakdown
-        counts[0] = result[step_index]["count"] | 0;
+        counts[0] = result[step_index][JSON_KEY_COUNT].as<uint32_t>();
         
-        // Calculate conversion rate compared to first step
-        if (conversion_rates && result.size() > 0 && !result[0]["count"].isNull()) {
-            uint32_t firstStepCount = result[0]["count"] | 0;
+        // Calculate conversion rate compared to first step of the flat funnel
+        if (conversion_rates && result.size() > 0) {
+            uint32_t firstStepCount = result[0][JSON_KEY_COUNT].as<uint32_t>();
             if (firstStepCount > 0) {
                 conversion_rates[0] = (double)counts[0] / firstStepCount;
             } else {
                 conversion_rates[0] = 0.0;
-            }
-        } else if (conversion_rates) {
-            conversion_rates[0] = 0.0;
-        }
-        
-        // Zero out any additional breakdown slots
-        for (size_t i = 1; i < MAX_BREAKDOWNS; i++) {
-            counts[i] = 0;
-            if (conversion_rates) {
-                conversion_rates[i] = 0.0;
             }
         }
     }
@@ -794,56 +960,114 @@ bool InsightParser::getFunnelBreakdownComparison(
     return true;
 }
 
-bool InsightParser::getFunnelTimeWindow(uint32_t* window_days) {
-    if (!valid || !hasFunnelStructure() || !window_days) return false;
+bool InsightParser::getFunnelTimeWindow(uint32_t* window_days) const {
+    if (!valid || !private_hasFunnelStructure() || !window_days) return false;
     
-    // Always check filters first since both formats have this
-    JsonVariantConst filters = doc["results"][0]["filters"];
-    if (!filters.isNull()) {
-        uint32_t interval = filters["funnel_window_interval"] | 0;
-        if (interval > 0) {
-            // Check interval unit
-            const char* unit = filters["funnel_window_interval_unit"];
-            if (unit) {
-                if (strcmp(unit, "day") == 0) {
-                    *window_days = interval;
-                    return true;
-                } else if (strcmp(unit, "week") == 0) {
-                    *window_days = interval * 7;
-                    return true;
-                } else if (strcmp(unit, "month") == 0) {
-                    *window_days = interval * 30;  // Approximate
-                    return true;
-                }
-            }
-            
-            // Default to days if no unit specified
+    // Use m_insightDataRoot
+    JsonObjectConst filters = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_FILTERS];
+    if (filters.isNull()) return false;
+    
+    uint32_t interval = filters[JSON_KEY_FUNNEL_WINDOW_INTERVAL] | 0;
+    if (interval == 0) return false;
+
+    // Check interval unit
+    const char* unit = filters[JSON_KEY_FUNNEL_WINDOW_INTERVAL_UNIT];
+    if (unit) {
+        if (strcmp(unit, JSON_VAL_FUNNEL_UNIT_DAY) == 0) {
             *window_days = interval;
+            return true;
+        } else if (strcmp(unit, JSON_VAL_FUNNEL_UNIT_WEEK) == 0) {
+            *window_days = interval * 7;
+            return true;
+        } else if (strcmp(unit, JSON_VAL_FUNNEL_UNIT_MONTH) == 0) {
+            *window_days = interval * 30;  // Approximate
             return true;
         }
     }
     
+    // Default to days if no unit specified or unit is unrecognized
+    *window_days = interval;
+    return true;
+}
+
+
+// Helper function to extract formatting string (prefix or suffix)
+bool InsightParser::getFormattingString(const JsonObjectConst& query, const char* settingType, char* buffer, size_t bufferSize) {
+    if (query.isNull() || bufferSize == 0) {
+        if (buffer) buffer[0] = '\0';
+        return false;
+    }
+    if (buffer) buffer[0] = '\0';
+
+    // Try chartSettings first
+    if (query.containsKey(JSON_KEY_CHART_SETTINGS)) {
+        JsonObjectConst chartSettings = query[JSON_KEY_CHART_SETTINGS];
+        if (!chartSettings.isNull() && chartSettings.containsKey(JSON_KEY_YAXIS)) {
+            JsonArrayConst yAxis = chartSettings[JSON_KEY_YAXIS];
+            if (!yAxis.isNull() && yAxis.size() > 0) {
+                JsonObjectConst yAxisSettings = yAxis[0];
+                if (!yAxisSettings.isNull() && yAxisSettings.containsKey(JSON_KEY_SETTINGS)) {
+                    JsonObjectConst settings = yAxisSettings[JSON_KEY_SETTINGS];
+                    if (!settings.isNull() && settings.containsKey(JSON_KEY_FORMATTING)) {
+                        JsonObjectConst formatting = settings[JSON_KEY_FORMATTING];
+                        if (!formatting.isNull() && formatting.containsKey(settingType)) {
+                            const char* value = formatting[settingType];
+                            if (value) {
+                                strncpy(buffer, value, bufferSize - 1);
+                                buffer[bufferSize - 1] = '\0';
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback to tableSettings
+    if (query.containsKey(JSON_KEY_TABLE_SETTINGS)) {
+        JsonObjectConst tableSettings = query[JSON_KEY_TABLE_SETTINGS];
+        if (!tableSettings.isNull() && tableSettings.containsKey(JSON_KEY_COLUMNS)) {
+            JsonArrayConst columns = tableSettings[JSON_KEY_COLUMNS];
+            if (!columns.isNull() && columns.size() > 0) {
+                JsonObjectConst columnSettings = columns[0];
+                if (!columnSettings.isNull() && columnSettings.containsKey(JSON_KEY_SETTINGS)) {
+                    JsonObjectConst settings = columnSettings[JSON_KEY_SETTINGS];
+                    if (!settings.isNull() && settings.containsKey(JSON_KEY_FORMATTING)) {
+                        JsonObjectConst formatting = settings[JSON_KEY_FORMATTING];
+                        if (!formatting.isNull() && formatting.containsKey(settingType)) {
+                            const char* value = formatting[settingType];
+                            if (value) {
+                                strncpy(buffer, value, bufferSize - 1);
+                                buffer[bufferSize - 1] = '\0';
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     return false;
 }
 
-bool InsightParser::hasFunnelNestedStructure() const {
-    if (!valid || !hasFunnelStructure() || !hasFunnelResultData()) return false;
-    
-    // Examine the result structure to determine if it's nested or flat
-    JsonVariantConst result = doc["results"][0]["result"];
-    JsonVariantConst firstElement = result[0];
-    
-    // If first element is an array, it's definitely a nested structure
-    if (firstElement.is<JsonArrayConst>()) {
-        return true;
+bool InsightParser::getNumericFormattingPrefix(char* buffer, size_t bufferSize) const {
+    if (!valid || bufferSize == 0) {
+        if (buffer) buffer[0] = '\0';
+        return false;
     }
-    
-    // If the first element has breakdown_value array, it's a nested structure
-    if (!firstElement["breakdown_value"].isNull()) {
-        return true;
+    // Use m_insightDataRoot
+    JsonObjectConst query = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_QUERY];
+    return getFormattingString(query, JSON_KEY_PREFIX, buffer, bufferSize);
+}
+
+bool InsightParser::getNumericFormattingSuffix(char* buffer, size_t bufferSize) const {
+    if (!valid || bufferSize == 0) {
+        if (buffer) buffer[0] = '\0';
+        return false;
     }
-    
-    // For flat structure, usually there are step completions like "Completed X steps"
-    // or no breakdown_value property
-    return false;
-} 
+    // Use m_insightDataRoot
+    JsonObjectConst query = m_insightDataRoot[JSON_KEY_RESULTS][0][JSON_KEY_QUERY];
+    return getFormattingString(query, JSON_KEY_SUFFIX, buffer, bufferSize);
+}

@@ -44,7 +44,7 @@ PongCard::PongCard(lv_obj_t* parent) :
 }
 
 PongCard::~PongCard() {
-    if (_card_root_obj) {
+    if (_card_root_obj && !markedForRemoval) {
         lv_obj_del_async(_card_root_obj);
         _card_root_obj = nullptr;
     }
@@ -91,7 +91,7 @@ void PongCard::createUi(lv_obj_t* parent) {
     lv_obj_set_width(_message_label_obj, lv_pct(80)); 
 }
 
-void PongCard::update() {
+bool PongCard::update() {
     Bounce2::Button& center_button = buttons[Input::BUTTON_CENTER];
     Bounce2::Button& up_button = buttons[Input::BUTTON_UP];
     Bounce2::Button& down_button = buttons[Input::BUTTON_DOWN];
@@ -166,6 +166,7 @@ void PongCard::update() {
     }
 
     _previous_game_state = current_game_state; // Update previous state for next frame
+    return true; // Continue receiving updates
 }
 
 void PongCard::updateUi() {
@@ -249,6 +250,6 @@ bool PongCard::handleButtonPress(uint8_t button_index) {
     return false; // Other buttons or unhandled cases
 }
 
-lv_obj_t* PongCard::getCardObject() const {
+lv_obj_t* PongCard::getCard() const {
     return _card_root_obj;
 }

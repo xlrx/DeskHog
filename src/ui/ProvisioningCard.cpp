@@ -1,10 +1,12 @@
 #include "ProvisioningCard.h"
 #include "Style.h"
+#include "SystemController.h"
 
 ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterface, uint16_t width, uint16_t height)
     : _parent(parent), _wifiInterface(wifiInterface), _width(width), _height(height),
     _card(nullptr), _qrScreen(nullptr), _statusScreen(nullptr),
     _qrCode(nullptr), _ssidLabel(nullptr), _statusLabel(nullptr), _ipLabel(nullptr), _signalLabel(nullptr), _versionLabel(nullptr),
+    _apiStatusLabel(nullptr),
     _topLeftVersionLabel(nullptr) {
     
     createCard();
@@ -14,6 +16,11 @@ ProvisioningCard::ProvisioningCard(lv_obj_t* parent, WiFiInterface& wifiInterfac
     // Initially show QR screen and hide status screen
     lv_obj_clear_flag(_qrScreen, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(_statusScreen, LV_OBJ_FLAG_HIDDEN);
+
+    // Register for system state changes and initialize API status display
+    SystemController::onStateChange(std::bind(&ProvisioningCard::handleSystemStateChange, this, std::placeholders::_1));
+    // Call handler immediately to set initial state for API status and potentially WiFi SSID
+    handleSystemStateChange(SystemController::getFullState()); 
 }
 
 void ProvisioningCard::createCard() {
@@ -51,7 +58,11 @@ void ProvisioningCard::createCard() {
 }
 
 void ProvisioningCard::updateConnectionStatus(const String& status) {
-    safeUpdateLabel(_statusLabel, status);
+    if (SystemController::getWifiState() != WifiState::CONNECTED) {
+        safeUpdateLabel(_statusLabel, status);
+    } else {
+        safeUpdateLabel(_statusLabel, _wifiInterface.getSSID());
+    }
     showWiFiStatus();
 }
 
@@ -167,37 +178,46 @@ void ProvisioningCard::createStatusScreen() {
     
     // Create container for status items
     lv_obj_t* table = lv_obj_create(_statusScreen);
-    lv_obj_set_size(table, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_hor(table, 5, 0);  // 5px horizontal padding
-    lv_obj_set_style_pad_ver(table, 0, 0);  // No vertical padding
+    lv_obj_set_size(table, LV_PCT(100), LV_SIZE_CONTENT); // Width 100%, height adjusts to content
+    lv_obj_set_style_pad_hor(table, 5, 0);  // 5px horizontal padding for the table itself
+    lv_obj_set_style_pad_ver(table, 5, 0);  // Add some vertical padding for the table itself
     lv_obj_set_style_border_width(table, 0, 0);
-    lv_obj_set_style_bg_opa(table, 0, 0);
+    lv_obj_set_style_bg_opa(table, 0, 0); // Make table background transparent
+
+    // Configure Flexbox layout for the table (parent of rows)
+    lv_obj_set_layout(table, LV_LAYOUT_FLEX); // Enable Flexbox
+    lv_obj_set_flex_flow(table, LV_FLEX_FLOW_COLUMN); // Arrange children (rows) in a column
+    lv_obj_set_flex_align(table, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START); // Main-axis, Cross-axis, Track-cross-axis alignment
+    lv_obj_set_style_pad_row(table, 3, 0); // Spacing between rows (flex items)
     
-    // Create rows with title and value labels
-    createTableRow(table, 0, "WiFi", &_statusLabel, Style::labelColor());
-    createTableRow(table, 1, "IP", &_ipLabel, Style::labelColor());
-    createTableRow(table, 2, "Signal", &_signalLabel, Style::labelColor());
-    createTableRow(table, 3, "Version", &_versionLabel, Style::labelColor());
+    // Create rows with title and value labels - order of calls now determines visual order
+    createTableRow(table, "WiFi", &_statusLabel, Style::labelColor());
+    createTableRow(table, "IP", &_ipLabel, Style::labelColor());
+    createTableRow(table, "Signal", &_signalLabel, Style::labelColor());
+    createTableRow(table, "Version", &_versionLabel, Style::labelColor());
+    createTableRow(table, "API", &_apiStatusLabel, Style::labelColor()); // As per your reordering
     
-    // Set initial values
-    lv_label_set_text(_statusLabel, "Disconnected");
+    // Set initial values (some will be updated by handleSystemStateChange or other methods)
+    lv_label_set_text(_statusLabel, "Initializing..."); 
+    lv_label_set_text(_apiStatusLabel, "..."); 
     lv_label_set_text(_ipLabel, "");
     lv_label_set_text(_signalLabel, "0%");
     lv_label_set_text(_versionLabel, CURRENT_FIRMWARE_VERSION);
 }
 
-void ProvisioningCard::createTableRow(lv_obj_t* table, uint16_t row, const char* title, 
+void ProvisioningCard::createTableRow(lv_obj_t* table, const char* title, 
                                      lv_obj_t** valueLabel, lv_color_t labelColor) {
-    // Calculate line height based on font
-    int lineHeight = lv_font_get_line_height(Style::valueFont()) + 5;
+    // Line height is no longer needed here for direct positioning, 
+    // but can be useful if row containers need explicit height.
+    // For now, LV_SIZE_CONTENT on the container is preferred with Flexbox.
     
     // Create container for the row content
-    lv_obj_t* container = lv_obj_create(table);
-    lv_obj_set_size(container, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(container, 0, 0);
-    lv_obj_set_style_bg_opa(container, 0, 0);
+    lv_obj_t* container = lv_obj_create(table); // Parent is the flex-container table
+    lv_obj_set_size(container, LV_PCT(100), LV_SIZE_CONTENT); // Width 100% of parent, height by content
+    lv_obj_set_style_pad_all(container, 0, 0); // No padding within the row container itself
+    lv_obj_set_style_bg_opa(container, 0, 0); // Make row container background transparent
     lv_obj_set_style_border_width(container, 0, 0);
-    lv_obj_set_pos(container, 0, row * lineHeight);
+    // lv_obj_set_pos is no longer needed; Flexbox handles positioning.
     
     // Create title label (left-aligned)
     lv_obj_t* titleLabel = lv_label_create(container);
@@ -271,4 +291,37 @@ void ProvisioningCard::toggleScreens(lv_obj_t* showScreen, lv_obj_t* hideScreen)
 
 lv_obj_t* ProvisioningCard::getCardObject() const {
     return _card;
+}
+
+// Implementation for SystemController integration
+void ProvisioningCard::handleSystemStateChange(const ControllerState& newState) {
+    // Update API Status label
+    if (_apiStatusLabel && lv_obj_is_valid(_apiStatusLabel)) {
+        safeUpdateLabel(_apiStatusLabel, apiStateToString(newState.api_state));
+    }
+
+    // Update WiFi Status label (SSID if connected, otherwise relies on updateConnectionStatus)
+    if (_statusLabel && lv_obj_is_valid(_statusLabel)) {
+        if (newState.wifi_state == WifiState::CONNECTED) {
+            safeUpdateLabel(_statusLabel, _wifiInterface.getSSID());
+        }
+        // If not connected, updateConnectionStatus() is expected to be called externally 
+        // with a more specific status (e.g., "Connecting...", "Failed", "Disconnected").
+        // So, we don't set a generic "Disconnected" here to avoid overwriting specific statuses.
+    }
+}
+
+String ProvisioningCard::apiStateToString(ApiState state) {
+    switch (state) {
+        case ApiState::API_NONE:
+            return "Not Set"; // Changed from "Not Configured" for brevity if needed
+        case ApiState::API_AWAITING_CONFIG:
+            return "Awaiting"; // Changed from "Awaiting Config"
+        case ApiState::API_CONFIG_INVALID:
+            return "Invalid";  // Changed from "Invalid Config"
+        case ApiState::API_CONFIGURED:
+            return "Configured";
+        default:
+            return "Unknown"; // Changed from "Unknown API State"
+    }
 }

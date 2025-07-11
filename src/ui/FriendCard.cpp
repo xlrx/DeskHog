@@ -3,7 +3,7 @@
 #include "sprites.h"
 #include "hardware/Input.h"
 
-AnimationCard::AnimationCard(lv_obj_t* parent)
+FriendCard::FriendCard(lv_obj_t* parent)
     : _card(nullptr)
     , _background(nullptr)
     , _anim_img(nullptr)
@@ -30,7 +30,7 @@ AnimationCard::AnimationCard(lv_obj_t* parent)
     
     // Make green container fill parent completely
     lv_obj_set_style_radius(_background, 8, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(_background, lv_color_hex(0x8B0000), 0);
+    lv_obj_set_style_bg_color(_background, lv_color_hex(0x0E7A00), 0);
     lv_obj_set_style_border_width(_background, 0, 0);
     lv_obj_set_style_pad_all(_background, 5, 0);
     
@@ -68,7 +68,6 @@ AnimationCard::AnimationCard(lv_obj_t* parent)
     addMessage("I ACCEPT YOUR LIMITATIONS");
     addMessage("YOUR DREAM IS ATTAINABLE");
     addMessage("YOU WILL DO THINGS");
-    addMessage("YOU SHOULD NOT BE AFRAID");
 
     // Display the first message
     if (!_messages.empty()) {
@@ -79,7 +78,7 @@ AnimationCard::AnimationCard(lv_obj_t* parent)
     startAnimation();
 }
 
-lv_obj_t* AnimationCard::createStyledLabel(lv_obj_t* parent, lv_color_t color, int16_t x_offset, int16_t y_offset) {
+lv_obj_t* FriendCard::createStyledLabel(lv_obj_t* parent, lv_color_t color, int16_t x_offset, int16_t y_offset) {
     lv_obj_t* label = lv_label_create(parent);
     if (!label) return nullptr;
     
@@ -98,7 +97,7 @@ lv_obj_t* AnimationCard::createStyledLabel(lv_obj_t* parent, lv_color_t color, i
     return label;
 }
 
-AnimationCard::~AnimationCard() {
+FriendCard::~FriendCard() {
     // Clean up UI elements safely
     if (isValidObject(_card)) {
         lv_obj_add_flag(_card, LV_OBJ_FLAG_HIDDEN);
@@ -113,11 +112,11 @@ AnimationCard::~AnimationCard() {
     }
 }
 
-lv_obj_t* AnimationCard::getCardObject() const {
+lv_obj_t* FriendCard::getCard() {
     return _card;
 }
 
-void AnimationCard::startAnimation() {
+void FriendCard::startAnimation() {
     // Don't start if animation is already running
     if (_animation_running) return;
     
@@ -128,7 +127,7 @@ void AnimationCard::startAnimation() {
     }
 }
 
-void AnimationCard::stopAnimation() {
+void FriendCard::stopAnimation() {
     // Do nothing if animation is not running
     if (!_animation_running) return;
     
@@ -137,7 +136,7 @@ void AnimationCard::stopAnimation() {
     _animation_running = false;
 }
 
-void AnimationCard::setText(const char* text) {
+void FriendCard::setText(const char* text) {
     // Update both labels with the same text
     if (isValidObject(_label)) {
         lv_label_set_text(_label, text);
@@ -148,12 +147,12 @@ void AnimationCard::setText(const char* text) {
     }
 }
 
-void AnimationCard::addMessage(const char* message) {
+void FriendCard::addMessage(const char* message) {
     // Add message to the cycling list
     _messages.push_back(std::string(message));
 }
 
-void AnimationCard::cycleNextMessage() {
+void FriendCard::cycleNextMessage() {
     // If we have no messages, do nothing
     if (_messages.empty()) return;
     
@@ -164,7 +163,7 @@ void AnimationCard::cycleNextMessage() {
     setText(_messages[_current_message_index].c_str());
 }
 
-bool AnimationCard::handleButtonPress(uint8_t button_index) {
+bool FriendCard::handleButtonPress(uint8_t button_index) {
     // Handle center button (Button 1) press to cycle messages
     if (button_index == Input::BUTTON_CENTER) {
         cycleNextMessage();
@@ -175,11 +174,6 @@ bool AnimationCard::handleButtonPress(uint8_t button_index) {
     return false;
 }
 
-// Add empty implementation for update() from InputHandler
-void AnimationCard::update() {
-    // AnimationCard does not require continuous updates beyond LVGL animations
-}
-
-bool AnimationCard::isValidObject(lv_obj_t* obj) const {
+bool FriendCard::isValidObject(lv_obj_t* obj) const {
     return obj && lv_obj_is_valid(obj);
 }

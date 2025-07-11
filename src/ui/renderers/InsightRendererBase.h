@@ -6,20 +6,7 @@
 #include <Arduino.h> // For String, if used in titles or other data
 #include <functional> // For std::function
 
-// Forward declaration if InsightCard needs to be referenced, though ideally, it shouldn't be directly.
-// class InsightCard; 
-
-// It's tricky to include InsightCard.h here if InsightCard.h includes this file
-// or specific renderer headers. For the static dispatch method, we need InsightCard.
-// A forward declaration won't work for calling a static method.
-// Solution: Ensure InsightCard.h does NOT include any specific renderer headers,
-// only InsightRendererBase.h if necessary (e.g. for the std::unique_ptr type).
-// Then, InsightRendererBase.h can safely include InsightCard.h for the static dispatcher.
-#include "../InsightCard.h" // Adjusted path
-// Note: If InsightCard.h needs to include this for unique_ptr<InsightRendererBase>,
-// that's fine as long as InsightCard.h doesn't also include concrete renderer headers.
-// The UICallback is now self-contained or in its own header, not needed here directly
-// if InsightCard::dispatchToLVGLTask handles UICallback creation.
+#include "../UICallback.h" // For global dispatch function
 
 /**
  * @class InsightRendererBase
@@ -64,8 +51,10 @@ public:
      * 
      * @param parser The InsightParser instance containing the new data.
      * @param title The title of the insight.
+     * @param prefix The prefix to prepend to the title.
+     * @param suffix The suffix to append to the title.
      */
-    virtual void updateDisplay(InsightParser& parser, const String& title) = 0;
+    virtual void updateDisplay(InsightParser& parser, const String& title, const char* prefix = nullptr, const char* suffix = nullptr) = 0;
 
     /**
      * @brief Clears/deletes all UI elements created by this renderer.
@@ -82,10 +71,13 @@ public:
     virtual bool areElementsValid() const = 0;
 
 protected:
-    // Helper to dispatch UI updates to the LVGL task using InsightCard's static method
+    // Helper to dispatch UI updates to the LVGL task using global dispatch function
     static void dispatchToUI(std::function<void()> func, bool to_front = false) {
-        // Now calls the static method from InsightCard
-        InsightCard::dispatchToLVGLTask(std::move(func), to_front);
+        if (globalUIDispatch) {
+            globalUIDispatch(std::move(func), to_front);
+        } else {
+            Serial.println("[UI-ERROR] Global UI dispatch not set, cannot dispatch UI update.");
+        }
     }
 
     // Helper to check LVGL object validity (can be used by derived classes)
