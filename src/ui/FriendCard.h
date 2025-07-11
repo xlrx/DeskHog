@@ -9,7 +9,7 @@
 #include "ui/InputHandler.h"
 
 /**
- * @class AnimationCard
+ * @class FriendCard
  * @brief UI component for displaying animated sprites with encouraging messages
  * 
  * Features:

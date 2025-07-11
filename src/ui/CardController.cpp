@@ -1,4 +1,5 @@
 #include "ui/CardController.h"
+#include "ui/PaddleCard.h"
 #include <algorithm>
 
 QueueHandle_t CardController::uiQueue = nullptr;
@@ -354,6 +355,32 @@ void CardController::initializeCardTypes() {
         return nullptr;
     };
     registerCardType(questionDef);
+    
+    // Register PADDLE card type
+    CardDefinition paddleDef;
+    paddleDef.type = CardType::PADDLE;
+    paddleDef.name = "Paddle";
+    paddleDef.allowMultiple = false;  // Only one paddle game at a time
+    paddleDef.needsConfigInput = false;
+    paddleDef.configInputLabel = "";
+    paddleDef.uiDescription = "Classic Paddle game - beat the AI!";
+    paddleDef.factory = [this](const String& configValue) -> lv_obj_t* {
+        PaddleCard* newCard = new PaddleCard(screen);
+        
+        if (newCard && newCard->getCard()) {
+            // Add to unified tracking system
+            CardInstance instance{newCard, newCard->getCard()};
+            dynamicCards[CardType::PADDLE].push_back(instance);
+            
+            // Register as input handler
+            cardStack->registerInputHandler(newCard->getCard(), newCard);
+            return newCard->getCard();
+        }
+        
+        delete newCard;
+        return nullptr;
+    };
+    registerCardType(paddleDef);
 }
 
 void CardController::handleCardConfigChanged() {
