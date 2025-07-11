@@ -9,7 +9,7 @@
 #include "ui/InputHandler.h"
 
 /**
- * @class AnimationCard
+ * @class FriendCard
  * @brief UI component for displaying animated sprites with encouraging messages
  * 
  * Features:
@@ -39,7 +39,7 @@ public:
      * @brief Get the underlying LVGL card object
      * @return LVGL object pointer or nullptr if not created
      */
-    lv_obj_t* getCardObject() const override;
+    lv_obj_t* getCard();
     
     /**
      * @brief Start the sprite animation
@@ -90,9 +90,6 @@ public:
      */
     bool handleButtonPress(uint8_t button_index) override;
     void prepareForRemoval() override { _card = nullptr; }
-    
-    // Add override for update() from InputHandler
-    void update() override;
     
 private:
     // Animation timing

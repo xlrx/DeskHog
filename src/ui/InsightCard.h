@@ -61,7 +61,7 @@ public:
      * 
      * @return LVGL object pointer for the main card container
      */
-    lv_obj_t* getCardObject() const override { return _card; }
+    lv_obj_t* getCard() const { return _card; }
 
     /**
      * @brief Get the insight ID
@@ -80,15 +80,6 @@ public:
      */
     bool handleButtonPress(uint8_t button_index) override;
     void prepareForRemoval() override { _card = nullptr; }
-
-    // InputHandler interface
-    bool handleButtonPress(uint8_t button_index) override {
-        // Insight cards do not handle direct button presses
-        return false; 
-    }
-    void update() override {
-        // No continuous update needed for InsightCard
-    }
 
 private:
     // Constants for UI layout and limits
