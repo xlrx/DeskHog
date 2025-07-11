@@ -1,5 +1,5 @@
 #include "ui/CardController.h"
-#include "ui/PongCard.h"
+#include "ui/PaddleCard.h"
 #include <algorithm>
 
 QueueHandle_t CardController::uiQueue = nullptr;
@@ -356,21 +356,21 @@ void CardController::initializeCardTypes() {
     };
     registerCardType(questionDef);
     
-    // Register PONG card type
-    CardDefinition pongDef;
-    pongDef.type = CardType::PONG;
-    pongDef.name = "Pong";
-    pongDef.allowMultiple = false;  // Only one pong game at a time
-    pongDef.needsConfigInput = false;
-    pongDef.configInputLabel = "";
-    pongDef.uiDescription = "Classic Pong game - beat the AI!";
-    pongDef.factory = [this](const String& configValue) -> lv_obj_t* {
-        PongCard* newCard = new PongCard(screen);
+    // Register PADDLE card type
+    CardDefinition paddleDef;
+    paddleDef.type = CardType::PADDLE;
+    paddleDef.name = "Paddle";
+    paddleDef.allowMultiple = false;  // Only one paddle game at a time
+    paddleDef.needsConfigInput = false;
+    paddleDef.configInputLabel = "";
+    paddleDef.uiDescription = "Classic Paddle game - beat the AI!";
+    paddleDef.factory = [this](const String& configValue) -> lv_obj_t* {
+        PaddleCard* newCard = new PaddleCard(screen);
         
         if (newCard && newCard->getCard()) {
             // Add to unified tracking system
             CardInstance instance{newCard, newCard->getCard()};
-            dynamicCards[CardType::PONG].push_back(instance);
+            dynamicCards[CardType::PADDLE].push_back(instance);
             
             // Register as input handler
             cardStack->registerInputHandler(newCard->getCard(), newCard);
@@ -380,7 +380,7 @@ void CardController::initializeCardTypes() {
         delete newCard;
         return nullptr;
     };
-    registerCardType(pongDef);
+    registerCardType(paddleDef);
 }
 
 void CardController::handleCardConfigChanged() {

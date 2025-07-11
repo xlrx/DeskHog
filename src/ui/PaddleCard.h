@@ -1,15 +1,15 @@
-#ifndef PONG_CARD_H
-#define PONG_CARD_H
+#ifndef PADDLE_CARD_H
+#define PADDLE_CARD_H
 
 #include "lvgl.h"
 #include "ui/InputHandler.h" // Corrected base class
-#include "game/PongGame.h"
+#include "game/PaddleGame.h"
 #include <cstdint> // For uint8_t
 
-class PongCard : public InputHandler {
+class PaddleCard : public InputHandler {
 public:
-    PongCard(lv_obj_t* parent);
-    ~PongCard() override; // Marking as override
+    PaddleCard(lv_obj_t* parent);
+    ~PaddleCard() override; // Marking as override
 
     bool update() override; // Returns true to keep receiving updates
     bool handleButtonPress(uint8_t button_index) override;
@@ -21,8 +21,8 @@ private:
     void updateUi(); // Replaces drawGameElements, more general for UI updates
     void updateMessageLabel(); // For displaying game state text
 
-    lv_obj_t* _card_root_obj; // Main LVGL container for the Pong card
-    PongGame _pong_game_instance;
+    lv_obj_t* _card_root_obj; // Main LVGL container for the Paddle card
+    PaddleGame _paddle_game_instance;
 
     // LVGL objects for game elements
     lv_obj_t* _player_paddle_obj;
@@ -34,7 +34,7 @@ private:
 
     char _chosen_victory_phrase_buffer[100]; // Buffer to hold the chosen victory message
     bool _is_victory_phrase_chosen;        // Flag to indicate if a phrase has been chosen for current game over
-    PongGame::GameState _previous_game_state;  // To detect state transitions
+    PaddleGame::GameState _previous_game_state;  // To detect state transitions
     bool markedForRemoval = false;  // Track if card is being removed
 
     // Constants
@@ -47,4 +47,4 @@ private:
     static const int NUM_VICTORY_PHRASES;
 };
 
-#endif // PONG_CARD_H 
+#endif // PADDLE_CARD_H 

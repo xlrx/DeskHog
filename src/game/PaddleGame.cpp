@@ -1,8 +1,8 @@
-#include "game/PongGame.h"
+#include "game/PaddleGame.h"
 #include <cstdlib> // For abs(), potentially rand() later if needed
 #include "Arduino.h" // For millis()
 
-PongGame::PongGame(int16_t play_area_width, int16_t play_area_height) : 
+PaddleGame::PaddleGame(int16_t play_area_width, int16_t play_area_height) : 
     _current_state(GameState::StartScreen),
     _player_score(0),
     _ai_score(0),
@@ -14,11 +14,11 @@ PongGame::PongGame(int16_t play_area_width, int16_t play_area_height) :
     reset();
 }
 
-PongGame::~PongGame() {
+PaddleGame::~PaddleGame() {
     // Destructor
 }
 
-void PongGame::reset() {
+void PaddleGame::reset() {
     _player_score = 0;
     _ai_score = 0;
 
@@ -43,7 +43,7 @@ void PongGame::reset() {
     _serve_delay_start_time = millis();
 }
 
-void PongGame::resetBall(bool player_will_serve) {
+void PaddleGame::resetBall(bool player_will_serve) {
     _ball_coords.x = _play_area_width / 2 - BALL_DIAMETER / 2;
     _ball_coords.y = _play_area_height / 2 - BALL_DIAMETER / 2;
 
@@ -54,35 +54,35 @@ void PongGame::resetBall(bool player_will_serve) {
     _player_serves_next = player_will_serve; // Store who will serve
 }
 
-PongGame::GameState PongGame::getState() const {
+PaddleGame::GameState PaddleGame::getState() const {
     return _current_state;
 }
 
-void PongGame::setState(GameState state) {
+void PaddleGame::setState(GameState state) {
     _current_state = state;
 }
 
-int PongGame::getPlayerScore() const {
+int PaddleGame::getPlayerScore() const {
     return _player_score;
 }
 
-int PongGame::getAiScore() const {
+int PaddleGame::getAiScore() const {
     return _ai_score;
 }
 
-Coordinates PongGame::getPlayerPaddleCoordinates() const {
+Coordinates PaddleGame::getPlayerPaddleCoordinates() const {
     return _player_paddle_coords;
 }
 
-Coordinates PongGame::getAiPaddleCoordinates() const {
+Coordinates PaddleGame::getAiPaddleCoordinates() const {
     return _ai_paddle_coords;
 }
 
-Coordinates PongGame::getBallCoordinates() const {
+Coordinates PaddleGame::getBallCoordinates() const {
     return _ball_coords;
 }
 
-void PongGame::movePlayerPaddle(bool move_up, bool start_moving) {
+void PaddleGame::movePlayerPaddle(bool move_up, bool start_moving) {
     if (start_moving) {
         if (move_up) {
             _player_paddle_velocity_y = -INITIAL_PADDLE_SPEED;
@@ -94,7 +94,7 @@ void PongGame::movePlayerPaddle(bool move_up, bool start_moving) {
     }
 }
 
-void PongGame::update() {
+void PaddleGame::update() {
     // Handle ServeDelay state: wait for delay then serve ball
     if (_current_state == GameState::ServeDelay) {
         if (millis() - _serve_delay_start_time >= SERVE_DELAY_DURATION_MS) {
@@ -223,7 +223,7 @@ void PongGame::update() {
     }
 }
 
-PongGame::PlayerWinState PongGame::getPlayerWinState() const {
+PaddleGame::PlayerWinState PaddleGame::getPlayerWinState() const {
     if (_current_state == GameState::GameOver) {
         if (_player_score >= 5) { // Assuming 5 is the score to win
             return PLAYER_WON;

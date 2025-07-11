@@ -1,5 +1,5 @@
-#ifndef PONG_GAME_H
-#define PONG_GAME_H
+#ifndef PADDLE_GAME_H
+#define PADDLE_GAME_H
 
 #include <cstdint> // For int16_t etc.
 
@@ -9,10 +9,10 @@ struct Coordinates {
     int16_t y;
 };
 
-class PongGame {
+class PaddleGame {
 public:
-    PongGame(int16_t play_area_width, int16_t play_area_height);
-    ~PongGame();
+    PaddleGame(int16_t play_area_width, int16_t play_area_height);
+    ~PaddleGame();
 
     void update();
     void reset();
@@ -50,7 +50,7 @@ public:
     void movePlayerPaddle(bool move_up, bool start_moving);
 
     // Constants for game elements, used for physics and boundaries
-    // These should ideally match the UI rendering dimensions from PongCard.h
+    // These should ideally match the UI rendering dimensions from PaddleCard.h
     static constexpr int16_t PADDLE_WIDTH = 5;  // Was 4
     static constexpr int16_t PADDLE_HEIGHT = 30; // Was 25
     static constexpr int16_t BALL_DIAMETER = 5;  // Was 4
@@ -86,4 +86,4 @@ private:
     static constexpr uint32_t SERVE_DELAY_DURATION_MS = 1500; // 1.5 second delay before serve
 };
 
-#endif // PONG_GAME_H 
+#endif // PADDLE_GAME_H 
