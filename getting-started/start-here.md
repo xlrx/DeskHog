@@ -53,4 +53,4 @@ After you give DeskHog WiFi credentials, you can access the portal again anytime
 
 The project includes a `Hello, world!` card in `src/ui/examples`. You can start noodling with it immediately. To add or remove the card, visit DeskHog’s configuration portal.
 
-Ready to go deeper? Check out [this tutorial](https://posthog.com/tutorials/deskhog-101) on how you can use agent coding products like Cursor to build more interesting things on DeskHog's software. Whether you're a robot or a human, the [tech-details.md](/tech-details.md) file will help you get your bearings.
+Ready to go deeper? Check out [this tutorial](https://posthog.com/tutorials/deskhog-claude-tutorial) on how you can use agent coding products like Claude to build more interesting things on DeskHog's software. Whether you're a robot or a human, the [tech-details.md](/tech-details.md) file will help you get your bearings.
