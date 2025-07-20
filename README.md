@@ -70,11 +70,11 @@ We're actually cutting the storage space in half so that over the air updates ca
 
 To fix this, choose **Erase Flash and Upload** from the PlatformIO Project Tasks menu.
 
-## 🤖 Vibe Coding with AI Agents
+## 🤖 Coding with AI Agents
 
-> DeskHog is optimized for vibe coding. If you've never tried coding with AI before, here's [a guide to get you started](https://posthog.com/tutorials/deskhog-claude-tutorial)!
+> DeskHog is optimized for agent development. If you've never tried coding with AI before, here's [a guide to get you started](https://posthog.com/tutorials/deskhog-claude-tutorial)!
 
-We couldn't have built DeskHog without Cursor's help, and we encourage agent-driven development with a few caveats.
+We couldn't have built DeskHog the help of agent development workflows, and we encourage agent-driven development with a few caveats.
 
 LLMs often struggle with multi-threaded embedded systems. DeskHog’s firmware has strict rules for core/task roles; AI might overlook them unless you guide it.
 
@@ -110,13 +110,15 @@ The following PRs would be interesting, and may earn you a free DeskHog kit or o
 - Additional insight parsing and visualizations for Insight Card
 - More games and apps! We think limiting things to one available button prompts creativity
 - Support for other boards and displays
-- Enhance the web UI and `ConfigManger` to allow re-ordering of insights, set custom titles per-insight
 - LLM slop mitigation: if you see anything obviously stupid in this code that hasn't yet been caught and cleaned up
 - DX improvements around task isolation: if your experience with embedded code says there's a better way to architect this, happy to follow your lead
 - Improved C++: not my preferred language, feel free to suggest idiomatic and architectural improvements
 - Desk utilities, like a pomodoro timer; also constrained: center button only. Be creative!
 - PlatformIO config improvements: flashing builds causes a reboot that seems unnecessary, maybe you know a better configuration
-- OTA update mechanisms
+
+## Forks
+
+This firmware has a simple goal: make it easy to set up a stack of screens that you can page through easily, managed by a web UI. But this is just one way to use the power of the board we chose. Feel free to steal this code, keep what helps, throw out what you don't like, and try something totally different. If you get somewhere interesting with your fork, let us know with a pull request to edit this section!
 
 ## Feedback
 
