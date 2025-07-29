@@ -74,7 +74,7 @@ To fix this, choose **Erase Flash and Upload** from the PlatformIO Project Tasks
 
 > DeskHog is optimized for agent development. If you've never tried coding with AI before, here's [a guide to get you started](https://posthog.com/tutorials/deskhog-claude-tutorial)!
 
-We couldn't have built DeskHog the help of agent development workflows, and we encourage agent-driven development with a few caveats.
+We couldn't have built DeskHog without the help of agent development workflows, and we encourage agent-driven development with a few caveats.
 
 LLMs often struggle with multi-threaded embedded systems. DeskHog’s firmware has strict rules for core/task roles; AI might overlook them unless you guide it.
 
