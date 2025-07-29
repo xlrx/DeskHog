@@ -217,7 +217,21 @@ function updateAvailableCardsList() {
             cardItem = document.createElement('div');
             cardItem.className = 'available-card-item';
             cardItem.setAttribute('data-card-type', cardDef.id);
-            
+
+            let customInputs = '';
+            if (cardDef.id === 'HTTP_FETCH') {
+                customInputs = `
+                    <input type="text" class="config-input" placeholder="URL" id="config-url-${cardDef.id}">
+                    <select class="config-input" id="config-type-${cardDef.id}">
+                        <option value="text">text</option>
+                        <option value="number">number</option>
+                    </select>
+                    <input type="number" class="config-input" placeholder="Refresh (s)" id="config-interval-${cardDef.id}" min="1" value="60">
+                `;
+            } else if (cardDef.needsConfigInput) {
+                customInputs = `<input type="text" class="config-input" placeholder="${cardDef.configInputLabel}" id="config-${cardDef.id}">`;
+            }
+
             cardItem.innerHTML = `
                 <div class="available-card-info">
                     <div class="available-card-name">${cardDef.name}</div>
@@ -225,15 +239,13 @@ function updateAvailableCardsList() {
                     <div class="available-card-status"></div>
                 </div>
                 <div class="available-card-actions">
-                    ${cardDef.needsConfigInput ? `
-                        <input type="text" class="config-input" placeholder="${cardDef.configInputLabel}" id="config-${cardDef.id}">
-                    ` : ''}
+                    ${customInputs}
                     <button class="add-card-btn" onclick="addCardFromList('${cardDef.id}')" ${!canAdd ? 'style="display:none"' : ''}>
                         + Add card
                     </button>
                 </div>
             `;
-            
+
             container.appendChild(cardItem);
         } else {
             // Update existing item without destroying input values
@@ -296,10 +308,28 @@ function addCardFromList(cardTypeId) {
     
     // Get config value if needed
     let cardConfig = '';
-    if (cardDef.needsConfigInput) {
+    if (cardDef.id === 'HTTP_FETCH') {
+        const urlInput = document.getElementById(`config-url-${cardDef.id}`);
+        const typeInput = document.getElementById(`config-type-${cardDef.id}`);
+        const intervalInput = document.getElementById(`config-interval-${cardDef.id}`);
+        if (!urlInput || !urlInput.value.trim()) {
+            if (globalActionStatusEl) {
+                globalActionStatusEl.textContent = 'Please enter a URL';
+                globalActionStatusEl.className = 'status-message error';
+                globalActionStatusEl.style.display = 'block';
+                setTimeout(() => { globalActionStatusEl.style.display = 'none'; globalActionStatusEl.textContent = ''; globalActionStatusEl.className = 'status-message'; }, 3000);
+            }
+            return;
+        }
+        const obj = {
+            url: urlInput.value.trim(),
+            type: typeInput ? typeInput.value : 'text',
+            interval: parseInt(intervalInput.value || '60')
+        };
+        cardConfig = JSON.stringify(obj);
+    } else if (cardDef.needsConfigInput) {
         const configInput = document.getElementById(`config-${cardTypeId}`);
         if (!configInput || !configInput.value.trim()) {
-            // Show error
             if (globalActionStatusEl) {
                 globalActionStatusEl.textContent = `Please enter a value for ${cardDef.configInputLabel}`;
                 globalActionStatusEl.className = 'status-message error';
@@ -326,11 +356,17 @@ function addCardFromList(cardTypeId) {
     // Add to current configuration
     configuredCards.push(newCard);
     
-    // Save to device
+    // Update UI immediately and save to device
+    updateCardsListUI();
     saveCardConfiguration();
     
     // Clear the config input if it exists
-    if (cardDef.needsConfigInput) {
+    if (cardDef.id === 'HTTP_FETCH') {
+        const urlInput = document.getElementById(`config-url-${cardDef.id}`);
+        const intervalInput = document.getElementById(`config-interval-${cardDef.id}`);
+        if (urlInput) urlInput.value = '';
+        if (intervalInput) intervalInput.value = '60';
+    } else if (cardDef.needsConfigInput) {
         const configInput = document.getElementById(`config-${cardTypeId}`);
         if (configInput) {
             configInput.value = '';
@@ -463,7 +499,8 @@ function handleDrop(e) {
         // Update the global array
         configuredCards = sortedCards;
         
-        // Save and update UI
+        // Update UI immediately and save
+        updateCardsListUI();
         saveCardConfiguration();
     }
     
@@ -503,7 +540,8 @@ function deleteCard(index) {
         card.order = idx;
     });
     
-    // Save and update UI
+    // Update UI immediately and save
+    updateCardsListUI();
     saveCardConfiguration();
     
     const globalActionStatusEl = document.getElementById('global-action-status');

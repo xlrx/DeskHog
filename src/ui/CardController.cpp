@@ -1,5 +1,6 @@
 #include "ui/CardController.h"
 #include "ui/PaddleCard.h"
+#include <ArduinoJson.h>
 #include <algorithm>
 
 QueueHandle_t CardController::uiQueue = nullptr;
@@ -355,6 +356,38 @@ void CardController::initializeCardTypes() {
         return nullptr;
     };
     registerCardType(questionDef);
+
+    // Register HTTP_FETCH card type
+    CardDefinition httpDef;
+    httpDef.type = CardType::HTTP_FETCH;
+    httpDef.name = "HTTP fetch";
+    httpDef.allowMultiple = true;
+    httpDef.needsConfigInput = true;
+    httpDef.configInputLabel = "URL";
+    httpDef.uiDescription = "Fetch data from a URL";
+    httpDef.factory = [this](const String& configValue) -> lv_obj_t* {
+        DynamicJsonDocument doc(256);
+        if (deserializeJson(doc, configValue)) {
+            Serial.println("Invalid HTTP_FETCH config");
+            return nullptr;
+        }
+        String url = doc["url"].as<String>();
+        String type = doc["type"].as<String>();
+        uint32_t interval = doc["interval"].as<uint32_t>();
+        bool asNumber = (type == "number");
+
+        HttpCard* newCard = new HttpCard(screen, url, asNumber, interval);
+        if (newCard && newCard->getCard()) {
+            CardInstance instance{newCard, newCard->getCard()};
+            dynamicCards[CardType::HTTP_FETCH].push_back(instance);
+            cardStack->registerInputHandler(newCard->getCard(), newCard);
+            return newCard->getCard();
+        }
+
+        delete newCard;
+        return nullptr;
+    };
+    registerCardType(httpDef);
     
     // Register PADDLE card type
     CardDefinition paddleDef;
